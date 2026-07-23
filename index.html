@@ -108,7 +108,7 @@
   .budget-stack{display:flex; flex-direction:column; gap:14px;}
   .budget-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .budget-cat{display:flex; align-items:center; gap:9px; font-size:13.5px; font-weight:500; color:var(--paper) !important;}
-  .budget-limit-btn{font-size:12px; color:var(--paperDim);}
+  .budget-limit-btn{font-size:15px; font-weight:600; color:var(--paperDim); display:flex; align-items:center; gap:4px; padding:0; margin:0;}
   .budget-limit-edit{display:flex; gap:6px; align-items:center;}
   .budget-limit-edit input{width:62px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:12px;}
   .budget-limit-edit button{background:var(--gold); color:var(--bg); font-size:11px; font-weight:600; padding:5px 9px; border-radius:8px;}
@@ -1238,14 +1238,15 @@ function renderBudgets(){
         const editing = budgetEditingId === cat.id;
         const isRecurring = recurringCatIds.has(cat.id);
         return `
-          <div class="card" style="margin-bottom:0; position:relative; padding-bottom:52px;">
+          <div class="card" style="margin-bottom:0; position:relative;">
             <div class="budget-head">
               <div class="budget-cat">
                 <span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}
                 ${isRecurring ? `<span title="Liée à une récurrence" style="color:var(--paperDim); display:flex;">${icon('repeat',12)}</span>` : ''}
               </div>
               <div style="display:flex; align-items:center; gap:4px;">
-                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" value="${limit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper)">${fmt0(limit)}</span></button>`}
+                <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" style="background:${cat.color}; color:#0E1626; font-weight:800; font-size:16px; line-height:1; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-right:8px;" title="Ajouter une dépense">+</button>
+                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" value="${limit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:16px;">${fmt0(limit)}</span></button>`}
                 <button data-hide-budgetcat="${cat.id}" style="color:var(--paperDim); padding:4px;" title="Masquer cette catégorie">${icon('x',13)}</button>
               </div>
             </div>
@@ -1255,7 +1256,6 @@ function renderBudgets(){
               ${[10,50].map(v=>`<button class="chip chip-add" data-budget-adjust="${cat.id}" data-amt="${v}">+${v}€</button>`).join('')}
               ${[10,50].map(v=>`<button class="chip chip-sub" data-budget-adjust="${cat.id}" data-amt="${-v}">−${v}€</button>`).join('')}
             </div>
-            <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" class="budget-fab" style="background:${cat.color};" title="Ajouter une dépense">${icon('plus',18)}</button>
           </div>
         `;
       }).join('')}
