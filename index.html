@@ -219,6 +219,28 @@ function addPeriod(date, freq){
   else d.setMonth(d.getMonth()+1);
   return d;
 }
+function occurrencesPerMonth(freq){
+  if(freq==='weekly') return 52/12;
+  if(freq==='yearly') return 1/12;
+  return 1;
+}
+function recurringOccurrencesInMonth(y, m){
+  let income = 0, expense = 0;
+  (state.data.recurring||[]).forEach(rule=>{
+    let next = new Date(rule.nextDate);
+    let guard = 0;
+    while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
+      next = addPeriod(next, rule.frequency);
+      guard++;
+    }
+    while(next.getFullYear()===y && next.getMonth()===m && guard<900){
+      if(rule.type==='income') income += rule.amount; else expense += rule.amount;
+      next = addPeriod(next, rule.frequency);
+      guard++;
+    }
+  });
+  return { income, expense };
+}
 
 const MONTHS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"];
@@ -481,6 +503,15 @@ function computeForecast(){
   const avgExpense = expenses.reduce((a,b)=>a+b,0)/expenses.length;
   const hasHistory = incomes.some(v=>v>0) || expenses.some(v=>v>0);
   const netAvg = avgIncome - avgExpense;
+
+  let recurIncomePerMonth = 0, recurExpensePerMonth = 0;
+  (state.data.recurring||[]).forEach(rule=>{
+    const perMonth = rule.amount * occurrencesPerMonth(rule.frequency);
+    if(rule.type==='income') recurIncomePerMonth += perMonth; else recurExpensePerMonth += perMonth;
+  });
+  const variableIncome = Math.max(0, avgIncome - recurIncomePerMonth);
+  const variableExpense = Math.max(0, avgExpense - recurExpensePerMonth);
+
   const startBalance = totalBalance();
   const points = [];
   let lastValue = startBalance;
@@ -495,12 +526,15 @@ function computeForecast(){
         .filter(t => new Date(t.date) <= cutoff)
         .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
     } else {
-      value = lastValue + netAvg;
+      const rec = recurringOccurrencesInMonth(y,m);
+      const monthIncome = variableIncome + rec.income;
+      const monthExpense = variableExpense + rec.expense;
+      value = lastValue + (monthIncome - monthExpense);
     }
     lastValue = value;
     points.push({ label: `${MONTHS_SHORT[m]} ${String(y).slice(2)}`, value, y, m });
   }
-  return { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory };
+  return { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory, variableIncome, variableExpense };
 }
 
 function computeCategoryForecast(targetExpense){
@@ -551,7 +585,7 @@ function renderForecastCard(){
       <div class="section-title" style="font-size:15px; margin-bottom:4px;">Prévisionnel — 6 prochains mois</div>
       <div style="font-size:12px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">
         Basé sur votre moyenne des 3 derniers mois : ${fmt0(f.avgIncome)} de revenus, ${fmt0(f.avgExpense)} de dépenses
-        (soit ${f.netAvg>=0?'+':'−'}${fmt0(Math.abs(f.netAvg))} par mois).
+        (soit ${f.netAvg>=0?'+':'−'}${fmt0(Math.abs(f.netAvg))} par mois)${(state.data.recurring||[]).length ? ', en tenant compte de vos transactions récurrentes' : ''}.
       </div>
       <div style="display:flex; flex-direction:column; gap:2px;">
         ${f.points.map((p,i)=>`
@@ -582,8 +616,9 @@ function renderDashboard(){
   const realIncome = tx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const realExpense = tx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const usingEstimate = isFuture && tx.length===0;
-  const income = usingEstimate ? f.avgIncome : realIncome;
-  const expense = usingEstimate ? f.avgExpense : realExpense;
+  const recurThisMonth = usingEstimate ? recurringOccurrencesInMonth(state.viewY, state.viewM) : {income:0, expense:0};
+  const income = usingEstimate ? (f.variableIncome + recurThisMonth.income) : realIncome;
+  const expense = usingEstimate ? (f.variableExpense + recurThisMonth.expense) : realExpense;
   const savings = income - expense;
   const rate = income>0 ? Math.max(0, Math.round(savings/income*100)) : 0;
   const bal = balanceForViewedMonth(f, state.viewY, state.viewM);
