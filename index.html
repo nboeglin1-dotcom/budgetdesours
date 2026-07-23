@@ -467,6 +467,7 @@ function computeForecast(){
   });
   const avgIncome = incomes.reduce((a,b)=>a+b,0)/incomes.length;
   const avgExpense = expenses.reduce((a,b)=>a+b,0)/expenses.length;
+  const hasHistory = incomes.some(v=>v>0) || expenses.some(v=>v>0);
   const netAvg = avgIncome - avgExpense;
   const startBalance = totalBalance();
   const points = [];
@@ -477,7 +478,7 @@ function computeForecast(){
     bal += netAvg;
     points.push({ label: `${MONTHS_SHORT[m]} ${String(y).slice(2)}`, value: bal, y, m });
   }
-  return { points, avgIncome, avgExpense, netAvg, startBalance };
+  return { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory };
 }
 
 function computeCategoryForecast(targetExpense){
@@ -587,11 +588,17 @@ function renderDashboard(){
     <div class="card ruled">
       <div class="eyebrow">Solde total${isFuture ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
       <div class="balance-num mono" id="balanceNum">${fmt0(bal)}</div>
+      ${isFuture && !f.hasHistory ? `
+        <div style="font-size:12.5px; color:var(--paperDim); margin-top:14px; line-height:1.5;">
+          Pas encore assez d'historique (3 derniers mois) pour estimer les revenus et dépenses de ce mois. Le solde ci-dessus reste inchangé par rapport à aujourd'hui.
+        </div>
+      ` : `
       <div style="display:flex; gap:22px; flex-wrap:wrap; margin-top:16px;">
         <div><div class="stat-label">${icon('up',12)} Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}</div></div>
         <div><div class="stat-label">${icon('down',12)} Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}</div></div>
         <div><div class="stat-label">Taux d'épargne</div><div class="stat-val" style="color:var(--gold)">${rate}%</div></div>
       </div>
+      `}
     </div>
     ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'approchent ou dépassent':'approche ou dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
     <div class="card">
