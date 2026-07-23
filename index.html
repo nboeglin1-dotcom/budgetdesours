@@ -23,9 +23,10 @@
     --gold:#D4A94F; --coral:#E8664D; --sage:#6FA287;
     --violet:#8B7FD6; --teal:#5FB4C4; --rose:#D6829F; --slate:#7C89A6; --amber:#C97B3F; --mint:#4FBF8B;
   }
-  input, .field-input, .budget-limit-edit input, .goal-form input, .search-wrap input{
+  input:not([type="checkbox"]), .field-input, .budget-limit-edit input, .goal-form input, .search-wrap input{
     -webkit-appearance:none; appearance:none; color-scheme: dark;
   }
+  input[type="checkbox"]{ -webkit-appearance:auto; appearance:auto; color-scheme: dark; }
   input::-webkit-date-and-time-value{ text-align:left; }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html{scroll-behavior:smooth;}
@@ -479,6 +480,28 @@ function computeForecast(){
   return { points, avgIncome, avgExpense, netAvg, startBalance };
 }
 
+function computeCategoryForecast(targetExpense){
+  const today = new Date();
+  const months = [];
+  for(let i=2;i>=0;i--){
+    let m = today.getMonth()-i, y = today.getFullYear();
+    if(m<0){m+=12;y--;}
+    months.push({y,m});
+  }
+  const totals = {};
+  let grandTotal = 0;
+  months.forEach(({y,m})=>{
+    state.data.transactions.filter(t=>t.type==='expense' && sameMonth(t.date,y,m)).forEach(t=>{
+      totals[t.category] = (totals[t.category]||0) + t.amount;
+      grandTotal += t.amount;
+    });
+  });
+  if(grandTotal <= 0) return [];
+  return Object.entries(totals)
+    .map(([id,sum])=>({ id, value: (sum/grandTotal)*targetExpense, ...catInfo(id) }))
+    .sort((a,b)=>b.value-a.value);
+}
+
 function monthIndex(y,m){ return y*12+m; }
 
 function balanceForViewedMonth(f, viewY, viewM){
@@ -540,7 +563,7 @@ function renderDashboard(){
 
   const byCat = {};
   tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
-  const catData = Object.entries(byCat).map(([id,value])=>({id,value,...catInfo(id)})).sort((a,b)=>b.value-a.value);
+  const catData = isFuture ? computeCategoryForecast(expense) : Object.entries(byCat).map(([id,value])=>({id,value,...catInfo(id)})).sort((a,b)=>b.value-a.value);
   const maxCat = Math.max(1, ...catData.map(c=>c.value));
 
   const trend = [];
@@ -572,8 +595,8 @@ function renderDashboard(){
     </div>
     ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'approchent ou dépassent':'approche ou dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
     <div class="card">
-      <div class="section-title" style="font-size:15px; margin-bottom:12px;">Répartition des dépenses</div>
-      ${catData.length===0 ? `<div class="empty">${isFuture ? "Pas encore de détail pour ce mois à venir — le solde ci-dessus est une estimation." : "Aucune dépense ce mois-ci"}</div>` : `
+      <div class="section-title" style="font-size:15px; margin-bottom:12px;">Répartition des dépenses${isFuture ? ` <span style="color:var(--gold); font-size:12px; font-weight:500;">· estimée</span>` : ''}</div>
+      ${catData.length===0 ? `<div class="empty">${isFuture ? "Pas assez d'historique pour estimer une répartition." : "Aucune dépense ce mois-ci"}</div>` : `
         <div class="scroll-cats">
           ${catData.map(c=>`
             <div class="catbar-row">
