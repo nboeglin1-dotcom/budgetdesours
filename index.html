@@ -483,12 +483,22 @@ function computeForecast(){
   const netAvg = avgIncome - avgExpense;
   const startBalance = totalBalance();
   const points = [];
-  let bal = startBalance;
+  let lastValue = startBalance;
   for(let i=1;i<=6;i++){
     let m = today.getMonth()+i, y = today.getFullYear();
     while(m>11){ m-=12; y++; }
-    bal += netAvg;
-    points.push({ label: `${MONTHS_SHORT[m]} ${String(y).slice(2)}`, value: bal, y, m });
+    const hasRealDataThisMonth = state.data.transactions.some(t=>sameMonth(t.date,y,m));
+    let value;
+    if(hasRealDataThisMonth){
+      const cutoff = new Date(y, m+1, 0, 23,59,59,999);
+      value = state.data.transactions
+        .filter(t => new Date(t.date) <= cutoff)
+        .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
+    } else {
+      value = lastValue + netAvg;
+    }
+    lastValue = value;
+    points.push({ label: `${MONTHS_SHORT[m]} ${String(y).slice(2)}`, value, y, m });
   }
   return { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory };
 }
