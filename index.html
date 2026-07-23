@@ -126,6 +126,13 @@
   .goal-form button.withdraw{background:transparent; border:1px solid var(--coral); color:var(--coral); font-weight:600; font-size:12px; padding:9px 12px; border-radius:10px;}
   .goal-form button.del{padding:9px; color:var(--paperDim);}
   .empty{padding:34px 10px; text-align:center; font-size:13.5px; color:var(--paperDim);}
+  .lock-screen{min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px 24px; text-align:center; max-width:640px; margin:0 auto;}
+  .lock-dots{display:flex; gap:16px; margin:26px 0; justify-content:center;}
+  .lock-dot{width:15px; height:15px; border-radius:50%; border:2px solid var(--line); background:transparent; transition:background .15s, border-color .15s;}
+  .lock-dot.filled{background:var(--gold); border-color:var(--gold);}
+  .lock-dot.error{background:var(--coral); border-color:var(--coral);}
+  .pin-pad{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; width:100%; max-width:260px; margin:10px auto 0;}
+  .pin-key{aspect-ratio:1; border-radius:50%; background:var(--surfaceHi); border:1px solid var(--line); font-size:21px; font-weight:600; color:var(--paper); display:flex; align-items:center; justify-content:center;}
   .modal-overlay{position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; justify-content:center;}
   .modal-sheet{width:100%; max-width:480px; background:var(--surface); border:1px solid var(--line); border-radius:24px 24px 0 0;
     padding:18px 18px calc(env(safe-area-inset-bottom) + 22px); max-height:88vh; overflow-y:auto; animation:slideUp .28s ease;}
@@ -241,6 +248,15 @@ function recurringOccurrencesInMonth(y, m){
   });
   return { income, expense };
 }
+function upcomingRecurring(days){
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + days*86400000);
+  return (state.data.recurring||[])
+    .map(r=>({ ...r, next: new Date(r.nextDate) }))
+    .filter(r=> r.next >= now && r.next <= cutoff)
+    .sort((a,b)=> a.next - b.next)
+    .map(r=>({ ...r, daysUntil: Math.ceil((r.next - now) / 86400000) }));
+}
 
 const MONTHS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"];
@@ -279,6 +295,7 @@ function seedData(){
     ],
     customCategories:[],
     recurring:[],
+    security: { enabled:false, pin:null, useBiometric:false, credentialId:null },
   };
 }
 
@@ -289,6 +306,7 @@ function loadData(){
       const parsed = JSON.parse(raw);
       if(!parsed.customCategories) parsed.customCategories = [];
       if(!parsed.recurring) parsed.recurring = [];
+      if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
       return parsed;
     }
   }catch(e){}
@@ -309,6 +327,14 @@ let state = {
   categoryModalOpen: false,
   manageCatOpen: false,
   recurringModalOpen: false,
+  securityModalOpen: false,
+  locked: false,
+  pinInput: '',
+  pinError: false,
+  pinSetupStep: null,
+  pinSetupFirst: '',
+  pinConfirm: '',
+  triedBiometricAuto: false,
   toast: null,
   txFilter: 'all',
   txQuery: '',
@@ -333,6 +359,7 @@ function processRecurring(){
   if(changed) saveData(state.data);
 }
 processRecurring();
+state.locked = !!(state.data.security && state.data.security.enabled);
 
 function setState(patch){ Object.assign(state, patch); rerender(); }
 function mutateData(fn){ fn(state.data); saveData(state.data); rerender(); }
@@ -346,6 +373,99 @@ function showUndoToast(msg, undoFn){
   clearTimeout(showToast._t);
   showToast._t = setTimeout(()=>{ state.toast=null; rerender(); }, 4500);
 }
+
+function unlockApp(){
+  state.locked = false;
+  state.pinInput = '';
+  state.pinError = false;
+  rerender();
+}
+
+function handlePinDigit(d){
+  if(state.pinInput.length>=4) return;
+  state.pinInput += d;
+  if(state.pinInput.length===4){
+    if(state.pinInput === state.data.security.pin){
+      unlockApp();
+    } else {
+      state.pinError = true;
+      rerender();
+      setTimeout(()=>{ state.pinInput=''; state.pinError=false; rerender(); }, 550);
+    }
+  } else {
+    rerender();
+  }
+}
+
+function handleSetupDigit(d){
+  if(state.pinSetupStep!=='confirm'){
+    if(state.pinSetupFirst.length>=4) return;
+    state.pinSetupFirst += d;
+    if(state.pinSetupFirst.length===4){ state.pinSetupStep='confirm'; state.pinConfirm=''; }
+    rerender();
+  } else {
+    if(state.pinConfirm.length>=4) return;
+    state.pinConfirm += d;
+    if(state.pinConfirm.length===4){
+      if(state.pinConfirm === state.pinSetupFirst){
+        mutateData(d=>{ d.security.enabled = true; d.security.pin = state.pinSetupFirst; });
+        state.pinSetupStep = null; state.pinSetupFirst=''; state.pinConfirm='';
+        showToast('Verrouillage activé');
+      } else {
+        state.pinSetupStep = null; state.pinSetupFirst=''; state.pinConfirm='';
+        showToast('Les codes ne correspondent pas, réessayez');
+      }
+    } else {
+      rerender();
+    }
+  }
+}
+function handleSetupBackspace(){
+  if(state.pinSetupStep==='confirm'){ state.pinConfirm = state.pinConfirm.slice(0,-1); }
+  else { state.pinSetupFirst = state.pinSetupFirst.slice(0,-1); }
+  rerender();
+}
+
+function disableLock(){
+  mutateData(d=>{ d.security = { enabled:false, pin:null, useBiometric:false, credentialId:null }; });
+  state.securityModalOpen = false;
+  showToast('Verrouillage désactivé');
+}
+
+async function registerBiometric(){
+  if(!window.PublicKeyCredential){ showToast('Face ID / Touch ID indisponible sur cet appareil'); return; }
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userId = crypto.getRandomValues(new Uint8Array(16));
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge, rp: { name: 'Solde' }, user: { id: userId, name: 'solde-user', displayName: 'Solde' },
+        pubKeyCredParams: [{ alg:-7, type:'public-key' }, { alg:-257, type:'public-key' }],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        timeout: 60000,
+      }
+    });
+    if(cred){
+      const credId = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+      mutateData(d=>{ d.security.useBiometric = true; d.security.credentialId = credId; });
+      showToast('Face ID / Touch ID activé');
+    }
+  }catch(e){ showToast("Impossible d'activer Face ID / Touch ID"); }
+}
+
+async function tryBiometricUnlock(){
+  const sec = state.data.security;
+  if(!sec || !sec.credentialId || !window.PublicKeyCredential) return;
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const idBytes = Uint8Array.from(atob(sec.credentialId), c=>c.charCodeAt(0));
+    const assertion = await navigator.credentials.get({
+      publicKey: { challenge, allowCredentials: [{ id: idBytes, type: 'public-key' }], userVerification: 'required', timeout: 60000 }
+    });
+    if(assertion) unlockApp();
+  }catch(e){ /* annulé ou échoué : l'utilisateur peut saisir son code */ }
+}
+
 function goalContribute(id, amt){
   let goalName = '';
   mutateData(d=>{
@@ -405,6 +525,9 @@ const ICONS = {
   spark: `<path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" stroke="currentColor" stroke-width="1.3" fill="currentColor"/>`,
   repeat: `<path d="M17 3v4H7a4 4 0 00-4 4v1M7 21v-4h10a4 4 0 004-4v-1" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 1l3 3-3 3M10 23l-3-3 3-3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
   tag: `<path d="M12 2H4a2 2 0 00-2 2v8l10 10 10-10-10-10z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/><circle cx="7.5" cy="7.5" r="1.4" fill="currentColor"/>`,
+  lock: `<rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M7 10V7a5 5 0 0110 0v3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="12" cy="15" r="1.3" fill="currentColor"/>`,
+  faceid: `<path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M20 8V6a2 2 0 00-2-2h-2M20 16v2a2 2 0 01-2 2h-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/><circle cx="9" cy="10" r=".9" fill="currentColor"/><circle cx="15" cy="10" r=".9" fill="currentColor"/><path d="M9 15c1 1 5 1 6 0" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>`,
+  backspace: `<path d="M9 6h10a2 2 0 012 2v8a2 2 0 01-2 2H9l-6-6 6-6z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/><path d="M13 10l4 4m0-4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
 };
 function icon(name, size=16){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none">${ICONS[name]||''}</svg>`; }
 
@@ -433,6 +556,7 @@ function rerender(){
 }
 
 function renderApp(){
+  if(state.locked) return renderLockScreen();
   return `
     ${renderHeader()}
     <div class="page">
@@ -450,6 +574,7 @@ function renderApp(){
     ${state.modal==='addGoal' ? renderAddGoalModal() : ''}
     ${state.manageCatOpen ? renderManageCategoriesModal() : ''}
     ${state.recurringModalOpen ? renderRecurringModal() : ''}
+    ${state.securityModalOpen ? renderSecurityModal() : ''}
     ${state.categoryModalOpen ? renderNewCategoryModal() : ''}
     ${state.toast ? `<div class="toast">${icon('spark',13)} ${state.toast.msg}${state.toast.undo ? `<button data-toast-undo="1" style="color:var(--gold); font-weight:700; margin-left:4px;">Annuler</button>` : ''}</div>` : ''}
   `;
@@ -458,14 +583,75 @@ function renderApp(){
 function renderHeader(){
   return `
     <div class="header">
-      <div class="brand">
-        <div class="mark">S</div>
-        <div>
-          <div class="brand-name ledger">Solde</div>
-          <div class="brand-sub">votre grand livre personnel</div>
+      <div class="row" style="margin-bottom:0;">
+        <div class="brand">
+          <div class="mark">S</div>
+          <div>
+            <div class="brand-name ledger">Solde</div>
+            <div class="brand-sub">votre grand livre personnel</div>
+          </div>
         </div>
+        <button data-open-security="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Sécurité">${icon('lock',16)}</button>
       </div>
     </div>`;
+}
+
+function renderLockScreen(){
+  const sec = state.data.security || {};
+  const dots = [0,1,2,3].map(i=>`<div class="lock-dot ${i<state.pinInput.length?'filled':''} ${state.pinError?'error':''}"></div>`).join('');
+  return `
+    <div class="lock-screen">
+      <div class="mark" style="width:56px; height:56px; font-size:26px; margin-bottom:18px; border-radius:16px;">S</div>
+      <div class="ledger" style="font-size:22px; font-weight:600; color:var(--paper);">Solde verrouillée</div>
+      <div style="font-size:13px; color:var(--paperDim); margin-top:6px;">${sec.useBiometric ? "Utilisez Face ID / Touch ID ou votre code" : "Entrez votre code à 4 chiffres"}</div>
+      <div class="lock-dots">${dots}</div>
+      <div class="pin-pad">
+        ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="pin-key" data-pin-key="${n}">${n}</button>`).join('')}
+        ${sec.useBiometric ? `<button class="pin-key" data-pin-biometric="1">${icon('faceid',22)}</button>` : `<div></div>`}
+        <button class="pin-key" data-pin-key="0">0</button>
+        <button class="pin-key" data-pin-backspace="1">${icon('backspace',18)}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSecurityModal(){
+  const sec = state.data.security || {};
+  if(!sec.enabled){
+    const current = state.pinSetupStep==='confirm' ? state.pinConfirm : state.pinSetupFirst;
+    return `
+      <div class="modal-overlay" data-close-security="1">
+        <div class="modal-sheet" onclick="event.stopPropagation()">
+          <div class="modal-head"><div class="modal-title ledger">Verrouillage</div><button data-close-x-security="1">${icon('x',18)}</button></div>
+          <div style="font-size:13px; color:var(--paperDim); margin-bottom:6px; line-height:1.5;">
+            Protégez l'accès à vos données avec un code à 4 chiffres, avec Face ID / Touch ID en option ensuite.
+          </div>
+          <div class="lock-dots">${[0,1,2,3].map(i=>`<div class="lock-dot ${i<current.length?'filled':''}"></div>`).join('')}</div>
+          <div class="pin-pad">
+            ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="pin-key" data-setup-key="${n}">${n}</button>`).join('')}
+            <div></div>
+            <button class="pin-key" data-setup-key="0">0</button>
+            <button class="pin-key" data-setup-backspace="1">${icon('backspace',18)}</button>
+          </div>
+          <div style="font-size:12px; color:var(--paperDim); text-align:center; margin-top:14px;">${state.pinSetupStep==='confirm' ? 'Confirmez votre code' : 'Choisissez un code à 4 chiffres'}</div>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="modal-overlay" data-close-security="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Verrouillage</div><button data-close-x-security="1">${icon('x',18)}</button></div>
+        <div class="txrow">
+          <div class="tx-left"><div class="swatch" style="background:rgba(212,169,79,.16); color:var(--gold);">${icon('lock',16)}</div><div class="tx-note">Verrouillage activé</div></div>
+        </div>
+        ${sec.useBiometric ? `
+          <div class="txrow"><div class="tx-left"><div class="swatch" style="background:rgba(79,191,139,.16); color:var(--mint);">${icon('faceid',16)}</div><div class="tx-note">Face ID / Touch ID activé</div></div></div>
+        ` : `<button class="btn-primary" style="width:100%; justify-content:center; margin-top:12px;" data-enable-biometric="1">${icon('faceid',15)} Activer Face ID / Touch ID</button>`}
+        <button class="btn-ghost" style="width:100%; justify-content:center; margin-top:14px; color:var(--coral); border-color:rgba(232,102,77,.35);" data-disable-lock="1">Désactiver le verrouillage</button>
+      </div>
+    </div>
+  `;
 }
 
 function renderTabbar(){
@@ -641,6 +827,8 @@ function renderDashboard(){
     .map(([id,limit])=>({id,limit,spent:byCat[id]||0,...catInfo(id)}))
     .filter(b=>b.limit>0 && b.spent/b.limit>=0.8);
 
+  const upcoming = upcomingRecurring(7);
+
   return `
     <div class="row" style="margin-bottom:14px;">
       ${monthNav()}
@@ -662,6 +850,26 @@ function renderDashboard(){
       `}
     </div>
     ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'approchent ou dépassent':'approche ou dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
+    ${upcoming.length ? `
+      <div class="card" style="padding-top:14px; padding-bottom:6px;">
+        <div class="section-title" style="font-size:14px; margin-bottom:10px; display:flex; align-items:center; gap:7px;">${icon('repeat',14)} À venir</div>
+        ${upcoming.map(r=>{
+          const info = catInfo(r.category);
+          return `
+            <div class="txrow">
+              <div class="tx-left">
+                <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
+                <div style="min-width:0;">
+                  <div class="tx-note">${escapeHtml(r.note || info.label)}</div>
+                  <div class="tx-meta">${r.daysUntil===0?"Aujourd'hui":r.daysUntil===1?"Demain":`Dans ${r.daysUntil} jours`}</div>
+                </div>
+              </div>
+              <div class="tx-amt" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : ''}
     <div class="card">
       <div class="section-title" style="font-size:15px; margin-bottom:12px;">Répartition des dépenses${usingEstimate ? ` <span style="color:var(--gold); font-size:12px; font-weight:500;">· estimée</span>` : ''}</div>
       ${catData.length===0 ? `<div class="empty">${usingEstimate ? "Pas assez d'historique pour estimer une répartition." : "Aucune dépense ce mois-ci"}</div>` : `
@@ -717,11 +925,9 @@ function monthNav(){
 
 function txRow(t, delBtn){
   const info = catInfo(t.category);
-  const checked = (state.selectedTx||[]).includes(t.id);
   return `
     <div class="txrow" ${!delBtn ? `data-view-tx="${t.id}" style="cursor:pointer;"` : ''}>
       <div class="tx-left">
-        ${delBtn ? `<input type="checkbox" class="tx-check" data-check-tx="${t.id}" ${checked?'checked':''}>` : ''}
         <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
         <div style="min-width:0;">
           <div class="tx-note">${escapeHtml(t.note || info.label)}</div>
@@ -759,15 +965,6 @@ function renderTransactions(){
       <button data-filter="income" class="${state.txFilter==='income'?'active':''}">Entrées</button>
       <button data-filter="expense" class="${state.txFilter==='expense'?'active':''}">Sorties</button>
     </div>
-    ${(state.selectedTx||[]).length>0 ? `
-      <div class="row" style="margin-bottom:14px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:12px; padding:10px 14px;">
-        <span style="font-size:12.5px; color:var(--paper);">${state.selectedTx.length} sélectionnée${state.selectedTx.length>1?'s':''}</span>
-        <div style="display:flex; gap:8px;">
-          <button data-clear-selection="1" style="font-size:12px; color:var(--paperDim);">Annuler</button>
-          <button data-delete-selected="1" style="font-size:12px; color:var(--coral); font-weight:600; display:flex; align-items:center; gap:4px;">${icon('trash',13)} Supprimer</button>
-        </div>
-      </div>
-    ` : ''}
     <div class="card">${list.length===0 ? `<div class="empty">Aucune transaction trouvée</div>` : list.map(t=>txRow(t,true)).join('')}</div>
   `;
 }
@@ -834,7 +1031,19 @@ function renderGoals(){
               <div class="goal-name">${escapeHtml(g.name)}</div>
               <div class="goal-amt" style="color:${g.color}">${fmt0(g.current)} <span class="target">/ ${fmt0(g.target)}</span></div>
               <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
-              <div class="quick-chips">
+              ${g.deadline && !done ? (()=>{
+                const dl = new Date(g.deadline);
+                const now = new Date();
+                const monthsLeft = Math.max(1, Math.round((dl - now) / (1000*60*60*24*30.44)));
+                const remaining = Math.max(0, g.target - g.current);
+                const perMonth = remaining / monthsLeft;
+                const overdue = dl < now;
+                return `<div style="font-size:11.5px; color:${overdue?'var(--coral)':'var(--paperDim)'}; margin-top:8px;">
+                  ${overdue ? "Échéance dépassée" : `Échéance : ${dl.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'})}`}
+                  ${!overdue ? ` · suggéré <span class="mono" style="color:${g.color};">${fmt0(perMonth)}</span>/mois` : ''}
+                </div>`;
+              })() : ''}
+              <div class="quick-chips" style="margin-top:12px;">
                 ${[10,50,100].map(v=>`<button class="chip chip-add" data-quick-contribute="${g.id}" data-amt="${v}">+${v}€</button>`).join('')}
                 ${[10,50].map(v=>`<button class="chip chip-sub" data-quick-withdraw="${g.id}" data-amt="${v}">−${v}€</button>`).join('')}
               </div>
@@ -910,6 +1119,8 @@ function renderAddGoalModal(){
         <input id="goalName" class="field-input" placeholder="Ex : Fonds d'urgence">
         <label class="field-label">Montant cible</label>
         <input id="goalTarget" type="number" class="field-input amount" placeholder="0,00 €">
+        <label class="field-label">Échéance (facultatif)</label>
+        <input id="goalDeadline" type="date" class="field-input mono">
         <label class="field-label">Couleur</label>
         <div class="color-row">${palette.map(c=>`<button data-goal-color="${c}" class="color-swatch" style="background:${c}; outline:${goalFormState.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
         <button class="submit-btn" data-submit-goal="1">Créer l'objectif</button>
@@ -1031,21 +1242,6 @@ function bindEvents(){
     mutateData(d=>{ d.transactions = d.transactions.filter(t=>t.id!==id); });
     showUndoToast('Transaction supprimée', ()=>{ mutateData(d=>{ d.transactions.unshift(tx); }); });
   }));
-  app.querySelectorAll('[data-check-tx]').forEach(el=>el.addEventListener('change', ()=>{
-    const id = el.dataset.checkTx;
-    const sel = state.selectedTx||[];
-    state.selectedTx = sel.includes(id) ? sel.filter(x=>x!==id) : [...sel, id];
-    rerender();
-  }));
-  app.querySelectorAll('[data-clear-selection]').forEach(el=>el.addEventListener('click', ()=>{ state.selectedTx = []; rerender(); }));
-  app.querySelectorAll('[data-delete-selected]').forEach(el=>el.addEventListener('click', ()=>{
-    const ids = state.selectedTx||[];
-    if(ids.length===0) return;
-    const removed = state.data.transactions.filter(t=>ids.includes(t.id));
-    mutateData(d=>{ d.transactions = d.transactions.filter(t=>!ids.includes(t.id)); });
-    state.selectedTx = [];
-    showUndoToast(`${removed.length} transaction${removed.length>1?'s':''} supprimée${removed.length>1?'s':''}`, ()=>{ mutateData(d=>{ d.transactions.unshift(...removed); }); });
-  }));
   app.querySelectorAll('[data-edit-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.editTx); }));
   app.querySelectorAll('[data-view-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.viewTx); }));
   app.querySelectorAll('[data-filter]').forEach(el=>el.addEventListener('click', ()=> setState({txFilter: el.dataset.filter})));
@@ -1131,8 +1327,9 @@ function bindEvents(){
   if(submitGoal) submitGoal.addEventListener('click', ()=>{
     const name = document.getElementById('goalName').value.trim();
     const target = Number(document.getElementById('goalTarget').value);
+    const deadlineVal = document.getElementById('goalDeadline').value;
     if(!name || !target || target<=0) return;
-    mutateData(d=>{ d.goals.push({ id:uid(), name, target, current:0, color:goalFormState.color }); });
+    mutateData(d=>{ d.goals.push({ id:uid(), name, target, current:0, color:goalFormState.color, deadline: deadlineVal || null }); });
     state.modal = null;
     showToast('Objectif créé');
   });
@@ -1192,6 +1389,25 @@ function bindEvents(){
     if(undo) undo();
     else rerender();
   }));
+
+  app.querySelectorAll('[data-open-security]').forEach(el=>el.addEventListener('click', ()=>{
+    state.pinSetupStep = null; state.pinSetupFirst = ''; state.pinConfirm = '';
+    state.securityModalOpen = true; rerender();
+  }));
+  app.querySelectorAll('[data-close-security]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.securityModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-security]').forEach(el=>el.addEventListener('click', ()=>{ state.securityModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-setup-key]').forEach(el=>el.addEventListener('click', ()=>{ handleSetupDigit(el.dataset.setupKey); }));
+  app.querySelectorAll('[data-setup-backspace]').forEach(el=>el.addEventListener('click', handleSetupBackspace));
+  app.querySelectorAll('[data-enable-biometric]').forEach(el=>el.addEventListener('click', registerBiometric));
+  app.querySelectorAll('[data-disable-lock]').forEach(el=>el.addEventListener('click', disableLock));
+  app.querySelectorAll('[data-pin-key]').forEach(el=>el.addEventListener('click', ()=>{ handlePinDigit(el.dataset.pinKey); }));
+  app.querySelectorAll('[data-pin-backspace]').forEach(el=>el.addEventListener('click', ()=>{ state.pinInput = state.pinInput.slice(0,-1); rerender(); }));
+  app.querySelectorAll('[data-pin-biometric]').forEach(el=>el.addEventListener('click', tryBiometricUnlock));
+
+  if(state.locked && state.data.security && state.data.security.useBiometric && !state.triedBiometricAuto){
+    state.triedBiometricAuto = true;
+    tryBiometricUnlock();
+  }
 
   const balEl = document.getElementById('balanceNum');
   if(balEl){
