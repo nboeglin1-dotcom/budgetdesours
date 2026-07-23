@@ -80,6 +80,7 @@
   .today-btn{font-size:11px; font-weight:600; color:var(--gold); background:rgba(212,169,79,.14); border:1px solid rgba(212,169,79,.35); padding:6px 10px; border-radius:99px; margin-left:2px; white-space:nowrap;}
   .btn-primary{background:var(--gold); color:var(--bg); font-weight:600; padding:10px 16px; border-radius:12px; font-size:14px; display:inline-flex; align-items:center; gap:6px;}
   .btn-ghost{color:var(--paperDim); padding:8px 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface);}
+  .btn-ghost:disabled{opacity:.4; pointer-events:none;}
   .balance-num{font-family:'JetBrains Mono',monospace; font-size:38px; font-weight:600; letter-spacing:-.5px;}
   .stat-label{display:flex; align-items:center; gap:5px; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--paperDim); margin-bottom:5px;}
   .stat-val{font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:500;}
@@ -111,6 +112,8 @@
   .budget-limit-edit input{width:62px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:12px;}
   .budget-limit-edit button{background:var(--gold); color:var(--bg); font-size:11px; font-weight:600; padding:5px 9px; border-radius:8px;}
   .budget-foot{display:flex; justify-content:space-between; font-size:12px; color:var(--paperDim);}
+  .budget-fab{position:absolute; bottom:12px; right:12px; width:34px; height:34px; border-radius:50%; color:#0E1626;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(0,0,0,.4); font-weight:700;}
   .goal-card{position:relative; overflow:hidden;}
   .goal-badge{position:absolute; top:14px; right:14px; display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:4px 9px; border-radius:99px; background:rgba(212,169,79,.16); color:var(--gold);}
   .goal-name{font-size:13.5px; font-weight:500; margin-bottom:4px; color:var(--paper) !important;}
@@ -296,6 +299,9 @@ function seedData(){
     customCategories:[],
     recurring:[],
     security: { enabled:false, pin:null, useBiometric:false, credentialId:null },
+    accounts: [{ id:'main', name:'Compte principal', color: COLORS.gold }],
+    dashboardSettings: { showBreakdown:true, showTrend:true },
+    hiddenBudgetCategories: [],
   };
 }
 
@@ -307,10 +313,15 @@ function loadData(){
       if(!parsed.customCategories) parsed.customCategories = [];
       if(!parsed.recurring) parsed.recurring = [];
       if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
+      if(!parsed.accounts || !parsed.accounts.length) parsed.accounts = [{ id:'main', name:'Compte principal', color: COLORS.gold }];
+      if(!parsed.dashboardSettings) parsed.dashboardSettings = { showBreakdown:true, showTrend:true };
+      if(!parsed.hiddenBudgetCategories) parsed.hiddenBudgetCategories = [];
+      parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
       return parsed;
     }
   }catch(e){}
   const seeded = seedData();
+  seeded.transactions.forEach(t=>{ t.accountId = 'main'; });
   saveData(seeded);
   return seeded;
 }
@@ -328,6 +339,13 @@ let state = {
   manageCatOpen: false,
   recurringModalOpen: false,
   securityModalOpen: false,
+  backupModalOpen: false,
+  accountsModalOpen: false,
+  hiddenCatModalOpen: false,
+  quickTxOpen: false,
+  allocateModalOpen: false,
+  allocateAmount: 0,
+  allocateMode: 'save',
   locked: false,
   pinInput: '',
   pinError: false,
@@ -335,6 +353,7 @@ let state = {
   pinSetupFirst: '',
   pinConfirm: '',
   triedBiometricAuto: false,
+  recentExpanded: false,
   toast: null,
   txFilter: 'all',
   txQuery: '',
@@ -372,6 +391,28 @@ function showUndoToast(msg, undoFn){
   state.toast = { msg, undo: undoFn }; rerender();
   clearTimeout(showToast._t);
   showToast._t = setTimeout(()=>{ state.toast=null; rerender(); }, 4500);
+}
+
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w = img.width, h = img.height;
+        if(w > h && w > maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
+        else if(h > maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function unlockApp(){
@@ -502,7 +543,7 @@ function defaultTxDate(){
 function openEditTx(id){
   const t = state.data.transactions.find(t=>t.id===id);
   if(!t) return;
-  txFormState = { type:t.type, category:t.category, date:new Date(t.date).toISOString().slice(0,10), recurring:false, frequency:'monthly', note:t.note||'', amount:t.amount, editingId:t.id };
+  txFormState = { type:t.type, category:t.category, date:new Date(t.date).toISOString().slice(0,10), recurring:false, frequency:'monthly', note:t.note||'', amount:t.amount, editingId:t.id, photo:t.photo||null, accountId:t.accountId||'main' };
   setState({modal:'addTx'});
 }
 
@@ -528,6 +569,9 @@ const ICONS = {
   lock: `<rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M7 10V7a5 5 0 0110 0v3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="12" cy="15" r="1.3" fill="currentColor"/>`,
   faceid: `<path d="M4 8V6a2 2 0 012-2h2M4 16v2a2 2 0 002 2h2M20 8V6a2 2 0 00-2-2h-2M20 16v2a2 2 0 01-2 2h-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/><circle cx="9" cy="10" r=".9" fill="currentColor"/><circle cx="15" cy="10" r=".9" fill="currentColor"/><path d="M9 15c1 1 5 1 6 0" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>`,
   backspace: `<path d="M9 6h10a2 2 0 012 2v8a2 2 0 01-2 2H9l-6-6 6-6z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/><path d="M13 10l4 4m0-4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  download: `<path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/>`,
+  upload: `<path d="M12 21V9m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/>`,
+  shield: `<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>`,
 };
 function icon(name, size=16){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none">${ICONS[name]||''}</svg>`; }
 
@@ -575,6 +619,11 @@ function renderApp(){
     ${state.manageCatOpen ? renderManageCategoriesModal() : ''}
     ${state.recurringModalOpen ? renderRecurringModal() : ''}
     ${state.securityModalOpen ? renderSecurityModal() : ''}
+    ${state.backupModalOpen ? renderBackupModal() : ''}
+    ${state.accountsModalOpen ? renderAccountsModal() : ''}
+    ${state.hiddenCatModalOpen ? renderHiddenCatModal() : ''}
+    ${state.allocateModalOpen ? renderAllocateModal() : ''}
+    ${state.quickTxOpen ? renderQuickTxModal() : ''}
     ${state.categoryModalOpen ? renderNewCategoryModal() : ''}
     ${state.toast ? `<div class="toast">${icon('spark',13)} ${state.toast.msg}${state.toast.undo ? `<button data-toast-undo="1" style="color:var(--gold); font-weight:700; margin-left:4px;">Annuler</button>` : ''}</div>` : ''}
   `;
@@ -591,7 +640,10 @@ function renderHeader(){
             <div class="brand-sub">votre grand livre personnel</div>
           </div>
         </div>
-        <button data-open-security="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Sécurité">${icon('lock',16)}</button>
+        <div style="display:flex; gap:8px;">
+          <button data-open-backup="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Sauvegarde">${icon('shield',16)}</button>
+          <button data-open-security="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Sécurité">${icon('lock',16)}</button>
+        </div>
       </div>
     </div>`;
 }
@@ -649,6 +701,125 @@ function renderSecurityModal(){
           <div class="txrow"><div class="tx-left"><div class="swatch" style="background:rgba(79,191,139,.16); color:var(--mint);">${icon('faceid',16)}</div><div class="tx-note">Face ID / Touch ID activé</div></div></div>
         ` : `<button class="btn-primary" style="width:100%; justify-content:center; margin-top:12px;" data-enable-biometric="1">${icon('faceid',15)} Activer Face ID / Touch ID</button>`}
         <button class="btn-ghost" style="width:100%; justify-content:center; margin-top:14px; color:var(--coral); border-color:rgba(232,102,77,.35);" data-disable-lock="1">Désactiver le verrouillage</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderBackupModal(){
+  const count = state.data.transactions.length;
+  const lastExport = state.data.lastExportDate;
+  return `
+    <div class="modal-overlay" data-close-backup="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Sauvegarde</div><button data-close-x-backup="1">${icon('x',18)}</button></div>
+        <div style="font-size:13px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">
+          Tes données ne vivent que sur cet appareil. Télécharge une sauvegarde régulièrement pour ne rien perdre en cas de problème (appareil perdu, cache effacé...).
+        </div>
+        <div class="txrow">
+          <div class="tx-left"><div class="swatch" style="background:rgba(212,169,79,.16); color:var(--gold);">${icon('download',16)}</div><div class="tx-note">${count} transaction${count>1?'s':''} enregistrée${count>1?'s':''}</div></div>
+        </div>
+        <button class="btn-primary" style="width:100%; justify-content:center; margin-top:14px;" data-export-backup="1">${icon('download',15)} Télécharger une sauvegarde</button>
+        <div style="height:1px; background:var(--line); margin:18px 0;"></div>
+        <label for="backupImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer;">${icon('upload',15)} Restaurer une sauvegarde</label>
+        <input id="backupImportInput" type="file" accept="application/json,.json" style="display:none;">
+        <div style="font-size:11.5px; color:var(--paperDim); margin-top:10px; text-align:center;">La restauration remplace toutes tes données actuelles.</div>
+        <div style="height:1px; background:var(--line); margin:18px 0;"></div>
+        <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-open-accounts="1">${icon('tag',15)} Gérer mes comptes</button>
+        <div style="height:1px; background:var(--line); margin:18px 0;"></div>
+        <div class="field-label" style="margin-bottom:10px;">Cartes du tableau de bord</div>
+        <div class="row" style="margin-bottom:10px;">
+          <span style="font-size:13px;">Répartition des dépenses</span>
+          <button data-toggle-card="showBreakdown" class="toggle-switch ${state.data.dashboardSettings.showBreakdown?'on':''}">${state.data.dashboardSettings.showBreakdown?'Visible':'Masquée'}</button>
+        </div>
+        <div class="row">
+          <span style="font-size:13px;">Revenus vs dépenses</span>
+          <button data-toggle-card="showTrend" class="toggle-switch ${state.data.dashboardSettings.showTrend?'on':''}">${state.data.dashboardSettings.showTrend?'Visible':'Masquée'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function accountBalance(accountId){
+  return state.data.transactions
+    .filter(t=>(t.accountId||'main')===accountId)
+    .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
+}
+
+let newAccountFormState = { color: COLORS.sage };
+function renderAccountsModal(){
+  const accounts = state.data.accounts || [];
+  const palette = [COLORS.gold, COLORS.sage, COLORS.violet, COLORS.teal, COLORS.rose, COLORS.coral, COLORS.amber, COLORS.slate];
+  return `
+    <div class="modal-overlay" data-close-accounts="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Mes comptes</div><button data-close-x-accounts="1">${icon('x',18)}</button></div>
+        ${accounts.map(a=>{
+          const bal = accountBalance(a.id);
+          return `
+            <div class="txrow">
+              <div class="tx-left"><div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div><div class="tx-note">${escapeHtml(a.name)}</div></div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span class="mono" style="font-size:13.5px; font-weight:600;">${fmt0(bal)}</span>
+                ${accounts.length>1 ? `<button class="tx-del" data-del-account="${a.id}">${icon('trash',14)}</button>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+        <div style="height:1px; background:var(--line); margin:16px 0;"></div>
+        <label class="field-label">Nouveau compte</label>
+        <input id="newAccountName" class="field-input" placeholder="Ex : Livret A, Carte pro...">
+        <div class="color-row">${palette.map(c=>`<button data-newaccount-color="${c}" class="color-swatch" style="background:${c}; outline:${newAccountFormState.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
+        <button class="btn-primary" style="width:100%; justify-content:center;" data-submit-account="1">${icon('plus',14)} Créer le compte</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAllocateModal(){
+  const goals = state.data.goals||[];
+  const isSave = state.allocateMode==='save';
+  return `
+    <div class="modal-overlay" data-close-allocate="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">${isSave ? 'Épargner' : 'Répartir'} le reste</div><button data-close-x-allocate="1">${icon('x',18)}</button></div>
+        <label class="field-label">Montant</label>
+        <input id="allocateAmountInput" type="number" class="field-input amount" value="${state.allocateAmount}">
+        ${isSave ? (goals.length===0 ? `
+          <div class="empty">Aucun objectif pour l'instant. Crée d'abord un objectif d'épargne dans l'onglet Objectifs.</div>
+        ` : `
+          <div style="font-size:12.5px; color:var(--paperDim); margin:4px 0 14px;">Choisis l'objectif qui recevra ce montant :</div>
+          ${goals.map(g=>`
+            <button data-allocate-to-goal="${g.id}" class="txrow" style="width:100%; text-align:left;">
+              <div class="tx-left"><div class="swatch" style="background:${g.color}22;"><span class="dot" style="background:${g.color};"></span></div><div class="tx-note">${escapeHtml(g.name)}</div></div>
+              ${icon('chevronR',14)}
+            </button>
+          `).join('')}
+        `) : `
+          <div style="font-size:12.5px; color:var(--paperDim); margin:4px 0 16px;">Ce montant sera réparti dans les limites de tes catégories, au prorata de leur budget actuel.</div>
+          <button class="submit-btn" data-confirm-distribute="1">Répartir</button>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function renderHiddenCatModal(){
+  const hidden = state.data.hiddenBudgetCategories||[];
+  return `
+    <div class="modal-overlay" data-close-hiddencat="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Catégories masquées</div><button data-close-x-hiddencat="1">${icon('x',18)}</button></div>
+        ${hidden.length===0 ? `<div class="empty">Aucune catégorie masquée</div>` : hidden.map(id=>{
+          const info = catInfo(id);
+          return `
+            <div class="txrow">
+              <div class="tx-left"><div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div><div class="tx-note">${escapeHtml(info.label)}</div></div>
+              <button class="btn-ghost" style="font-size:12px;" data-unhide-budgetcat="${id}">Réafficher</button>
+            </div>
+          `;
+        }).join('')}
       </div>
     </div>
   `;
@@ -870,8 +1041,12 @@ function renderDashboard(){
         }).join('')}
       </div>
     ` : ''}
+    ${state.data.dashboardSettings.showBreakdown ? `
     <div class="card">
-      <div class="section-title" style="font-size:15px; margin-bottom:12px;">Répartition des dépenses${usingEstimate ? ` <span style="color:var(--gold); font-size:12px; font-weight:500;">· estimée</span>` : ''}</div>
+      <div class="row" style="margin-bottom:12px;">
+        <div class="section-title" style="margin:0; font-size:15px;">Répartition des dépenses${usingEstimate ? ` <span style="color:var(--gold); font-size:12px; font-weight:500;">· estimée</span>` : ''}</div>
+        <button data-hide-card="showBreakdown" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
+      </div>
       ${catData.length===0 ? `<div class="empty">${usingEstimate ? "Pas assez d'historique pour estimer une répartition." : "Aucune dépense ce mois-ci"}</div>` : `
         <div class="scroll-cats">
           ${catData.map(c=>`
@@ -886,8 +1061,13 @@ function renderDashboard(){
         </div>
       `}
     </div>
+    ` : ''}
+    ${state.data.dashboardSettings.showTrend ? `
     <div class="card">
-      <div class="section-title" style="font-size:15px; margin-bottom:2px;">Revenus vs dépenses — 12 mois</div>
+      <div class="row" style="margin-bottom:2px;">
+        <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
+        <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
+      </div>
       <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Faites glisser pour voir plus de mois →</div>
       <div class="trend-scroll">
         <div class="chart-bars">
@@ -904,10 +1084,23 @@ function renderDashboard(){
       </div>
       <div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span></div>
     </div>
+    ` : ''}
+    ${(state.data.accounts||[]).length>1 ? `
+      <div class="card">
+        <div class="section-title" style="font-size:15px; margin-bottom:10px;">Mes comptes</div>
+        ${state.data.accounts.map(a=>`
+          <div class="txrow">
+            <div class="tx-left"><div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div><div class="tx-note">${escapeHtml(a.name)}</div></div>
+            <span class="mono" style="font-size:13.5px; font-weight:600;">${fmt0(accountBalance(a.id))}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
     ${renderForecastCard()}
     <div class="card">
       <div class="section-title" style="font-size:15px; margin-bottom:6px;">Dernières écritures</div>
-      ${tx.length===0 ? `<div class="empty">Rien à afficher pour ce mois</div>` : tx.slice(0,5).map(t=>txRow(t,false)).join('')}
+      ${tx.length===0 ? `<div class="empty">Rien à afficher pour ce mois</div>` : tx.slice(0, state.recentExpanded ? tx.length : 5).map(t=>txRow(t,false)).join('')}
+      ${tx.length>5 ? `<button data-toggle-recent="1" class="btn-ghost" style="width:100%; justify-content:center; margin-top:10px; font-size:12.5px;">${state.recentExpanded ? 'Voir moins' : `Voir les ${tx.length-5} autres`}</button>` : ''}
     </div>
   `;
 }
@@ -928,7 +1121,7 @@ function txRow(t, delBtn){
   return `
     <div class="txrow" ${!delBtn ? `data-view-tx="${t.id}" style="cursor:pointer;"` : ''}>
       <div class="tx-left">
-        <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
+        ${t.photo ? `<img src="${t.photo}" style="width:32px; height:32px; border-radius:9px; object-fit:cover; flex-shrink:0;">` : `<div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>`}
         <div style="min-width:0;">
           <div class="tx-note">${escapeHtml(t.note || info.label)}</div>
           <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
@@ -975,7 +1168,21 @@ function renderBudgets(){
   const tx = monthTx();
   const byCat = {};
   tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
-  const allExpenseCats = catsForType('expense');
+  const hidden = state.data.hiddenBudgetCategories||[];
+  const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id));
+  const hiddenCount = hidden.length;
+  const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
+
+  const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id));
+  const globalLimit = nonRecurringCats.reduce((s,c)=> s + (state.data.budgets[c.id]||0), 0);
+  const globalSpent = nonRecurringCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
+  const globalPct = globalLimit>0 ? Math.min(100, Math.round(globalSpent/globalLimit*100)) : 0;
+  const globalOver = globalLimit>0 && globalSpent>globalLimit;
+  const remaining = Math.max(0, globalLimit - globalSpent);
+  const gaugeSegments = nonRecurringCats
+    .map(c=>({ color:c.color, label:c.label, value: byCat[c.id]||0 }))
+    .filter(s=>s.value>0)
+    .sort((a,b)=>b.value-a.value);
 
   return `
     <div class="row" style="margin-bottom:14px;">
@@ -984,6 +1191,41 @@ function renderBudgets(){
     </div>
     <div class="row" style="margin-bottom:14px;">
       <button class="btn-ghost" data-open-managecat="1" style="font-size:12px; display:flex; align-items:center; gap:5px;">${icon('tag',13)} Gérer les catégories</button>
+      ${hiddenCount ? `<button class="btn-ghost" data-open-hiddencat="1" style="font-size:12px; display:flex; align-items:center; gap:5px;">${icon('x',12)} ${hiddenCount} masquée${hiddenCount>1?'s':''}</button>` : ''}
+    </div>
+    <div class="card">
+      ${globalLimit>0 ? `
+        <div class="row" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0; font-size:15px;">Jauge globale <span style="color:var(--paperDim); font-size:12px; font-weight:500;">· hors récurrences</span></div>
+          <span class="mono" style="font-size:13px; font-weight:600; color:${globalOver?'var(--coral)':'var(--paperDim)'}">${globalPct}%</span>
+        </div>
+        <div class="catbar-track" style="height:14px; display:flex; overflow:hidden;">
+          ${gaugeSegments.map(s=>`<div style="width:${Math.min(100,(s.value/globalLimit*100))}%; background:${s.color}; height:100%;" title="${escapeHtml(s.label)}"></div>`).join('')}
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:10px;">
+          ${gaugeSegments.map(s=>`<span style="font-size:11px; color:var(--paperDim); display:inline-flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:${s.color};display:inline-block;"></span>${s.label}</span>`).join('')}
+        </div>
+        <div class="budget-foot" style="margin-top:10px;">
+          <span class="mono" style="color:${globalOver?'var(--coral)':'var(--paperDim)'}">${fmt2(globalSpent)} dépensés</span>
+          <span>sur ${fmt0(globalLimit)}</span>
+        </div>
+        ${remaining>0 ? `
+          <div style="height:1px; background:var(--line); margin:12px 0;"></div>
+          <div class="row" style="margin-bottom:10px;">
+            <span style="font-size:12.5px; color:var(--paperDim);">Reste à dépenser</span>
+            <span class="mono" style="font-size:15px; font-weight:700; color:var(--mint);">${fmt0(remaining)}</span>
+          </div>
+          <div style="display:flex; gap:8px; margin-bottom:12px;">
+            <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:12.5px;">${icon('faceid',13)} Épargner</button>
+            <button data-allocate-remaining="distribute" data-remaining-amount="${remaining}" class="btn-ghost" style="flex:1; justify-content:center; font-size:12.5px;">${icon('tag',13)} Répartir</button>
+          </div>
+        ` : ''}
+        <div style="height:1px; background:var(--line); margin:12px 0;"></div>
+      ` : `<div class="empty" style="padding:12px 0 16px;">Toutes les catégories sont masquées.</div>`}
+      <div style="display:flex; gap:8px;">
+        <button data-hide-all-cats="1" class="btn-ghost" style="flex:1; justify-content:center; font-size:11.5px;">${icon('x',12)} Tout masquer</button>
+        <button data-show-all-cats="1" class="btn-ghost" style="flex:1; justify-content:center; font-size:11.5px;" ${hiddenCount===0?'disabled':''}>${icon('tag',12)} Tout afficher${hiddenCount?` (${hiddenCount})`:''}</button>
+      </div>
     </div>
     <div class="grid2">
       ${allExpenseCats.map(cat=>{
@@ -993,11 +1235,18 @@ function renderBudgets(){
         const over = limit>0 && spent>limit;
         const barColor = over ? COLORS.coral : (pct>=80 ? COLORS.amber : cat.color);
         const editing = budgetEditingId === cat.id;
+        const isRecurring = recurringCatIds.has(cat.id);
         return `
-          <div class="card" style="margin-bottom:0;">
+          <div class="card" style="margin-bottom:0; position:relative; padding-bottom:52px;">
             <div class="budget-head">
-              <div class="budget-cat"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}</div>
-              ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" value="${limit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper)">${fmt0(limit)}</span></button>`}
+              <div class="budget-cat">
+                <span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}
+                ${isRecurring ? `<span title="Liée à une récurrence" style="color:var(--paperDim); display:flex;">${icon('repeat',12)}</span>` : ''}
+              </div>
+              <div style="display:flex; align-items:center; gap:4px;">
+                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" value="${limit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper)">${fmt0(limit)}</span></button>`}
+                <button data-hide-budgetcat="${cat.id}" style="color:var(--paperDim); padding:4px;" title="Masquer cette catégorie">${icon('x',13)}</button>
+              </div>
             </div>
             <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>
             <div class="budget-foot"><span class="mono" style="color:${over?'var(--coral)':'var(--paperDim)'}">${fmt2(spent)} dépensés</span><span>${limit>0? pct+'%' : '—'}</span></div>
@@ -1005,6 +1254,7 @@ function renderBudgets(){
               ${[10,50].map(v=>`<button class="chip chip-add" data-budget-adjust="${cat.id}" data-amt="${v}">+${v}€</button>`).join('')}
               ${[10,50].map(v=>`<button class="chip chip-sub" data-budget-adjust="${cat.id}" data-amt="${-v}">−${v}€</button>`).join('')}
             </div>
+            <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" class="budget-fab" style="background:${cat.color};" title="Ajouter une dépense">${icon('plus',18)}</button>
           </div>
         `;
       }).join('')}
@@ -1062,7 +1312,44 @@ function renderGoals(){
 }
 
 /* ---------------- Modals ---------------- */
-let txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:new Date().toISOString().slice(0,10), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null };
+let txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:new Date().toISOString().slice(0,10), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId:'main' };
+let quickTxFormState = { category:'', type:'expense', date:'', amount:'', note:'', photo:null };
+function renderQuickTxModal(){
+  const info = catInfo(quickTxFormState.category);
+  return `
+    <div class="modal-overlay" style="z-index:150;" data-close-quicktx="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head">
+          <div class="modal-title ledger" style="display:flex; align-items:center; gap:8px;">
+            <span class="dot" style="width:10px; height:10px; border-radius:50%; background:${info.color}; display:inline-block;"></span>
+            ${escapeHtml(info.label)}
+          </div>
+          <button data-close-x-quicktx="1">${icon('x',18)}</button>
+        </div>
+        <label class="field-label">Montant</label>
+        <input id="quickTxAmount" type="number" class="field-input amount" placeholder="0,00 €" value="${quickTxFormState.amount || ''}">
+        <label class="field-label">Date</label>
+        <input id="quickTxDate" type="date" class="field-input mono" value="${quickTxFormState.date}">
+        <label class="field-label">Détails (facultatif)</label>
+        <input id="quickTxNote" class="field-input" placeholder="Ex : courses de la semaine" value="${escapeHtml(quickTxFormState.note || '')}">
+        <label class="field-label">Justificatif (facultatif)</label>
+        <div style="margin-bottom:16px;">
+          ${quickTxFormState.photo ? `
+            <div style="position:relative; display:inline-block;">
+              <img src="${quickTxFormState.photo}" style="width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line);">
+              <button data-remove-quickphoto="1" style="position:absolute; top:-7px; right:-7px; width:22px; height:22px; border-radius:50%; background:var(--coral); color:#fff; display:flex; align-items:center; justify-content:center;">${icon('x',12)}</button>
+            </div>
+          ` : `
+            <label for="quickTxPhotoInput" class="btn-ghost" style="display:inline-flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer;">${icon('tag',14)} Ajouter une photo</label>
+            <input id="quickTxPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;">
+          `}
+        </div>
+        <button class="submit-btn" data-submit-quicktx="1">Enregistrer</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderAddTxModal(){
   const cats = catsForType(txFormState.type);
   const isEditing = !!txFormState.editingId;
@@ -1089,8 +1376,30 @@ function renderAddTxModal(){
         </div>
         <label class="field-label">Note (facultatif)</label>
         <input id="txNote" class="field-input" placeholder="Ex : courses de la semaine" value="${escapeHtml(txFormState.note || '')}">
+        ${(state.data.accounts||[]).length>1 ? `
+          <label class="field-label">Compte</label>
+          <div class="cat-grid">
+            ${state.data.accounts.map(a=>`
+              <button data-tx-account="${a.id}" class="cat-opt" style="border-color:${(txFormState.accountId||'main')===a.id?a.color:'var(--line)'}; background:${(txFormState.accountId||'main')===a.id?a.color+'22':'var(--surfaceHi)'}">
+                <span class="dot" style="background:${a.color}"></span><span>${escapeHtml(a.name)}</span>
+              </button>
+            `).join('')}
+          </div>
+        ` : ''}
         <label class="field-label">Date</label>
         <input id="txDate" type="date" class="field-input mono" value="${txFormState.date}">
+        <label class="field-label">Justificatif (facultatif)</label>
+        <div style="margin-bottom:13px;">
+          ${txFormState.photo ? `
+            <div style="position:relative; display:inline-block;">
+              <img src="${txFormState.photo}" style="width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line);">
+              <button data-remove-photo="1" style="position:absolute; top:-7px; right:-7px; width:22px; height:22px; border-radius:50%; background:var(--coral); color:#fff; display:flex; align-items:center; justify-content:center;">${icon('x',12)}</button>
+            </div>
+          ` : `
+            <label for="txPhotoInput" class="btn-ghost" style="display:inline-flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer;">${icon('tag',14)} Ajouter une photo</label>
+            <input id="txPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;">
+          `}
+        </div>
         ${!isEditing ? `
           <div class="row" style="margin-bottom:10px;">
             <label class="field-label" style="margin:0;">Transaction récurrente</label>
@@ -1161,6 +1470,7 @@ function renderManageCategoriesModal(){
           <div class="txrow">
             <div class="tx-left"><div class="swatch" style="background:${c.color}22;"><span class="dot" style="background:${c.color};"></span></div><div class="tx-note">${escapeHtml(c.label)} <span style="color:var(--paperDim); font-size:11px;">(${c.type==='income'?'revenu':'dépense'})</span></div></div>
             <div style="display:flex; align-items:center; gap:4px;">
+              <button class="tx-del" style="color:var(--mint);" data-quick-tx-cat="${c.id}" data-quick-tx-type="${c.type}">${icon('plus',14)}</button>
               <button class="tx-del" style="color:var(--paperDim);" data-edit-cat="${c.id}">${icon('pencil',14)}</button>
               <button class="tx-del" data-del-cat="${c.id}">${icon('trash',14)}</button>
             </div>
@@ -1215,19 +1525,20 @@ function bindEvents(){
     const today = new Date();
     setState({ viewY: today.getFullYear(), viewM: today.getMonth() });
   }));
+  app.querySelectorAll('[data-toggle-recent]').forEach(el=>el.addEventListener('click', ()=>{ state.recentExpanded = !state.recentExpanded; rerender(); }));
   app.querySelectorAll('[data-goto-month]').forEach(el=>el.addEventListener('click', ()=>{
     const [y,m] = el.dataset.gotoMonth.split('-').map(Number);
     setState({ viewY: y, viewM: m });
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{
-    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null }; }
+    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: txFormState.accountId||'main' }; }
     if(el.dataset.open==='addGoal'){ goalFormState = { color: COLORS.sage }; }
     setState({modal: el.dataset.open});
   }));
   app.querySelectorAll('[data-quick-add]').forEach(el=>el.addEventListener('click', ()=>{
     const type = el.dataset.quickAdd;
-    txFormState = { type, category:(type==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null };
+    txFormState = { type, category:(type==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: txFormState.accountId||'main' };
     setState({modal:'addTx'});
     const amtEl = document.getElementById('txAmount');
     if(amtEl) amtEl.focus();
@@ -1292,6 +1603,7 @@ function bindEvents(){
     rerender();
   }));
   app.querySelectorAll('[data-tx-cat]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.category = el.dataset.txCat; rerender(); }));
+  app.querySelectorAll('[data-tx-account]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.accountId = el.dataset.txAccount; rerender(); }));
   app.querySelectorAll('[data-toggle-recurring]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.recurring = !txFormState.recurring; rerender(); }));
   app.querySelectorAll('[data-freq]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.frequency = el.dataset.freq; rerender(); }));
 
@@ -1302,18 +1614,20 @@ function bindEvents(){
     const note = document.getElementById('txNote').value;
     const date = document.getElementById('txDate').value;
     const isoDate = new Date(date).toISOString();
+    const photo = txFormState.photo || null;
+    const accountId = txFormState.accountId || 'main';
     if(txFormState.editingId){
       const editId = txFormState.editingId;
       mutateData(d=>{
         const t = d.transactions.find(t=>t.id===editId);
-        if(t){ t.type=txFormState.type; t.amount=amount; t.category=txFormState.category; t.note=note; t.date=isoDate; }
+        if(t){ t.type=txFormState.type; t.amount=amount; t.category=txFormState.category; t.note=note; t.date=isoDate; t.photo=photo; t.accountId=accountId; }
       });
       state.modal = null;
       showToast('Transaction modifiée');
       return;
     }
     mutateData(d=>{
-      d.transactions.unshift({ id:uid(), type:txFormState.type, amount, category:txFormState.category, note, date: isoDate });
+      d.transactions.unshift({ id:uid(), type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId });
       if(txFormState.recurring){
         d.recurring.push({ id:uid(), type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
       }
@@ -1321,6 +1635,17 @@ function bindEvents(){
     state.modal = null;
     showToast(txFormState.recurring ? 'Récurrence créée' : (txFormState.type==='income' ? 'Entrée ajoutée' : 'Dépense ajoutée'));
   });
+  const txPhotoInput = app.querySelector('#txPhotoInput');
+  if(txPhotoInput) txPhotoInput.addEventListener('change', async ()=>{
+    const file = txPhotoInput.files[0];
+    if(!file) return;
+    try{
+      const dataUrl = await compressImage(file, 500, 0.6);
+      txFormState.photo = dataUrl;
+      rerender();
+    }catch(e){ showToast("Impossible de charger l'image"); }
+  });
+  app.querySelectorAll('[data-remove-photo]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.photo = null; rerender(); }));
 
   app.querySelectorAll('[data-goal-color]').forEach(el=>el.addEventListener('click', ()=>{ goalFormState.color = el.dataset.goalColor; rerender(); }));
   const submitGoal = app.querySelector('[data-submit-goal]');
@@ -1396,6 +1721,181 @@ function bindEvents(){
   }));
   app.querySelectorAll('[data-close-security]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.securityModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-security]').forEach(el=>el.addEventListener('click', ()=>{ state.securityModalOpen=false; rerender(); }));
+
+  app.querySelectorAll('[data-open-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen = true; rerender(); }));
+  app.querySelectorAll('[data-close-backup]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.backupModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-export-backup]').forEach(el=>el.addEventListener('click', ()=>{
+    try{
+      const blob = new Blob([JSON.stringify(state.data, null, 2)], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const dateStr = new Date().toISOString().slice(0,10);
+      a.href = url; a.download = `solde-sauvegarde-${dateStr}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Sauvegarde téléchargée');
+    }catch(e){ showToast('Impossible de créer la sauvegarde'); }
+  }));
+  const backupImportInput = app.querySelector('#backupImportInput');
+  if(backupImportInput) backupImportInput.addEventListener('change', ()=>{
+    const file = backupImportInput.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      try{
+        const parsed = JSON.parse(e.target.result);
+        if(!parsed.transactions || !Array.isArray(parsed.transactions)) throw new Error('format invalide');
+        if(!parsed.customCategories) parsed.customCategories = [];
+        if(!parsed.recurring) parsed.recurring = [];
+        if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
+        if(!parsed.goals) parsed.goals = [];
+        if(!parsed.budgets) parsed.budgets = {};
+        if(!parsed.accounts || !parsed.accounts.length) parsed.accounts = [{ id:'main', name:'Compte principal', color: COLORS.gold }];
+        parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
+        state.data = parsed;
+        saveData(state.data);
+        state.backupModalOpen = false;
+        showToast('Sauvegarde restaurée');
+        rerender();
+      }catch(err){ showToast('Fichier de sauvegarde invalide'); }
+    };
+    reader.readAsText(file);
+  });
+
+  app.querySelectorAll('[data-hide-card]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.dataset.hideCard;
+    mutateData(d=>{ d.dashboardSettings[key] = false; });
+    showToast('Carte masquée — réactivable dans Réglages');
+  }));
+  app.querySelectorAll('[data-toggle-card]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.dataset.toggleCard;
+    mutateData(d=>{ d.dashboardSettings[key] = !d.dashboardSettings[key]; });
+  }));
+  app.querySelectorAll('[data-open-accounts]').forEach(el=>el.addEventListener('click', ()=>{
+    newAccountFormState = { color: COLORS.sage };
+    state.accountsModalOpen = true; rerender();
+  }));
+  app.querySelectorAll('[data-close-accounts]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.accountsModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-accounts]').forEach(el=>el.addEventListener('click', ()=>{ state.accountsModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-newaccount-color]').forEach(el=>el.addEventListener('click', ()=>{ newAccountFormState.color = el.dataset.newaccountColor; rerender(); }));
+  const submitAccount = app.querySelector('[data-submit-account]');
+  if(submitAccount) submitAccount.addEventListener('click', ()=>{
+    const name = document.getElementById('newAccountName').value.trim();
+    if(!name) return;
+    mutateData(d=>{ d.accounts.push({ id:uid(), name, color:newAccountFormState.color }); });
+    showToast('Compte créé');
+  });
+  app.querySelectorAll('[data-del-account]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.delAccount;
+    if((state.data.accounts||[]).length<=1) return;
+    mutateData(d=>{
+      d.accounts = d.accounts.filter(a=>a.id!==id);
+      const fallback = d.accounts[0].id;
+      d.transactions.forEach(t=>{ if(t.accountId===id) t.accountId = fallback; });
+    });
+    showToast('Compte supprimé, transactions transférées');
+  }));
+
+  app.querySelectorAll('[data-quick-tx-cat]').forEach(el=>el.addEventListener('click', ()=>{
+    const catId = el.dataset.quickTxCat;
+    const type = el.dataset.quickTxType;
+    quickTxFormState = { category:catId, type, date:defaultTxDate(), amount:'', note:'', photo:null };
+    state.manageCatOpen = false;
+    state.quickTxOpen = true;
+    rerender();
+    const amtEl = document.getElementById('quickTxAmount');
+    if(amtEl) amtEl.focus();
+  }));
+  app.querySelectorAll('[data-close-quicktx]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.quickTxOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-quicktx]').forEach(el=>el.addEventListener('click', ()=>{ state.quickTxOpen=false; rerender(); }));
+  const quickTxPhotoInput = app.querySelector('#quickTxPhotoInput');
+  if(quickTxPhotoInput) quickTxPhotoInput.addEventListener('change', async ()=>{
+    const file = quickTxPhotoInput.files[0];
+    if(!file) return;
+    try{
+      const dataUrl = await compressImage(file, 500, 0.6);
+      quickTxFormState.photo = dataUrl;
+      rerender();
+    }catch(e){ showToast("Impossible de charger l'image"); }
+  });
+  app.querySelectorAll('[data-remove-quickphoto]').forEach(el=>el.addEventListener('click', ()=>{ quickTxFormState.photo = null; rerender(); }));
+  const submitQuickTx = app.querySelector('[data-submit-quicktx]');
+  if(submitQuickTx) submitQuickTx.addEventListener('click', ()=>{
+    const amount = Number(document.getElementById('quickTxAmount').value);
+    if(!amount || amount<=0) return;
+    const date = document.getElementById('quickTxDate').value;
+    const note = document.getElementById('quickTxNote').value;
+    const isoDate = new Date(date).toISOString();
+    mutateData(d=>{
+      d.transactions.unshift({ id:uid(), type:quickTxFormState.type, amount, category:quickTxFormState.category, note, date: isoDate, photo:quickTxFormState.photo, accountId:'main' });
+    });
+    state.quickTxOpen = false;
+    showToast(quickTxFormState.type==='income' ? 'Entrée ajoutée' : 'Dépense ajoutée');
+  });
+
+  app.querySelectorAll('[data-hide-budgetcat]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.hideBudgetcat;
+    mutateData(d=>{ if(!d.hiddenBudgetCategories.includes(id)) d.hiddenBudgetCategories.push(id); });
+    showToast('Catégorie masquée');
+  }));
+  app.querySelectorAll('[data-hide-all-cats]').forEach(el=>el.addEventListener('click', ()=>{
+    const allIds = catsForType('expense').map(c=>c.id);
+    mutateData(d=>{ d.hiddenBudgetCategories = allIds; });
+    showToast('Toutes les catégories masquées');
+  }));
+  app.querySelectorAll('[data-show-all-cats]').forEach(el=>el.addEventListener('click', ()=>{
+    mutateData(d=>{ d.hiddenBudgetCategories = []; });
+    showToast('Toutes les catégories affichées');
+  }));
+  app.querySelectorAll('[data-open-hiddencat]').forEach(el=>el.addEventListener('click', ()=>{ state.hiddenCatModalOpen = true; rerender(); }));
+  app.querySelectorAll('[data-close-hiddencat]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.hiddenCatModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-hiddencat]').forEach(el=>el.addEventListener('click', ()=>{ state.hiddenCatModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-unhide-budgetcat]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.unhideBudgetcat;
+    mutateData(d=>{ d.hiddenBudgetCategories = d.hiddenBudgetCategories.filter(c=>c!==id); });
+  }));
+
+  app.querySelectorAll('[data-allocate-remaining]').forEach(el=>el.addEventListener('click', ()=>{
+    const mode = el.dataset.allocateRemaining;
+    const amount = Number(el.dataset.remainingAmount);
+    if(!amount || amount<=0) return;
+    state.allocateMode = mode;
+    state.allocateAmount = amount;
+    state.allocateModalOpen = true;
+    rerender();
+  }));
+  app.querySelectorAll('[data-close-allocate]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.allocateModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-allocate]').forEach(el=>el.addEventListener('click', ()=>{ state.allocateModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-allocate-to-goal]').forEach(el=>el.addEventListener('click', ()=>{
+    const goalId = el.dataset.allocateToGoal;
+    const input = document.getElementById('allocateAmountInput');
+    const amount = Number(input ? input.value : state.allocateAmount);
+    if(!amount || amount<=0) return;
+    state.allocateModalOpen = false;
+    goalContribute(goalId, amount);
+  }));
+  app.querySelectorAll('[data-confirm-distribute]').forEach(el=>el.addEventListener('click', ()=>{
+    const input = document.getElementById('allocateAmountInput');
+    const amount = Number(input ? input.value : state.allocateAmount);
+    if(!amount || amount<=0) return;
+    const tx = monthTx();
+    const byCat = {};
+    tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
+    const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
+    const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id));
+    const totalLimit = nonRecurringCats.reduce((s,c)=> s + (state.data.budgets[c.id]||0), 0);
+    if(totalLimit<=0) return;
+    mutateData(d=>{
+      nonRecurringCats.forEach(c=>{
+        const share = (state.data.budgets[c.id]||0) / totalLimit;
+        d.budgets[c.id] = Math.round((d.budgets[c.id]||0) + amount*share);
+      });
+    });
+    state.allocateModalOpen = false;
+    showToast(`${fmt0(amount)} répartis dans vos catégories`);
+  }));
+
   app.querySelectorAll('[data-setup-key]').forEach(el=>el.addEventListener('click', ()=>{ handleSetupDigit(el.dataset.setupKey); }));
   app.querySelectorAll('[data-setup-backspace]').forEach(el=>el.addEventListener('click', handleSetupBackspace));
   app.querySelectorAll('[data-enable-biometric]').forEach(el=>el.addEventListener('click', registerBiometric));
