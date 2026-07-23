@@ -1272,7 +1272,7 @@ function renderGoals(){
       <button class="btn-primary" data-open="addGoal">${icon('plus',14)} Nouvel objectif</button>
     </div>
     ${goals.length===0 ? `<div class="card empty">Aucun objectif pour l'instant. Créez-en un pour commencer à mettre de côté.</div>` : `
-      <div class="grid2">
+      <div class="budget-stack">
         ${goals.map(g=>{
           const pct = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
           const done = pct>=100;
