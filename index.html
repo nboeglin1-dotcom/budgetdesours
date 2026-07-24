@@ -814,14 +814,13 @@ function renderPinCatModal(){
 
 function renderAllocateModal(){
   const goals = state.data.goals||[];
-  const isSave = state.allocateMode==='save';
   return `
     <div class="modal-overlay" data-close-allocate="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
-        <div class="modal-head"><div class="modal-title ledger">${isSave ? 'Épargner' : 'Répartir'} le reste</div><button data-close-x-allocate="1">${icon('x',18)}</button></div>
+        <div class="modal-head"><div class="modal-title ledger">Épargner</div><button data-close-x-allocate="1">${icon('x',18)}</button></div>
         <label class="field-label">Montant</label>
         <input id="allocateAmountInput" type="number" class="field-input amount" value="${state.allocateAmount}">
-        ${isSave ? (goals.length===0 ? `
+        ${goals.length===0 ? `
           <div class="empty">Aucun objectif pour l'instant. Crée d'abord un objectif d'épargne dans l'onglet Objectifs.</div>
         ` : `
           <div style="font-size:12.5px; color:var(--paperDim); margin:4px 0 14px;">Choisis l'objectif qui recevra ce montant :</div>
@@ -831,9 +830,6 @@ function renderAllocateModal(){
               ${icon('chevronR',14)}
             </button>
           `).join('')}
-        `) : `
-          <div style="font-size:12.5px; color:var(--paperDim); margin:4px 0 16px;">Ce montant sera réparti dans les limites de tes catégories, au prorata de leur budget actuel.</div>
-          <button class="submit-btn" data-confirm-distribute="1">Répartir</button>
         `}
       </div>
     </div>
@@ -979,17 +975,14 @@ function renderForecastCard(){
         Basé sur votre moyenne des 3 derniers mois : ${fmt0(f.avgIncome)} de revenus, ${fmt0(f.avgExpense)} de dépenses
         (soit ${f.netAvg>=0?'+':'−'}${fmt0(Math.abs(f.netAvg))} par mois)${(state.data.recurring||[]).length ? ', en tenant compte de vos transactions récurrentes' : ''}.
       </div>
-      <div style="display:flex; flex-direction:column; gap:2px;">
-        ${f.points.map((p,i)=>`
-          <button data-goto-month="${p.y}-${p.m}" class="row" style="margin-bottom:0; padding:9px 0; width:100%; text-align:left; ${i<f.points.length-1?`border-bottom:1px solid var(--lineSoft);`:''}">
-            <span style="font-size:13px; color:var(--paperDim);">${p.label}</span>
-            <div style="display:flex; align-items:center; gap:10px; flex:1; max-width:60%;">
-              <div class="catbar-track" style="flex:1; margin:0;">
-                <div class="catbar-fill" style="width:${Math.min(100, Math.abs(p.value)/maxAbs*100)}%; background:${p.value<0?'var(--coral)':'var(--gold)'};"></div>
-              </div>
-              <span class="mono" style="font-size:13.5px; font-weight:600; color:${p.value<0?'var(--coral)':'var(--paper)'}; white-space:nowrap;">${fmt0(p.value)}</span>
-              ${icon('chevronR',14)}
+      <div class="scroll-cats">
+        ${f.points.map(p=>`
+          <button data-goto-month="${p.y}-${p.m}" class="catbar-row" style="width:100%; text-align:left; background:none; border:none; padding:0; display:block; cursor:pointer;">
+            <div class="row" style="margin-bottom:0;">
+              <span style="font-size:12.5px; color:var(--paperDim);">${p.label}</span>
+              <span class="mono" style="font-size:12.5px; color:${p.value<0?'var(--coral)':'var(--paper)'};">${fmt0(p.value)}</span>
             </div>
+            <div class="catbar-track"><div class="catbar-fill" style="width:${Math.min(100, Math.abs(p.value)/maxAbs*100)}%; background:${p.value<0?'var(--coral)':'var(--gold)'};"></div></div>
           </button>
         `).join('')}
       </div>
@@ -1296,18 +1289,14 @@ function renderGaugeCard(stats){
           `).join('')}
         </div>
         ${remaining>0 ? `
-          <div style="height:1px; background:var(--line); margin:14px 0;"></div>
-          <div class="row" style="margin-bottom:10px;">
+          <div class="row" style="margin-top:14px; margin-bottom:0;">
             <span style="font-size:12.5px; color:var(--paperDim);">Reste à dépenser</span>
             <span class="mono" style="font-size:16px; font-weight:700; color:var(--mint);">${fmt0(remaining)}</span>
           </div>
-          <div style="display:flex; gap:8px; margin-bottom:12px;">
-            <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:12.5px;">${icon('faceid',13)} Épargner</button>
-            <button data-allocate-remaining="distribute" data-remaining-amount="${remaining}" class="btn-ghost" style="flex:1; justify-content:center; font-size:12.5px;">${icon('tag',13)} Répartir</button>
-          </div>
         ` : ''}
-        <div style="height:1px; background:var(--line); margin:12px 0;"></div>
       ` : `<div class="empty" style="padding:12px 0 16px;">Toutes les catégories sont masquées.</div>`}
+      <div style="height:1px; background:var(--line); margin:16px 0;"></div>
+      <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="width:100%; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargner</button>
     </div>
   `;
 }
@@ -1977,10 +1966,7 @@ function bindEvents(){
   }));
 
   app.querySelectorAll('[data-allocate-remaining]').forEach(el=>el.addEventListener('click', ()=>{
-    const mode = el.dataset.allocateRemaining;
-    const amount = Number(el.dataset.remainingAmount);
-    if(!amount || amount<=0) return;
-    state.allocateMode = mode;
+    const amount = Number(el.dataset.remainingAmount) || 0;
     state.allocateAmount = amount;
     state.allocateModalOpen = true;
     rerender();
@@ -2009,27 +1995,6 @@ function bindEvents(){
     state.allocateModalOpen = false;
     goalContribute(goalId, amount);
   }));
-  app.querySelectorAll('[data-confirm-distribute]').forEach(el=>el.addEventListener('click', ()=>{
-    const input = document.getElementById('allocateAmountInput');
-    const amount = Number(input ? input.value : state.allocateAmount);
-    if(!amount || amount<=0) return;
-    const tx = monthTx();
-    const byCat = {};
-    tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
-    const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
-    const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id));
-    const totalLimit = nonRecurringCats.reduce((s,c)=> s + (state.data.budgets[c.id]||0), 0);
-    if(totalLimit<=0) return;
-    mutateData(d=>{
-      nonRecurringCats.forEach(c=>{
-        const share = (state.data.budgets[c.id]||0) / totalLimit;
-        d.budgets[c.id] = Math.round((d.budgets[c.id]||0) + amount*share);
-      });
-    });
-    state.allocateModalOpen = false;
-    showToast(`${fmt0(amount)} répartis dans vos catégories`);
-  }));
-
   app.querySelectorAll('[data-setup-key]').forEach(el=>el.addEventListener('click', ()=>{ handleSetupDigit(el.dataset.setupKey); }));
   app.querySelectorAll('[data-setup-backspace]').forEach(el=>el.addEventListener('click', handleSetupBackspace));
   app.querySelectorAll('[data-enable-biometric]').forEach(el=>el.addEventListener('click', registerBiometric));
