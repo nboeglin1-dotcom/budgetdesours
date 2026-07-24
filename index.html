@@ -125,6 +125,7 @@
   .chip{font-size:12px; font-weight:600; padding:7px 11px; border-radius:99px; border:1px solid var(--line);}
   .chip-add{background:rgba(79,191,139,.14); color:var(--mint); border-color:rgba(79,191,139,.4);}
   .chip-sub{background:rgba(232,102,77,.1); color:var(--coral); border-color:rgba(232,102,77,.35);}
+  .quick-add-pastille{width:28px; height:28px; border-radius:50%; color:#0E1626; font-weight:800; font-size:17px; line-height:1; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .goal-form input{flex:1; min-width:70px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:12px;}
   .goal-form button.add{background:var(--gold); color:var(--bg); font-weight:600; font-size:12px; padding:9px 12px; border-radius:10px;}
   .goal-form button.withdraw{background:transparent; border:1px solid var(--coral); color:var(--coral); font-weight:600; font-size:12px; padding:9px 12px; border-radius:10px;}
@@ -149,6 +150,9 @@
   .type-toggle{display:flex; gap:4px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:12px; padding:4px; margin-bottom:15px;}
   .type-toggle button{flex:1; padding:9px; border-radius:9px; font-size:12.5px; font-weight:500; color:var(--paperDim);}
   .cat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:7px; margin-bottom:13px;}
+  .select-wrap{position:relative;}
+  .select-wrap select{width:100%; padding-right:34px; cursor:pointer;}
+  .select-wrap .select-chevron{position:absolute; right:14px; top:50%; transform:translateY(-50%) rotate(90deg); color:var(--paperDim); pointer-events:none;}
   .cat-opt{display:flex; flex-direction:column; align-items:center; gap:5px; padding:9px 4px; border-radius:12px; border:1px solid var(--line); background:var(--surfaceHi);}
   .cat-opt .dot{width:15px; height:15px; border-radius:50%;}
   .cat-opt span{font-size:9.5px; color:var(--paperDim); text-align:center; line-height:1.15;}
@@ -221,6 +225,10 @@ function catInfo(id){
 function catsForType(type){
   const custom = (state.data.customCategories||[]).filter(c=>c.type===type);
   return [...(type==='expense'?EXPENSE_CATS:INCOME_CATS), ...custom];
+}
+function findCategoryIdByLabel(label, type){
+  const found = catsForType(type).find(c => c.label.toLowerCase() === label.toLowerCase());
+  return found ? found.id : null;
 }
 function freqLabel(f){ return {weekly:'Chaque semaine', monthly:'Chaque mois', yearly:'Chaque année'}[f] || f; }
 function addPeriod(date, freq){
@@ -302,6 +310,7 @@ function seedData(){
     security: { enabled:false, pin:null, useBiometric:false, credentialId:null },
     accounts: [{ id:'main', name:'Compte principal', color: COLORS.gold }],
     dashboardSettings: { showBreakdown:true, showTrend:true },
+    pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
   };
 }
@@ -316,6 +325,10 @@ function loadData(){
       if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
       if(!parsed.accounts || !parsed.accounts.length) parsed.accounts = [{ id:'main', name:'Compte principal', color: COLORS.gold }];
       if(!parsed.dashboardSettings) parsed.dashboardSettings = { showBreakdown:true, showTrend:true };
+      if(!parsed.pinnedCategories){
+        const essenceCustom = (parsed.customCategories||[]).find(c=>c.type==='expense' && c.label.toLowerCase()==='essence');
+        parsed.pinnedCategories = [essenceCustom ? essenceCustom.id : 'transport', 'loisirs', 'autres_d'];
+      }
       if(!parsed.hiddenBudgetCategories) parsed.hiddenBudgetCategories = [];
       parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
       return parsed;
@@ -344,6 +357,7 @@ let state = {
   accountsModalOpen: false,
   hiddenCatModalOpen: false,
   quickTxOpen: false,
+  pinCatModalOpen: false,
   allocateModalOpen: false,
   allocateAmount: 0,
   allocateMode: 'save',
@@ -355,6 +369,7 @@ let state = {
   pinConfirm: '',
   triedBiometricAuto: false,
   recentExpanded: false,
+  txAdvancedOpen: false,
   toast: null,
   txFilter: 'all',
   txQuery: '',
@@ -545,6 +560,7 @@ function openEditTx(id){
   const t = state.data.transactions.find(t=>t.id===id);
   if(!t) return;
   txFormState = { type:t.type, category:t.category, date:new Date(t.date).toISOString().slice(0,10), recurring:false, frequency:'monthly', note:t.note||'', amount:t.amount, editingId:t.id, photo:t.photo||null, accountId:t.accountId||'main' };
+  state.txAdvancedOpen = true;
   setState({modal:'addTx'});
 }
 
@@ -613,7 +629,6 @@ function renderApp(){
     ${renderTabbar()}
     <div class="quick-add">
       <button class="qa-income" data-quick-add="income" aria-label="Ajouter un revenu">+</button>
-      <button class="qa-expense" data-quick-add="expense" aria-label="Ajouter une dépense">−</button>
     </div>
     ${state.modal==='addTx' ? renderAddTxModal() : ''}
     ${state.modal==='addGoal' ? renderAddGoalModal() : ''}
@@ -624,6 +639,7 @@ function renderApp(){
     ${state.accountsModalOpen ? renderAccountsModal() : ''}
     ${state.hiddenCatModalOpen ? renderHiddenCatModal() : ''}
     ${state.allocateModalOpen ? renderAllocateModal() : ''}
+    ${state.pinCatModalOpen ? renderPinCatModal() : ''}
     ${state.quickTxOpen ? renderQuickTxModal() : ''}
     ${state.categoryModalOpen ? renderNewCategoryModal() : ''}
     ${state.toast ? `<div class="toast">${icon('spark',13)} ${state.toast.msg}${state.toast.undo ? `<button data-toast-undo="1" style="color:var(--gold); font-weight:700; margin-left:4px;">Annuler</button>` : ''}</div>` : ''}
@@ -637,7 +653,7 @@ function renderHeader(){
         <div class="brand">
           <div class="mark">S</div>
           <div>
-            <div class="brand-name ledger">Solde</div>
+            <div class="brand-name ledger">Solde des Ours</div>
             <div class="brand-sub">votre grand livre personnel</div>
           </div>
         </div>
@@ -773,6 +789,24 @@ function renderAccountsModal(){
         <input id="newAccountName" class="field-input" placeholder="Ex : Livret A, Carte pro...">
         <div class="color-row">${palette.map(c=>`<button data-newaccount-color="${c}" class="color-swatch" style="background:${c}; outline:${newAccountFormState.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
         <button class="btn-primary" style="width:100%; justify-content:center;" data-submit-account="1">${icon('plus',14)} Créer le compte</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderPinCatModal(){
+  const pinned = new Set(state.data.pinnedCategories||[]);
+  const available = catsForType('expense').filter(c=>!pinned.has(c.id));
+  return `
+    <div class="modal-overlay" data-close-pincat="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Épingler une catégorie</div><button data-close-x-pincat="1">${icon('x',18)}</button></div>
+        ${available.length===0 ? `<div class="empty">Toutes tes catégories sont déjà épinglées</div>` : available.map(c=>`
+          <button data-pin-cat="${c.id}" class="txrow" style="width:100%; text-align:left;">
+            <div class="tx-left"><div class="swatch" style="background:${c.color}22;"><span class="dot" style="background:${c.color};"></span></div><div class="tx-note">${escapeHtml(c.label)}</div></div>
+            ${icon('plus',14)}
+          </button>
+        `).join('')}
       </div>
     </div>
   `;
@@ -963,7 +997,7 @@ function renderForecastCard(){
   `;
 }
 
-function renderDashboard(){
+function computeMonthStats(){
   const today = new Date();
   const curIdx = monthIndex(today.getFullYear(), today.getMonth());
   const viewIdx = monthIndex(state.viewY, state.viewM);
@@ -980,6 +1014,41 @@ function renderDashboard(){
   const savings = income - expense;
   const rate = income>0 ? Math.max(0, Math.round(savings/income*100)) : 0;
   const bal = balanceForViewedMonth(f, state.viewY, state.viewM);
+  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate };
+}
+
+function renderBalanceContent(stats, showStats){
+  if(showStats===undefined) showStats = true;
+  const { bal, income, expense, rate, usingEstimate, f } = stats;
+  return `
+      <div class="row" style="margin-bottom:0;">
+        <div class="eyebrow" style="margin-bottom:0;">Solde total${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
+        ${showStats ? `<div class="eyebrow" style="margin-bottom:0;">Taux d'épargne</div>` : ''}
+      </div>
+      <div class="row" style="margin-bottom:0; align-items:baseline;">
+        <div class="balance-num mono" id="balanceNum">${fmt0(bal)}</div>
+        ${showStats ? `<span class="mono" style="color:var(--gold); font-size:22px; font-weight:600;">${rate}%</span>` : ''}
+      </div>
+      ${showStats ? (usingEstimate && !f.hasHistory ? `
+        <div style="font-size:12.5px; color:var(--paperDim); margin-top:14px; line-height:1.5;">
+          Pas encore assez d'historique (3 derniers mois) pour estimer les revenus et dépenses de ce mois. Le solde ci-dessus reste inchangé par rapport à aujourd'hui.
+        </div>
+      ` : `
+      <div style="display:flex; gap:22px; flex-wrap:wrap; margin-top:16px;">
+        <div><div class="stat-label">${icon('up',12)} Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}</div></div>
+        <div><div class="stat-label">${icon('down',12)} Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}</div></div>
+      </div>
+      `) : ''}
+  `;
+}
+
+function renderBalanceCard(stats){
+  return `<div class="card ruled">${renderBalanceContent(stats)}</div>`;
+}
+
+function renderDashboard(){
+  const stats = computeMonthStats();
+  const { isFuture, f, tx, income, expense, rate, bal, usingEstimate } = stats;
 
   const byCat = {};
   tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
@@ -1006,21 +1075,7 @@ function renderDashboard(){
       ${monthNav()}
       <button class="btn-primary" data-open="addTx">${icon('plus',14)} Ajouter</button>
     </div>
-    <div class="card ruled">
-      <div class="eyebrow">Solde total${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
-      <div class="balance-num mono" id="balanceNum">${fmt0(bal)}</div>
-      ${usingEstimate && !f.hasHistory ? `
-        <div style="font-size:12.5px; color:var(--paperDim); margin-top:14px; line-height:1.5;">
-          Pas encore assez d'historique (3 derniers mois) pour estimer les revenus et dépenses de ce mois. Le solde ci-dessus reste inchangé par rapport à aujourd'hui.
-        </div>
-      ` : `
-      <div style="display:flex; gap:22px; flex-wrap:wrap; margin-top:16px;">
-        <div><div class="stat-label">${icon('up',12)} Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}</div></div>
-        <div><div class="stat-label">${icon('down',12)} Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}</div></div>
-        <div><div class="stat-label">Taux d'épargne</div><div class="stat-val" style="color:var(--gold)">${rate}%</div></div>
-      </div>
-      `}
-    </div>
+    ${renderGaugeCard(stats)}
     ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'approchent ou dépassent':'approche ou dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
     ${upcoming.length ? `
       <div class="card" style="padding-top:14px; padding-bottom:6px;">
@@ -1099,9 +1154,31 @@ function renderDashboard(){
     ` : ''}
     ${renderForecastCard()}
     <div class="card">
-      <div class="section-title" style="font-size:15px; margin-bottom:6px;">Dernières écritures</div>
-      ${tx.length===0 ? `<div class="empty">Rien à afficher pour ce mois</div>` : tx.slice(0, state.recentExpanded ? tx.length : 5).map(t=>txRow(t,false)).join('')}
-      ${tx.length>5 ? `<button data-toggle-recent="1" class="btn-ghost" style="width:100%; justify-content:center; margin-top:10px; font-size:12.5px;">${state.recentExpanded ? 'Voir moins' : `Voir les ${tx.length-5} autres`}</button>` : ''}
+      <div class="row" style="margin-bottom:12px;">
+        <div class="section-title" style="margin:0; font-size:15px;">Aperçu catégories</div>
+        <button data-open-pincat="1" class="btn-ghost" style="padding:6px 10px; font-size:11.5px; display:flex; align-items:center; gap:4px;">${icon('plus',12)} Ajouter</button>
+      </div>
+      ${(state.data.pinnedCategories||[]).length===0 ? `<div class="empty">Aucune catégorie épinglée</div>` : (state.data.pinnedCategories||[]).map(catId=>{
+        const cat = catInfo(catId);
+        const limit = state.data.budgets[catId] || 0;
+        const spent = byCat[catId] || 0;
+        const pct = limit>0 ? Math.min(100, Math.round(spent/limit*100)) : 0;
+        const over = limit>0 && spent>limit;
+        const barColor = over ? COLORS.coral : (pct>=80 ? COLORS.amber : cat.color);
+        return `
+          <div style="margin-bottom:14px;">
+            <div class="row" style="margin-bottom:6px;">
+              <span style="font-size:13px; display:flex; align-items:center; gap:7px;"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}</span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button data-quick-tx-cat="${catId}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${cat.color};" title="Ajouter une dépense">+</button>
+                <button data-unpin-cat="${catId}" style="color:var(--paperDim); padding:2px;" title="Retirer">${icon('x',13)}</button>
+              </div>
+            </div>
+            <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>
+            <div class="budget-foot" style="margin-top:6px;"><span class="mono" style="color:${over?'var(--coral)':'var(--paperDim)'}">${fmt2(spent)}</span><span>${limit>0? fmt0(limit)+' limite' : 'pas de limite'}</span></div>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
 }
@@ -1165,12 +1242,11 @@ function renderTransactions(){
 
 /* ---------------- Budgets ---------------- */
 let budgetEditingId = null;
-function renderBudgets(){
+function renderGaugeCard(stats){
   const tx = monthTx();
   const byCat = {};
   tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
   const hidden = state.data.hiddenBudgetCategories||[];
-  const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id));
   const hiddenCount = hidden.length;
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
 
@@ -1181,40 +1257,49 @@ function renderBudgets(){
   const globalOver = globalLimit>0 && globalSpent>globalLimit;
   const remaining = Math.max(0, globalLimit - globalSpent);
   const gaugeSegments = nonRecurringCats
-    .map(c=>({ color:c.color, label:c.label, value: byCat[c.id]||0 }))
+    .map(c=>({ id:c.id, color:c.color, label:c.label, value: byCat[c.id]||0 }))
     .filter(s=>s.value>0)
     .sort((a,b)=>b.value-a.value);
 
   return `
-    <div class="row" style="margin-bottom:14px;">
-      <div class="section-title" style="margin:0;">Budgets par catégorie</div>
-      ${monthNav()}
-    </div>
-    <div class="row" style="margin-bottom:14px;">
-      <button class="btn-ghost" data-open-managecat="1" style="font-size:12px; display:flex; align-items:center; gap:5px;">${icon('tag',13)} Gérer les catégories</button>
-      ${hiddenCount ? `<button class="btn-ghost" data-open-hiddencat="1" style="font-size:12px; display:flex; align-items:center; gap:5px;">${icon('x',12)} ${hiddenCount} masquée${hiddenCount>1?'s':''}</button>` : ''}
-    </div>
     <div class="card">
+      ${renderBalanceContent(stats, true)}
+      <div style="height:1px; background:var(--line); margin:16px 0;"></div>
       ${globalLimit>0 ? `
-        <div class="row" style="margin-bottom:10px;">
-          <div class="section-title" style="margin:0; font-size:15px;">Jauge globale <span style="color:var(--paperDim); font-size:12px; font-weight:500;">· hors récurrences</span></div>
-          <span class="mono" style="font-size:13px; font-weight:600; color:${globalOver?'var(--coral)':'var(--paperDim)'}">${globalPct}%</span>
+        <div class="row" style="margin-bottom:14px; align-items:flex-start;">
+          <div>
+            <div class="section-title" style="margin:0 0 2px; font-size:15px;">Jauge globale</div>
+            <div style="color:var(--paperDim); font-size:11.5px;">hors récurrences</div>
+          </div>
+          <span class="mono" style="font-size:28px; font-weight:700; color:${globalOver?'var(--coral)':'var(--paper)'}; line-height:1;">${globalPct}<span style="font-size:16px; font-weight:500;">%</span></span>
         </div>
-        <div class="catbar-track" style="height:14px; display:flex; overflow:hidden;">
-          ${gaugeSegments.map(s=>`<div style="width:${Math.min(100,(s.value/globalLimit*100))}%; background:${s.color}; height:100%;" title="${escapeHtml(s.label)}"></div>`).join('')}
+        <div class="catbar-track" style="height:18px; display:flex; overflow:hidden; gap:2px; border:1px solid var(--line);">
+          ${gaugeSegments.map(s=>`<div style="width:${Math.min(100,(s.value/globalLimit*100))}%; background:${s.color}; height:100%;" title="${escapeHtml(s.label)}: ${fmt0(s.value)}"></div>`).join('')}
         </div>
-        <div style="display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:10px;">
-          ${gaugeSegments.map(s=>`<span style="font-size:11px; color:var(--paperDim); display:inline-flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:${s.color};display:inline-block;"></span>${s.label}</span>`).join('')}
+        <div class="budget-foot" style="margin-top:10px; font-size:13.5px;">
+          <span class="mono" style="color:${globalOver?'var(--coral)':'var(--paper)'}; font-weight:600;">${fmt2(globalSpent)}</span>
+          <span style="color:var(--paperDim);">sur <span class="mono" style="color:var(--paper);">${fmt0(globalLimit)}</span></span>
         </div>
-        <div class="budget-foot" style="margin-top:10px;">
-          <span class="mono" style="color:${globalOver?'var(--coral)':'var(--paperDim)'}">${fmt2(globalSpent)} dépensés</span>
-          <span>sur ${fmt0(globalLimit)}</span>
+        <div style="height:1px; background:var(--line); margin:14px 0;"></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px;">
+          ${gaugeSegments.map(s=>`
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+              <span style="font-size:12.5px; color:var(--paper); display:flex; align-items:center; gap:6px; min-width:0;">
+                <span style="width:8px;height:8px;border-radius:50%;background:${s.color};display:inline-block; flex-shrink:0;"></span>
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${s.label}</span>
+              </span>
+              <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                <span class="mono" style="font-size:12px; color:var(--paperDim);">${fmt0(s.value)}</span>
+                <button data-quick-tx-cat="${s.id}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${s.color};" title="Ajouter une dépense">+</button>
+              </span>
+            </div>
+          `).join('')}
         </div>
         ${remaining>0 ? `
-          <div style="height:1px; background:var(--line); margin:12px 0;"></div>
+          <div style="height:1px; background:var(--line); margin:14px 0;"></div>
           <div class="row" style="margin-bottom:10px;">
             <span style="font-size:12.5px; color:var(--paperDim);">Reste à dépenser</span>
-            <span class="mono" style="font-size:15px; font-weight:700; color:var(--mint);">${fmt0(remaining)}</span>
+            <span class="mono" style="font-size:16px; font-weight:700; color:var(--mint);">${fmt0(remaining)}</span>
           </div>
           <div style="display:flex; gap:8px; margin-bottom:12px;">
             <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:12.5px;">${icon('faceid',13)} Épargner</button>
@@ -1223,9 +1308,26 @@ function renderBudgets(){
         ` : ''}
         <div style="height:1px; background:var(--line); margin:12px 0;"></div>
       ` : `<div class="empty" style="padding:12px 0 16px;">Toutes les catégories sont masquées.</div>`}
-      <div style="display:flex; gap:8px;">
-        <button data-hide-all-cats="1" class="btn-ghost" style="flex:1; justify-content:center; font-size:11.5px;">${icon('x',12)} Tout masquer</button>
-        <button data-show-all-cats="1" class="btn-ghost" style="flex:1; justify-content:center; font-size:11.5px;" ${hiddenCount===0?'disabled':''}>${icon('tag',12)} Tout afficher${hiddenCount?` (${hiddenCount})`:''}</button>
+    </div>
+  `;
+}
+
+function renderBudgets(){
+  const tx = monthTx();
+  const byCat = {};
+  tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
+  const hidden = state.data.hiddenBudgetCategories||[];
+  const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id));
+  const hiddenCount = hidden.length;
+  const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
+
+  return `
+    <div class="row" style="margin-bottom:14px;">
+      <div class="section-title" style="margin:0;">Budgets par catégorie</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        ${monthNav()}
+        <button class="btn-ghost" data-open-managecat="1" style="padding:8px; display:flex;" title="Gérer les catégories">${icon('tag',15)}</button>
+        ${hiddenCount ? `<button class="btn-ghost" data-open-hiddencat="1" style="font-size:11px; padding:8px; display:flex; align-items:center; gap:4px;" title="Catégories masquées">${icon('x',12)} ${hiddenCount}</button>` : ''}
       </div>
     </div>
     <div class="budget-stack">
@@ -1245,7 +1347,7 @@ function renderBudgets(){
                 ${isRecurring ? `<span title="Liée à une récurrence" style="color:var(--paperDim); display:flex;">${icon('repeat',12)}</span>` : ''}
               </div>
               <div style="display:flex; align-items:center; gap:4px;">
-                <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" style="background:${cat.color}; color:#0E1626; font-weight:800; font-size:16px; line-height:1; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-right:8px;" title="Ajouter une dépense">+</button>
+                <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${cat.color}; margin-right:8px;" title="Ajouter une dépense">+</button>
                 ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" value="${limit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:16px;">${fmt0(limit)}</span></button>`}
                 <button data-hide-budgetcat="${cat.id}" style="color:var(--paperDim); padding:4px;" title="Masquer cette catégorie">${icon('x',13)}</button>
               </div>
@@ -1354,6 +1456,7 @@ function renderQuickTxModal(){
 function renderAddTxModal(){
   const cats = catsForType(txFormState.type);
   const isEditing = !!txFormState.editingId;
+  const advOpen = state.txAdvancedOpen;
   return `
     <div class="modal-overlay" data-close-modal="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
@@ -1365,51 +1468,55 @@ function renderAddTxModal(){
         <label class="field-label">Montant</label>
         <input id="txAmount" type="number" class="field-input amount" placeholder="0,00 €" value="${txFormState.amount || ''}">
         <label class="field-label">Catégorie</label>
-        <div class="cat-grid">
-          ${cats.map(c=>`
-            <button data-tx-cat="${c.id}" class="cat-opt" style="border-color:${txFormState.category===c.id?c.color:'var(--line)'}; background:${txFormState.category===c.id?c.color+'22':'var(--surfaceHi)'}">
-              <span class="dot" style="background:${c.color}"></span><span>${c.label}</span>
-            </button>
-          `).join('')}
-          <button data-open-newcat="1" class="cat-opt" style="border-style:dashed;">
-            <span style="font-size:16px; line-height:1;">+</span><span>Nouvelle</span>
-          </button>
+        <div class="select-wrap" style="margin-bottom:13px;">
+          <select id="txCategorySelect" class="field-input" style="margin-bottom:0; appearance:none; -webkit-appearance:none;">
+            ${cats.map(c=>`<option value="${c.id}" ${txFormState.category===c.id?'selected':''}>${c.label}</option>`).join('')}
+            <option value="__new__">+ Nouvelle catégorie…</option>
+          </select>
+          <span class="select-chevron">${icon('chevronR',13)}</span>
         </div>
-        <label class="field-label">Note (facultatif)</label>
-        <input id="txNote" class="field-input" placeholder="Ex : courses de la semaine" value="${escapeHtml(txFormState.note || '')}">
-        ${(state.data.accounts||[]).length>1 ? `
-          <label class="field-label">Compte</label>
-          <div class="cat-grid">
-            ${state.data.accounts.map(a=>`
-              <button data-tx-account="${a.id}" class="cat-opt" style="border-color:${(txFormState.accountId||'main')===a.id?a.color:'var(--line)'}; background:${(txFormState.accountId||'main')===a.id?a.color+'22':'var(--surfaceHi)'}">
-                <span class="dot" style="background:${a.color}"></span><span>${escapeHtml(a.name)}</span>
-              </button>
-            `).join('')}
-          </div>
-        ` : ''}
         <label class="field-label">Date</label>
         <input id="txDate" type="date" class="field-input mono" value="${txFormState.date}">
-        <label class="field-label">Justificatif (facultatif)</label>
-        <div style="margin-bottom:13px;">
-          ${txFormState.photo ? `
-            <div style="position:relative; display:inline-block;">
-              <img src="${txFormState.photo}" style="width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line);">
-              <button data-remove-photo="1" style="position:absolute; top:-7px; right:-7px; width:22px; height:22px; border-radius:50%; background:var(--coral); color:#fff; display:flex; align-items:center; justify-content:center;">${icon('x',12)}</button>
+
+        <button data-toggle-tx-advanced="1" class="btn-ghost" style="width:100%; justify-content:center; margin-bottom:${advOpen?'14px':'4px'};">
+          ${advOpen ? 'Masquer les options avancées' : 'Plus d’options (note, photo, compte, récurrence)'} ${icon(advOpen?'chevronL':'chevronR',13)}
+        </button>
+
+        ${advOpen ? `
+          <label class="field-label">Note (facultatif)</label>
+          <input id="txNote" class="field-input" placeholder="Ex : courses de la semaine" value="${escapeHtml(txFormState.note || '')}">
+          ${(state.data.accounts||[]).length>1 ? `
+            <label class="field-label">Compte</label>
+            <div class="cat-grid">
+              ${state.data.accounts.map(a=>`
+                <button data-tx-account="${a.id}" class="cat-opt" style="border-color:${(txFormState.accountId||'main')===a.id?a.color:'var(--line)'}; background:${(txFormState.accountId||'main')===a.id?a.color+'22':'var(--surfaceHi)'}">
+                  <span class="dot" style="background:${a.color}"></span><span>${escapeHtml(a.name)}</span>
+                </button>
+              `).join('')}
             </div>
-          ` : `
-            <label for="txPhotoInput" class="btn-ghost" style="display:inline-flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer;">${icon('tag',14)} Ajouter une photo</label>
-            <input id="txPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;">
-          `}
-        </div>
-        ${!isEditing ? `
-          <div class="row" style="margin-bottom:10px;">
-            <label class="field-label" style="margin:0;">Transaction récurrente</label>
-            <button data-toggle-recurring="1" class="toggle-switch ${txFormState.recurring?'on':''}">${txFormState.recurring?'Activée':'Désactivée'}</button>
+          ` : ''}
+          <label class="field-label">Justificatif (facultatif)</label>
+          <div style="margin-bottom:13px;">
+            ${txFormState.photo ? `
+              <div style="position:relative; display:inline-block;">
+                <img src="${txFormState.photo}" style="width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line);">
+                <button data-remove-photo="1" style="position:absolute; top:-7px; right:-7px; width:22px; height:22px; border-radius:50%; background:var(--coral); color:#fff; display:flex; align-items:center; justify-content:center;">${icon('x',12)}</button>
+              </div>
+            ` : `
+              <label for="txPhotoInput" class="btn-ghost" style="display:inline-flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer;">${icon('tag',14)} Ajouter une photo</label>
+              <input id="txPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;">
+            `}
           </div>
-          ${txFormState.recurring ? `
-            <div class="freq-row">
-              ${['weekly','monthly','yearly'].map(f=>`<button data-freq="${f}" class="${txFormState.frequency===f?'active':''}">${freqLabel(f)}</button>`).join('')}
+          ${!isEditing ? `
+            <div class="row" style="margin-bottom:10px;">
+              <label class="field-label" style="margin:0;">Transaction récurrente</label>
+              <button data-toggle-recurring="1" class="toggle-switch ${txFormState.recurring?'on':''}">${txFormState.recurring?'Activée':'Désactivée'}</button>
             </div>
+            ${txFormState.recurring ? `
+              <div class="freq-row">
+                ${['weekly','monthly','yearly'].map(f=>`<button data-freq="${f}" class="${txFormState.frequency===f?'active':''}">${freqLabel(f)}</button>`).join('')}
+              </div>
+            ` : ''}
           ` : ''}
         ` : ''}
         <button class="submit-btn" data-submit-tx="1">${isEditing ? 'Enregistrer les modifications' : 'Enregistrer'}</button>
@@ -1533,13 +1640,14 @@ function bindEvents(){
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{
-    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: txFormState.accountId||'main' }; }
+    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: txFormState.accountId||'main' }; state.txAdvancedOpen = false; }
     if(el.dataset.open==='addGoal'){ goalFormState = { color: COLORS.sage }; }
     setState({modal: el.dataset.open});
   }));
   app.querySelectorAll('[data-quick-add]').forEach(el=>el.addEventListener('click', ()=>{
     const type = el.dataset.quickAdd;
     txFormState = { type, category:(type==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: txFormState.accountId||'main' };
+    state.txAdvancedOpen = false;
     setState({modal:'addTx'});
     const amtEl = document.getElementById('txAmount');
     if(amtEl) amtEl.focus();
@@ -1603,8 +1711,18 @@ function bindEvents(){
     txFormState.category = (el.dataset.txType==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id;
     rerender();
   }));
-  app.querySelectorAll('[data-tx-cat]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.category = el.dataset.txCat; rerender(); }));
+  const txCategorySelect = app.querySelector('#txCategorySelect');
+  if(txCategorySelect) txCategorySelect.addEventListener('change', ()=>{
+    if(txCategorySelect.value==='__new__'){
+      newCatFormState = { color: COLORS.slate, type: txFormState.type, label:'', editingId:null };
+      state.categoryModalOpen = true;
+      rerender();
+      return;
+    }
+    txFormState.category = txCategorySelect.value;
+  });
   app.querySelectorAll('[data-tx-account]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.accountId = el.dataset.txAccount; rerender(); }));
+  app.querySelectorAll('[data-toggle-tx-advanced]').forEach(el=>el.addEventListener('click', ()=>{ state.txAdvancedOpen = !state.txAdvancedOpen; rerender(); }));
   app.querySelectorAll('[data-toggle-recurring]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.recurring = !txFormState.recurring; rerender(); }));
   app.querySelectorAll('[data-freq]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.frequency = el.dataset.freq; rerender(); }));
 
@@ -1612,7 +1730,8 @@ function bindEvents(){
   if(submitTx) submitTx.addEventListener('click', ()=>{
     const amount = Number(document.getElementById('txAmount').value);
     if(!amount || amount<=0) return;
-    const note = document.getElementById('txNote').value;
+    const noteEl = document.getElementById('txNote');
+    const note = noteEl ? noteEl.value : (txFormState.note || '');
     const date = document.getElementById('txDate').value;
     const isoDate = new Date(date).toISOString();
     const photo = txFormState.photo || null;
@@ -1868,6 +1987,20 @@ function bindEvents(){
   }));
   app.querySelectorAll('[data-close-allocate]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.allocateModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-allocate]').forEach(el=>el.addEventListener('click', ()=>{ state.allocateModalOpen=false; rerender(); }));
+
+  app.querySelectorAll('[data-open-pincat]').forEach(el=>el.addEventListener('click', ()=>{ state.pinCatModalOpen = true; rerender(); }));
+  app.querySelectorAll('[data-close-pincat]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.pinCatModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-pincat]').forEach(el=>el.addEventListener('click', ()=>{ state.pinCatModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-pin-cat]').forEach(el=>el.addEventListener('click', ()=>{
+    const catId = el.dataset.pinCat;
+    mutateData(d=>{ if(!d.pinnedCategories.includes(catId)) d.pinnedCategories.push(catId); });
+    state.pinCatModalOpen = false;
+    showToast('Catégorie épinglée');
+  }));
+  app.querySelectorAll('[data-unpin-cat]').forEach(el=>el.addEventListener('click', ()=>{
+    const catId = el.dataset.unpinCat;
+    mutateData(d=>{ d.pinnedCategories = d.pinnedCategories.filter(id=>id!==catId); });
+  }));
   app.querySelectorAll('[data-allocate-to-goal]').forEach(el=>el.addEventListener('click', ()=>{
     const goalId = el.dataset.allocateToGoal;
     const input = document.getElementById('allocateAmountInput');
