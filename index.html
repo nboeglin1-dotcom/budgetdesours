@@ -309,7 +309,8 @@ function seedData(){
     recurring:[],
     security: { enabled:false, pin:null, useBiometric:false, credentialId:null },
     accounts: [{ id:'main', name:'Compte principal', color: COLORS.gold }],
-    dashboardSettings: { showBreakdown:true, showTrend:true },
+    dashboardSettings: { showBreakdown:true, showTrend:true, showEnvelopesGauge:true, showForecast:true, showPinnedEnvelopes:true },
+    gaugeAlwaysShow: ['autres_d'],
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
   };
@@ -325,6 +326,13 @@ function loadData(){
       if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
       if(!parsed.accounts || !parsed.accounts.length) parsed.accounts = [{ id:'main', name:'Compte principal', color: COLORS.gold }];
       if(!parsed.dashboardSettings) parsed.dashboardSettings = { showBreakdown:true, showTrend:true };
+      if(parsed.dashboardSettings.showEnvelopesGauge===undefined) parsed.dashboardSettings.showEnvelopesGauge = true;
+      if(parsed.dashboardSettings.showForecast===undefined) parsed.dashboardSettings.showForecast = true;
+      if(parsed.dashboardSettings.showPinnedEnvelopes===undefined) parsed.dashboardSettings.showPinnedEnvelopes = true;
+      if(!parsed.gaugeAlwaysShow){
+        const essenceCustom = (parsed.customCategories||[]).find(c=>c.type==='expense' && c.label.toLowerCase()==='essence');
+        parsed.gaugeAlwaysShow = ['autres_d', essenceCustom ? essenceCustom.id : null].filter(Boolean);
+      }
       if(!parsed.pinnedCategories){
         const essenceCustom = (parsed.customCategories||[]).find(c=>c.type==='expense' && c.label.toLowerCase()==='essence');
         parsed.pinnedCategories = [essenceCustom ? essenceCustom.id : 'transport', 'loisirs', 'autres_d'];
@@ -358,6 +366,7 @@ let state = {
   hiddenCatModalOpen: false,
   quickTxOpen: false,
   pinCatModalOpen: false,
+  gaugeCatModalOpen: false,
   allocateModalOpen: false,
   allocateAmount: 0,
   allocateMode: 'save',
@@ -637,6 +646,7 @@ function renderApp(){
     ${state.hiddenCatModalOpen ? renderHiddenCatModal() : ''}
     ${state.allocateModalOpen ? renderAllocateModal() : ''}
     ${state.pinCatModalOpen ? renderPinCatModal() : ''}
+    ${state.gaugeCatModalOpen ? renderGaugeCatModal() : ''}
     ${state.quickTxOpen ? renderQuickTxModal() : ''}
     ${state.categoryModalOpen ? renderNewCategoryModal() : ''}
     ${state.toast ? `<div class="toast">${icon('spark',13)} ${state.toast.msg}${state.toast.undo ? `<button data-toast-undo="1" style="color:var(--gold); font-weight:700; margin-left:4px;">Annuler</button>` : ''}</div>` : ''}
@@ -750,6 +760,14 @@ function renderBackupModal(){
           <span style="font-size:13px;">Revenus vs dépenses</span>
           <button data-toggle-card="showTrend" class="toggle-switch ${state.data.dashboardSettings.showTrend?'on':''}">${state.data.dashboardSettings.showTrend?'Visible':'Masquée'}</button>
         </div>
+        <div class="row" style="margin-top:10px;">
+          <span style="font-size:13px;">Prévisionnel</span>
+          <button data-toggle-card="showForecast" class="toggle-switch ${state.data.dashboardSettings.showForecast?'on':''}">${state.data.dashboardSettings.showForecast?'Visible':'Masquée'}</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <span style="font-size:13px;">Mes enveloppes</span>
+          <button data-toggle-card="showPinnedEnvelopes" class="toggle-switch ${state.data.dashboardSettings.showPinnedEnvelopes?'on':''}">${state.data.dashboardSettings.showPinnedEnvelopes?'Visible':'Masquée'}</button>
+        </div>
       </div>
     </div>
   `;
@@ -800,6 +818,25 @@ function renderPinCatModal(){
         <div class="modal-head"><div class="modal-title ledger">Épingler une catégorie</div><button data-close-x-pincat="1">${icon('x',18)}</button></div>
         ${available.length===0 ? `<div class="empty">Toutes tes catégories sont déjà épinglées</div>` : available.map(c=>`
           <button data-pin-cat="${c.id}" class="txrow" style="width:100%; text-align:left;">
+            <div class="tx-left"><div class="swatch" style="background:${c.color}22;"><span class="dot" style="background:${c.color};"></span></div><div class="tx-note">${escapeHtml(c.label)}</div></div>
+            ${icon('plus',14)}
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderGaugeCatModal(){
+  const shown = new Set(state.data.gaugeAlwaysShow||[]);
+  const available = catsForType('expense').filter(c=>!shown.has(c.id));
+  return `
+    <div class="modal-overlay" data-close-gaugecat="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Toujours afficher</div><button data-close-x-gaugecat="1">${icon('x',18)}</button></div>
+        <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:14px;">Ces catégories apparaîtront dans "Total de mes enveloppes" même sans dépense ce mois-ci.</div>
+        ${available.length===0 ? `<div class="empty">Toutes tes catégories sont déjà toujours affichées</div>` : available.map(c=>`
+          <button data-gaugecat-add="${c.id}" class="txrow" style="width:100%; text-align:left;">
             <div class="tx-left"><div class="swatch" style="background:${c.color}22;"><span class="dot" style="background:${c.color};"></span></div><div class="tx-note">${escapeHtml(c.label)}</div></div>
             ${icon('plus',14)}
           </button>
@@ -963,11 +1000,15 @@ function balanceForViewedMonth(f, viewY, viewM){
 }
 
 function renderForecastCard(){
+  if(!state.data.dashboardSettings.showForecast) return '';
   const f = computeForecast();
   const maxAbs = Math.max(1, f.startBalance, ...f.points.map(p=>Math.abs(p.value)));
   return `
     <div class="card">
-      <div class="section-title" style="font-size:15px; margin-bottom:14px;">Prévisionnel</div>
+      <div class="row" style="margin-bottom:14px;">
+        <div class="section-title" style="margin:0; font-size:15px;">Prévisionnel</div>
+        <button data-hide-card="showForecast" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
+      </div>
       <div class="scroll-cats">
         ${f.points.map(p=>`
           <button data-goto-month="${p.y}-${p.m}" class="catbar-row" style="width:100%; text-align:left; background:none; border:none; padding:0; display:block; cursor:pointer;">
@@ -1153,10 +1194,14 @@ function renderDashboard(){
         `).join('')}
       </div>
     ` : ''}
+    ${state.data.dashboardSettings.showPinnedEnvelopes ? `
     <div class="card">
       <div class="row" style="margin-bottom:12px;">
         <div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div>
-        <button data-open-pincat="1" class="btn-ghost" style="padding:6px 10px; font-size:11.5px; display:flex; align-items:center; gap:4px;">${icon('plus',12)} Ajouter</button>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <button data-open-pincat="1" class="btn-ghost" style="padding:6px 10px; font-size:11.5px; display:flex; align-items:center; gap:4px;">${icon('plus',12)} Ajouter</button>
+          <button data-hide-card="showPinnedEnvelopes" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
+        </div>
       </div>
       ${(state.data.pinnedCategories||[]).length===0 ? `<div class="empty">Aucune catégorie épinglée</div>` : (state.data.pinnedCategories||[]).map(catId=>{
         const cat = catInfo(catId);
@@ -1180,6 +1225,7 @@ function renderDashboard(){
         `;
       }).join('')}
     </div>
+    ` : ''}
     ${renderForecastCard()}
   `;
 }
@@ -1257,9 +1303,10 @@ function renderGaugeCard(stats){
   const globalPct = globalLimit>0 ? Math.min(100, Math.round(globalSpent/globalLimit*100)) : 0;
   const globalOver = globalLimit>0 && globalSpent>globalLimit;
   const remaining = Math.max(0, globalLimit - globalSpent);
+  const alwaysShow = new Set(state.data.gaugeAlwaysShow||[]);
   const gaugeSegments = nonRecurringCats
     .map(c=>({ id:c.id, color:c.color, label:c.label, value: byCat[c.id]||0 }))
-    .filter(s=>s.value>0)
+    .filter(s=>s.value>0 || alwaysShow.has(s.id))
     .sort((a,b)=>b.value-a.value);
 
   return `
@@ -1269,10 +1316,12 @@ function renderGaugeCard(stats){
       ${globalLimit>0 ? `
         <div class="row" style="margin-bottom:14px; align-items:flex-start;">
           <div>
-            <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Mes enveloppes</div>
-            
+            <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Total de mes enveloppes</div>
           </div>
-          <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${globalPct}%</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${globalPct}%</span>
+            <button data-open-gaugecat="1" class="btn-ghost" style="padding:4px 7px; font-size:10.5px;" title="Ajouter une catégorie">${icon('plus',10)}</button>
+          </div>
         </div>
         <div class="catbar-track" style="height:18px; display:flex; overflow:hidden; gap:2px; border:1px solid var(--line);">
           ${gaugeSegments.map(s=>`<div style="width:${Math.min(100,(s.value/globalLimit*100))}%; background:${s.color}; height:100%;" title="${escapeHtml(s.label)}: ${fmt0(s.value)}"></div>`).join('')}
@@ -1994,6 +2043,16 @@ function bindEvents(){
   app.querySelectorAll('[data-unpin-cat]').forEach(el=>el.addEventListener('click', ()=>{
     const catId = el.dataset.unpinCat;
     mutateData(d=>{ d.pinnedCategories = d.pinnedCategories.filter(id=>id!==catId); });
+  }));
+
+  app.querySelectorAll('[data-open-gaugecat]').forEach(el=>el.addEventListener('click', ()=>{ state.gaugeCatModalOpen = true; rerender(); }));
+  app.querySelectorAll('[data-close-gaugecat]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.gaugeCatModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-gaugecat]').forEach(el=>el.addEventListener('click', ()=>{ state.gaugeCatModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-gaugecat-add]').forEach(el=>el.addEventListener('click', ()=>{
+    const catId = el.dataset.gaugecatAdd;
+    mutateData(d=>{ if(!d.gaugeAlwaysShow.includes(catId)) d.gaugeAlwaysShow.push(catId); });
+    state.gaugeCatModalOpen = false;
+    showToast('Catégorie toujours affichée');
   }));
   app.querySelectorAll('[data-allocate-to-goal]').forEach(el=>el.addEventListener('click', ()=>{
     const goalId = el.dataset.allocateToGoal;
