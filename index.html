@@ -828,13 +828,26 @@ function renderPinCatModal(){
 }
 
 function renderGaugeCatModal(){
-  const shown = new Set(state.data.gaugeAlwaysShow||[]);
-  const available = catsForType('expense').filter(c=>!shown.has(c.id));
+  const shownIds = state.data.gaugeAlwaysShow||[];
+  const shownSet = new Set(shownIds);
+  const shownCats = shownIds.map(id=>catInfo(id));
+  const available = catsForType('expense').filter(c=>!shownSet.has(c.id));
   return `
     <div class="modal-overlay" data-close-gaugecat="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
         <div class="modal-head"><div class="modal-title ledger">Toujours afficher</div><button data-close-x-gaugecat="1">${icon('x',18)}</button></div>
-        <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:14px;">Ces catégories apparaîtront dans "Total de mes enveloppes" même sans dépense ce mois-ci.</div>
+        <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:14px;">Ces catégories apparaissent dans "Total de mes enveloppes" même sans dépense ce mois-ci.</div>
+        ${shownCats.length>0 ? `
+          <div class="field-label" style="margin-bottom:8px;">Actuellement toujours affichées</div>
+          ${shownCats.map(c=>`
+            <div class="txrow">
+              <div class="tx-left"><div class="swatch" style="background:${c.color}22;"><span class="dot" style="background:${c.color};"></span></div><div class="tx-note">${escapeHtml(c.label)}</div></div>
+              <button class="tx-del" data-gaugecat-remove="${c.id}">${icon('trash',14)}</button>
+            </div>
+          `).join('')}
+          <div style="height:1px; background:var(--line); margin:16px 0;"></div>
+        ` : ''}
+        <div class="field-label" style="margin-bottom:8px;">Ajouter</div>
         ${available.length===0 ? `<div class="empty">Toutes tes catégories sont déjà toujours affichées</div>` : available.map(c=>`
           <button data-gaugecat-add="${c.id}" class="txrow" style="width:100%; text-align:left;">
             <div class="tx-left"><div class="swatch" style="background:${c.color}22;"><span class="dot" style="background:${c.color};"></span></div><div class="tx-note">${escapeHtml(c.label)}</div></div>
@@ -1320,7 +1333,7 @@ function renderGaugeCard(stats){
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
             <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${globalPct}%</span>
-            <button data-open-gaugecat="1" class="btn-ghost" style="padding:4px 7px; font-size:10.5px;" title="Ajouter une catégorie">${icon('plus',10)}</button>
+            <button data-open-gaugecat="1" class="btn-ghost" style="padding:9px 11px; font-size:13px; min-width:34px; min-height:34px; display:flex; align-items:center; justify-content:center;" title="Ajouter une catégorie">${icon('plus',14)}</button>
           </div>
         </div>
         <div class="catbar-track" style="height:18px; display:flex; overflow:hidden; gap:2px; border:1px solid var(--line);">
@@ -2051,8 +2064,12 @@ function bindEvents(){
   app.querySelectorAll('[data-gaugecat-add]').forEach(el=>el.addEventListener('click', ()=>{
     const catId = el.dataset.gaugecatAdd;
     mutateData(d=>{ if(!d.gaugeAlwaysShow.includes(catId)) d.gaugeAlwaysShow.push(catId); });
-    state.gaugeCatModalOpen = false;
     showToast('Catégorie toujours affichée');
+  }));
+  app.querySelectorAll('[data-gaugecat-remove]').forEach(el=>el.addEventListener('click', ()=>{
+    const catId = el.dataset.gaugecatRemove;
+    mutateData(d=>{ d.gaugeAlwaysShow = d.gaugeAlwaysShow.filter(id=>id!==catId); });
+    showToast('Catégorie retirée');
   }));
   app.querySelectorAll('[data-allocate-to-goal]').forEach(el=>el.addEventListener('click', ()=>{
     const goalId = el.dataset.allocateToGoal;
