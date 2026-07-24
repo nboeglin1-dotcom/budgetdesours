@@ -967,11 +967,7 @@ function renderForecastCard(){
   const maxAbs = Math.max(1, f.startBalance, ...f.points.map(p=>Math.abs(p.value)));
   return `
     <div class="card">
-      <div class="section-title" style="font-size:15px; margin-bottom:4px;">Prévisionnel</div>
-      <div style="font-size:12px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">
-        Basé sur votre moyenne des 3 derniers mois : ${fmt0(f.avgIncome)} de revenus, ${fmt0(f.avgExpense)} de dépenses
-        (soit ${f.netAvg>=0?'+':'−'}${fmt0(Math.abs(f.netAvg))} par mois)${(state.data.recurring||[]).length ? ', en tenant compte de vos transactions récurrentes' : ''}.
-      </div>
+      <div class="section-title" style="font-size:15px; margin-bottom:14px;">Prévisionnel</div>
       <div class="scroll-cats">
         ${f.points.map(p=>`
           <button data-goto-month="${p.y}-${p.m}" class="catbar-row" style="width:100%; text-align:left; background:none; border:none; padding:0; display:block; cursor:pointer;">
@@ -1035,8 +1031,8 @@ function renderBalanceContent(stats, showStats){
           <div style="margin-top:16px;">
             <div class="row" style="margin-bottom:14px; align-items:flex-start;">
               <div>
-                <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Jauge globale</div>
-                <div style="color:var(--paperDim); font-size:11.5px;">revenus vs dépenses</div>
+                <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Équilibre</div>
+                
               </div>
               <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${gPct}%</span>
             </div>
@@ -1072,7 +1068,7 @@ function renderDashboard(){
 
   const over = Object.entries(state.data.budgets)
     .map(([id,limit])=>({id,limit,spent:byCat[id]||0,...catInfo(id)}))
-    .filter(b=>b.limit>0 && b.spent/b.limit>=0.8);
+    .filter(b=>b.limit>0 && b.spent>b.limit);
 
   const upcoming = upcomingRecurring(7);
 
@@ -1081,7 +1077,7 @@ function renderDashboard(){
       ${monthNav()}
     </div>
     ${renderGaugeCard(stats)}
-    ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'approchent ou dépassent':'approche ou dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
+    ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'dépassent':'dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
     ${upcoming.length ? `
       <div class="card" style="padding-top:14px; padding-bottom:6px;">
         <div class="section-title" style="font-size:14px; margin-bottom:10px; display:flex; align-items:center; gap:7px;">${icon('repeat',14)} À venir</div>
@@ -1273,8 +1269,8 @@ function renderGaugeCard(stats){
       ${globalLimit>0 ? `
         <div class="row" style="margin-bottom:14px; align-items:flex-start;">
           <div>
-            <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Jauge des variables</div>
-            <div style="color:var(--paperDim); font-size:11.5px;">hors récurrences</div>
+            <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Mes enveloppes</div>
+            
           </div>
           <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${globalPct}%</span>
         </div>
