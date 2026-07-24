@@ -1031,7 +1031,7 @@ function renderBalanceContent(stats, showStats){
           <div style="margin-top:16px;">
             <div class="row" style="margin-bottom:14px; align-items:flex-start;">
               <div>
-                <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Équilibre</div>
+                <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Équilibre du mois</div>
                 
               </div>
               <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${gPct}%</span>
@@ -1153,10 +1153,9 @@ function renderDashboard(){
         `).join('')}
       </div>
     ` : ''}
-    ${renderForecastCard()}
     <div class="card">
       <div class="row" style="margin-bottom:12px;">
-        <div class="section-title" style="margin:0; font-size:15px;">Aperçu catégories</div>
+        <div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div>
         <button data-open-pincat="1" class="btn-ghost" style="padding:6px 10px; font-size:11.5px; display:flex; align-items:center; gap:4px;">${icon('plus',12)} Ajouter</button>
       </div>
       ${(state.data.pinnedCategories||[]).length===0 ? `<div class="empty">Aucune catégorie épinglée</div>` : (state.data.pinnedCategories||[]).map(catId=>{
@@ -1181,6 +1180,7 @@ function renderDashboard(){
         `;
       }).join('')}
     </div>
+    ${renderForecastCard()}
   `;
 }
 
