@@ -974,7 +974,7 @@ function renderForecastCard(){
   const maxAbs = Math.max(1, f.startBalance, ...f.points.map(p=>Math.abs(p.value)));
   return `
     <div class="card">
-      <div class="section-title" style="font-size:15px; margin-bottom:4px;">Prévisionnel — 6 prochains mois</div>
+      <div class="section-title" style="font-size:15px; margin-bottom:4px;">Prévisionnel</div>
       <div style="font-size:12px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">
         Basé sur votre moyenne des 3 derniers mois : ${fmt0(f.avgIncome)} de revenus, ${fmt0(f.avgExpense)} de dépenses
         (soit ${f.netAvg>=0?'+':'−'}${fmt0(Math.abs(f.netAvg))} par mois)${(state.data.recurring||[]).length ? ', en tenant compte de vos transactions récurrentes' : ''}.
@@ -1034,9 +1034,9 @@ function renderBalanceContent(stats, showStats){
           Pas encore assez d'historique (3 derniers mois) pour estimer les revenus et dépenses de ce mois. Le solde ci-dessus reste inchangé par rapport à aujourd'hui.
         </div>
       ` : `
-      <div style="display:flex; gap:22px; flex-wrap:wrap; margin-top:16px;">
-        <div><div class="stat-label">${icon('up',12)} Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}</div></div>
-        <div><div class="stat-label">${icon('down',12)} Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}</div></div>
+      <div class="row" style="margin-bottom:0; margin-top:16px;">
+        <div style="display:flex; flex-direction:column; align-items:center;"><div class="stat-label">${icon('up',12)} Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}</div></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">${icon('down',12)} Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}</div></div>
       </div>
       `) : ''}
   `;
@@ -1268,7 +1268,7 @@ function renderGaugeCard(stats){
       ${globalLimit>0 ? `
         <div class="row" style="margin-bottom:14px; align-items:flex-start;">
           <div>
-            <div class="section-title" style="margin:0 0 2px; font-size:15px;">Jauge globale</div>
+            <div class="section-title" style="margin:0 0 2px; font-size:15px;">Jauge des variables</div>
             <div style="color:var(--paperDim); font-size:11.5px;">hors récurrences</div>
           </div>
           <span class="mono" style="font-size:28px; font-weight:700; color:${globalOver?'var(--coral)':'var(--paper)'}; line-height:1;">${globalPct}<span style="font-size:16px; font-weight:500;">%</span></span>
