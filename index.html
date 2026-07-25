@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Solde">
-<meta name="theme-color" content="#0E1626">
+<meta name="theme-color" content="var(--ink)">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -20,6 +20,7 @@
 <style>
   :root{
     color-scheme: dark;
+    --ink:#0E1626;
     --bg:#0E1626; --surface:#151F35; --surfaceHi:#1C2A47;
     --line:#2B3B5C; --lineSoft:#1E2C48;
     --paper:#F2EDDE; --paperDim:#96A0BC;
@@ -44,7 +45,7 @@
   a, input, .card, .txrow{touch-action:manipulation;}
   input{font-family:inherit; font-size:inherit; color:inherit;}
   input:focus, button:focus{outline:none;}
-  ::selection{background:var(--gold); color:var(--bg);}
+  ::selection{background:var(--gold); color:var(--ink);}
   #app{max-width:640px; margin:0 auto; min-height:100vh; padding-bottom:96px;}
   .page{animation:pageIn .22s ease both;}
   @keyframes pageIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
@@ -52,7 +53,7 @@
   .header{position:sticky; top:0; z-index:20; background:rgba(14,22,38,.92); backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 14px) 18px 14px;}
   .brand{display:flex; align-items:center; gap:10px;}
-  .brand .mark{width:30px; height:30px; border-radius:8px; background:var(--gold); color:var(--bg);
+  .brand .mark{width:30px; height:30px; border-radius:8px; background:var(--gold); color:var(--ink);
     display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px;}
   .brand-name{font-size:17px; font-weight:600; line-height:1; color:var(--paper) !important;}
   .brand-sub{font-size:10.5px; color:var(--paperDim); margin-top:2px;}
@@ -65,8 +66,8 @@
   .quick-add{position:fixed; right:16px; bottom:calc(74px + env(safe-area-inset-bottom)); z-index:40; display:flex; flex-direction:column; gap:10px;}
   .quick-add button{width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center;
     font-size:26px; font-weight:600; line-height:1; box-shadow:0 8px 20px rgba(0,0,0,.4);}
-  .quick-add .qa-income{background:var(--sage); color:#0E1626;}
-  .quick-add .qa-expense{background:var(--coral); color:#0E1626;}
+  .quick-add .qa-income{background:var(--sage); color:var(--ink);}
+  .quick-add .qa-expense{background:var(--coral); color:var(--ink);}
   .page{padding:18px;}
   .row{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:18px; margin-bottom:14px;}
@@ -78,7 +79,7 @@
   .month-nav .label{font-family:'Fraunces',serif; font-size:17px; font-weight:600; width:140px; text-align:center;
     color:#000000 !important; background:#F2EDDE; padding:7px 12px; border-radius:9px;}
   .today-btn{font-size:11px; font-weight:600; color:var(--gold); background:rgba(212,169,79,.14); border:1px solid rgba(212,169,79,.35); padding:6px 10px; border-radius:99px; margin-left:2px; white-space:nowrap;}
-  .btn-primary{background:var(--gold); color:var(--bg); font-weight:600; padding:10px 16px; border-radius:12px; font-size:14px; display:inline-flex; align-items:center; gap:6px;}
+  .btn-primary{background:var(--gold); color:var(--ink); font-weight:600; padding:10px 16px; border-radius:12px; font-size:14px; display:inline-flex; align-items:center; gap:6px;}
   .btn-ghost{color:var(--paperDim); padding:8px 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface);}
   .btn-ghost:disabled{opacity:.4; pointer-events:none;}
   .balance-num{font-family:'JetBrains Mono',monospace; font-size:38px; font-weight:600; letter-spacing:-.5px;}
@@ -111,9 +112,9 @@
   .budget-limit-btn{font-size:15px; font-weight:600; color:var(--paperDim); display:flex; align-items:center; gap:4px; padding:0; margin:0;}
   .budget-limit-edit{display:flex; gap:6px; align-items:center;}
   .budget-limit-edit input{width:62px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:12px;}
-  .budget-limit-edit button{background:var(--gold); color:var(--bg); font-size:11px; font-weight:600; padding:5px 9px; border-radius:8px;}
+  .budget-limit-edit button{background:var(--gold); color:var(--ink); font-size:11px; font-weight:600; padding:5px 9px; border-radius:8px;}
   .budget-foot{display:flex; justify-content:space-between; font-size:12px; color:var(--paperDim);}
-  .budget-fab{position:absolute; bottom:12px; right:12px; width:34px; height:34px; border-radius:50%; color:#0E1626;
+  .budget-fab{position:absolute; bottom:12px; right:12px; width:34px; height:34px; border-radius:50%; color:var(--ink);
     display:flex; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(0,0,0,.4); font-weight:700;}
   .goal-card{position:relative; overflow:hidden;}
   .goal-badge{position:absolute; top:14px; right:14px; display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:4px 9px; border-radius:99px; background:rgba(212,169,79,.16); color:var(--gold);}
@@ -125,9 +126,9 @@
   .chip{font-size:12px; font-weight:600; padding:7px 11px; border-radius:99px; border:1px solid var(--line);}
   .chip-add{background:rgba(79,191,139,.14); color:var(--mint); border-color:rgba(79,191,139,.4);}
   .chip-sub{background:rgba(232,102,77,.1); color:var(--coral); border-color:rgba(232,102,77,.35);}
-  .quick-add-pastille{width:28px; height:28px; border-radius:50%; color:#0E1626; font-weight:800; font-size:17px; line-height:1; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .quick-add-pastille{width:28px; height:28px; border-radius:50%; color:var(--ink); font-weight:800; font-size:17px; line-height:1; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .goal-form input{flex:1; min-width:70px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:12px;}
-  .goal-form button.add{background:var(--gold); color:var(--bg); font-weight:600; font-size:12px; padding:9px 12px; border-radius:10px;}
+  .goal-form button.add{background:var(--gold); color:var(--ink); font-weight:600; font-size:12px; padding:9px 12px; border-radius:10px;}
   .goal-form button.withdraw{background:transparent; border:1px solid var(--coral); color:var(--coral); font-weight:600; font-size:12px; padding:9px 12px; border-radius:10px;}
   .goal-form button.del{padding:9px; color:var(--paperDim);}
   .empty{padding:34px 10px; text-align:center; font-size:13.5px; color:var(--paperDim);}
@@ -158,7 +159,7 @@
   .cat-opt span{font-size:9.5px; color:var(--paperDim); text-align:center; line-height:1.15;}
   .color-row{display:flex; gap:9px; margin-bottom:18px; flex-wrap:wrap;}
   .color-swatch{width:28px; height:28px; border-radius:50%;}
-  .submit-btn{width:100%; padding:13px; border-radius:13px; background:var(--gold); color:var(--bg); font-weight:600; font-size:14.5px;}
+  .submit-btn{width:100%; padding:13px; border-radius:13px; background:var(--gold); color:var(--ink); font-weight:600; font-size:14.5px;}
   .toast{position:fixed; left:50%; bottom:100px; transform:translateX(-50%); background:var(--surfaceHi); border:1px solid var(--line);
     color:var(--paper); padding:10px 16px; border-radius:99px; font-size:13px; display:flex; align-items:center; gap:7px; z-index:200;
     animation:toastIn .3s ease; max-width:calc(100vw - 40px); white-space:nowrap;}
@@ -174,10 +175,10 @@
   .legend .dot{width:8px; height:8px; border-radius:50%;}
   .scroll-cats{max-height:130px; overflow-y:auto; margin-top:10px; padding-right:2px;}
   .toggle-switch{padding:7px 12px; border-radius:99px; font-size:12px; font-weight:600; border:1px solid var(--line); background:var(--surfaceHi); color:var(--paperDim);}
-  .toggle-switch.on{background:var(--gold); color:var(--bg); border-color:var(--gold);}
+  .toggle-switch.on{background:var(--gold); color:var(--ink); border-color:var(--gold);}
   .freq-row{display:flex; gap:6px; margin-bottom:14px;}
   .freq-row button{flex:1; padding:9px 4px; border-radius:10px; background:var(--surfaceHi); border:1px solid var(--line); font-size:11.5px; color:var(--paperDim); font-weight:500;}
-  .freq-row button.active{background:var(--gold); color:var(--bg); border-color:var(--gold);}
+  .freq-row button.active{background:var(--gold); color:var(--ink); border-color:var(--gold);}
 </style>
 </head>
 <body>
@@ -186,17 +187,66 @@
 window.addEventListener('error', function(e){
   try{
     var el = document.getElementById('app');
-    if(el){
-      el.innerHTML = '<div style="padding:50px 22px; color:#F2EDDE; font-family:sans-serif; line-height:1.5;">'
+    if(el && !el.dataset.crashHandled){
+      el.dataset.crashHandled = '1';
+      el.innerHTML = '<div style="padding:50px 22px; color:#F2EDDE; font-family:sans-serif; line-height:1.5; max-width:480px; margin:0 auto;">'
         + '<div style="font-size:20px; font-weight:700; color:#E8664D; margin-bottom:10px;">Un problème est survenu</div>'
-        + '<div style="font-size:14px; opacity:.85;">' + (e && e.message ? String(e.message) : 'Erreur inconnue') + '</div>'
-        + '<div style="font-size:12px; opacity:.6; margin-top:14px;">Ligne : ' + (e && e.lineno ? e.lineno : '?') + '</div>'
+        + '<div style="font-size:14px; opacity:.85; margin-bottom:18px;">' + (e && e.message ? String(e.message) : 'Erreur inconnue') + '</div>'
+        + '<div style="font-size:12px; opacity:.6; margin-bottom:22px;">Ligne : ' + (e && e.lineno ? e.lineno : '?') + '</div>'
+        + '<button id="crashExportBtn" style="width:100%; padding:13px; border-radius:13px; background:#D4A94F; color:#0E1626; font-weight:600; font-size:14.5px; border:none; margin-bottom:10px;">Exporter mes données avant de recharger</button>'
+        + '<button id="crashReloadBtn" style="width:100%; padding:13px; border-radius:13px; background:#1C2A47; color:#F2EDDE; font-weight:600; font-size:14.5px; border:1px solid #2B3B5C;">Recharger l\'appli</button>'
         + '</div>';
+      var exportBtn = document.getElementById('crashExportBtn');
+      if(exportBtn) exportBtn.addEventListener('click', function(){
+        try{
+          var raw = localStorage.getItem('solde-budget-data-v1') || '{}';
+          var blob = new Blob([raw], { type:'application/json' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url; a.download = 'solde-secours-' + new Date().toISOString().slice(0,10) + '.json';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }catch(err2){}
+      });
+      var reloadBtn = document.getElementById('crashReloadBtn');
+      if(reloadBtn) reloadBtn.addEventListener('click', function(){ location.reload(); });
     }
   }catch(err){}
 });
 /* ---------------- data model ---------------- */
 const COLORS = { gold:'#D4A94F', coral:'#E8664D', sage:'#6FA287', violet:'#8B7FD6', teal:'#5FB4C4', rose:'#D6829F', slate:'#7C89A6', amber:'#C97B3F', mint:'#4FBF8B' };
+
+const THEMES = {
+  ledger: {
+    name: 'Grand livre',
+    bg:'var(--ink)', surface:'#151F35', surfaceHi:'#1C2A47', line:'#2B3B5C', lineSoft:'#1E2C48',
+    paper:'#F2EDDE', paperDim:'#96A0BC', gold:'#D4A94F', mint:'#4FBF8B', scheme:'dark',
+  },
+  light: {
+    name: 'Clair',
+    bg:'#F7F5F0', surface:'#FFFFFF', surfaceHi:'#F0EDE6', line:'#E2DED4', lineSoft:'#EDEAE2',
+    paper:'#1A1A2E', paperDim:'#75758A', gold:'#C48A2E', mint:'#2E9E71', scheme:'light',
+  },
+};
+
+function applyTheme(name){
+  const t = THEMES[name] || THEMES.ledger;
+  const root = document.documentElement.style;
+  root.setProperty('--bg', t.bg);
+  root.setProperty('--surface', t.surface);
+  root.setProperty('--surfaceHi', t.surfaceHi);
+  root.setProperty('--line', t.line);
+  root.setProperty('--lineSoft', t.lineSoft);
+  root.setProperty('--paper', t.paper);
+  root.setProperty('--paperDim', t.paperDim);
+  root.setProperty('--gold', t.gold);
+  root.setProperty('--mint', t.mint);
+  root.setProperty('color-scheme', t.scheme || 'dark');
+  const metaScheme = document.querySelector('meta[name="color-scheme"]');
+  if(metaScheme) metaScheme.setAttribute('content', t.scheme || 'dark');
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if(metaTheme) metaTheme.setAttribute('content', t.bg==='var(--ink)' ? '#0E1626' : t.bg);
+}
 
 const EXPENSE_CATS = [
   {id:'alimentation', label:'Alimentation', color:COLORS.coral, type:'expense'},
@@ -220,11 +270,17 @@ const ALL_CATS = [...EXPENSE_CATS, ...INCOME_CATS];
 function catInfo(id){
   const custom = (state.data.customCategories||[]).find(c=>c.id===id);
   if(custom) return custom;
-  return ALL_CATS.find(c=>c.id===id) || EXPENSE_CATS[7];
+  const base = ALL_CATS.find(c=>c.id===id) || EXPENSE_CATS[7];
+  const override = (state.data.categoryColorOverrides||{})[id];
+  return override ? { ...base, color: override } : base;
 }
 function catsForType(type){
   const custom = (state.data.customCategories||[]).filter(c=>c.type===type);
-  return [...(type==='expense'?EXPENSE_CATS:INCOME_CATS), ...custom];
+  const base = (type==='expense'?EXPENSE_CATS:INCOME_CATS).map(c=>{
+    const override = (state.data.categoryColorOverrides||{})[c.id];
+    return override ? { ...c, color: override } : c;
+  });
+  return [...base, ...custom];
 }
 function findCategoryIdByLabel(label, type){
   const found = catsForType(type).find(c => c.label.toLowerCase() === label.toLowerCase());
@@ -311,6 +367,11 @@ function seedData(){
     accounts: [{ id:'main', name:'Compte principal', color: COLORS.gold }],
     dashboardSettings: { showBreakdown:true, showTrend:true, showEnvelopesGauge:true, showForecast:true, showPinnedEnvelopes:true },
     gaugeAlwaysShow: ['autres_d'],
+    categoryColorOverrides: {},
+    categoryRollover: {},
+    lastRolloverCheck: null,
+    goalTransfers: [],
+    theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
   };
@@ -333,21 +394,47 @@ function loadData(){
         const essenceCustom = (parsed.customCategories||[]).find(c=>c.type==='expense' && c.label.toLowerCase()==='essence');
         parsed.gaugeAlwaysShow = ['autres_d', essenceCustom ? essenceCustom.id : null].filter(Boolean);
       }
+      if(!parsed.categoryColorOverrides) parsed.categoryColorOverrides = {};
+      if(!parsed.categoryRollover) parsed.categoryRollover = {};
+      if(parsed.lastRolloverCheck===undefined) parsed.lastRolloverCheck = null;
+      if(!parsed.goalTransfers) parsed.goalTransfers = [];
+      if(!parsed.theme) parsed.theme = 'ledger';
       if(!parsed.pinnedCategories){
         const essenceCustom = (parsed.customCategories||[]).find(c=>c.type==='expense' && c.label.toLowerCase()==='essence');
         parsed.pinnedCategories = [essenceCustom ? essenceCustom.id : 'transport', 'loisirs', 'autres_d'];
       }
       if(!parsed.hiddenBudgetCategories) parsed.hiddenBudgetCategories = [];
       parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
+      if(!Array.isArray(parsed.transactions)) parsed.transactions = [];
+      if(!parsed.budgets || typeof parsed.budgets !== 'object') parsed.budgets = {};
+      if(!Array.isArray(parsed.goals)) parsed.goals = [];
+      parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
       return parsed;
     }
-  }catch(e){}
+  }catch(e){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw) localStorage.setItem(STORAGE_KEY + '-corrupted-backup', raw);
+    }catch(e2){}
+    window.__soldeDataWasCorrupted = true;
+  }
   const seeded = seedData();
   seeded.transactions.forEach(t=>{ t.accountId = 'main'; });
   saveData(seeded);
   return seeded;
 }
-function saveData(d){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); }catch(e){} }
+function saveData(d){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    return true;
+  }catch(e){
+    if(!window.__soldeStorageWarned){
+      window.__soldeStorageWarned = true;
+      setTimeout(()=>{ try{ showToast("Stockage plein — exporte une sauvegarde pour libérer de la place"); }catch(e2){} }, 300);
+    }
+    return false;
+  }
+}
 
 /* ---------------- state ---------------- */
 const now = new Date();
@@ -367,9 +454,16 @@ let state = {
   quickTxOpen: false,
   pinCatModalOpen: false,
   gaugeCatModalOpen: false,
+  yearlyReviewOpen: false,
+  editingGoalTransferId: null,
+  goalTransferForm: { amount: 50, frequency: 'monthly' },
+  reviewYear: new Date().getFullYear(),
+  editingBuiltinColorId: null,
   allocateModalOpen: false,
   allocateAmount: 0,
   allocateMode: 'save',
+  allocateGoalMode: 'add',
+  allocateIsRollover: false,
   locked: false,
   pinInput: '',
   pinError: false,
@@ -381,6 +475,8 @@ let state = {
   txAdvancedOpen: false,
   toast: null,
   txFilter: 'all',
+  hidePastTx: false,
+  expandedBudgetCat: null,
   txQuery: '',
   selectedTx: [],
   balanceAnim: { display: 0, target: 0, raf: null },
@@ -402,8 +498,69 @@ function processRecurring(){
   });
   if(changed) saveData(state.data);
 }
+function processCategoryRollover(){
+  const today = new Date();
+  const curKey = today.getFullYear() + '-' + today.getMonth();
+  if(!state.data.lastRolloverCheck){
+    state.data.lastRolloverCheck = curKey;
+    saveData(state.data);
+    return;
+  }
+  if(state.data.lastRolloverCheck === curKey) return;
+  const parts = state.data.lastRolloverCheck.split('-').map(Number);
+  let y = parts[0], m = parts[1];
+  const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
+  let guard = 0;
+  while((y*12+m) < (today.getFullYear()*12+today.getMonth()) && guard < 36){
+    const byCat = {};
+    state.data.transactions.forEach(t=>{
+      if(t.type!=='expense') return;
+      const d = new Date(t.date);
+      if(d.getFullYear()===y && d.getMonth()===m) byCat[t.category] = (byCat[t.category]||0) + t.amount;
+    });
+    catsForType('expense').forEach(cat=>{
+      if(recurringCatIds.has(cat.id)) return;
+      const limit = state.data.budgets[cat.id] || 0;
+      if(limit<=0) return;
+      const spent = byCat[cat.id] || 0;
+      const surplus = Math.max(0, limit - spent);
+      if(surplus>0){
+        state.data.categoryRollover[cat.id] = Math.round(((state.data.categoryRollover[cat.id]||0) + surplus) * 100) / 100;
+      }
+    });
+    m++; if(m>11){ m=0; y++; }
+    guard++;
+  }
+  state.data.lastRolloverCheck = curKey;
+  saveData(state.data);
+}
+function effectiveLimit(catId){
+  return (state.data.budgets[catId]||0) + (state.data.categoryRollover[catId]||0);
+}
+function processGoalTransfers(){
+  const today = new Date();
+  let changed = false;
+  (state.data.goalTransfers||[]).forEach(rule=>{
+    const goal = state.data.goals.find(g=>g.id===rule.goalId);
+    if(!goal) return;
+    let next = new Date(rule.nextDate);
+    let guard = 0;
+    while(next <= today && guard < 60){
+      goal.current = Math.max(0, goal.current + rule.amount);
+      state.data.transactions.unshift({ id: uid(), type:'expense', amount: rule.amount, category:'epargne', note:`Virement auto vers "${goal.name}"`, date: next.toISOString() });
+      next = addPeriod(next, rule.frequency);
+      guard++;
+      changed = true;
+    }
+    rule.nextDate = next.toISOString();
+  });
+  if(changed) saveData(state.data);
+}
 processRecurring();
 state.locked = !!(state.data.security && state.data.security.enabled);
+applyTheme(state.data.theme);
+processCategoryRollover();
+processGoalTransfers();
 
 function setState(patch){ Object.assign(state, patch); rerender(); }
 function mutateData(fn){ fn(state.data); saveData(state.data); rerender(); }
@@ -598,6 +755,7 @@ const ICONS = {
   download: `<path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/>`,
   upload: `<path d="M12 21V9m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/>`,
   shield: `<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>`,
+  chartbar: `<path d="M4 20V10M10 20V4M16 20v-7M4 20h16" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
 };
 function icon(name, size=16){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none">${ICONS[name]||''}</svg>`; }
 
@@ -647,6 +805,9 @@ function renderApp(){
     ${state.allocateModalOpen ? renderAllocateModal() : ''}
     ${state.pinCatModalOpen ? renderPinCatModal() : ''}
     ${state.gaugeCatModalOpen ? renderGaugeCatModal() : ''}
+    ${state.yearlyReviewOpen ? renderYearlyReviewModal() : ''}
+    ${state.editingGoalTransferId ? renderGoalTransferModal() : ''}
+    ${state.editingBuiltinColorId ? renderEditBuiltinColorModal() : ''}
     ${state.quickTxOpen ? renderQuickTxModal() : ''}
     ${state.categoryModalOpen ? renderNewCategoryModal() : ''}
     ${state.toast ? `<div class="toast">${icon('spark',13)} ${state.toast.msg}${state.toast.undo ? `<button data-toast-undo="1" style="color:var(--gold); font-weight:700; margin-left:4px;">Annuler</button>` : ''}</div>` : ''}
@@ -665,6 +826,7 @@ function renderHeader(){
           </div>
         </div>
         <div style="display:flex; gap:8px;">
+          <button data-open-yearly="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Bilan annuel">${icon('chartbar',16)}</button>
           <button data-open-backup="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Sauvegarde">${icon('shield',16)}</button>
           <button data-open-security="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Sécurité">${icon('lock',16)}</button>
         </div>
@@ -751,6 +913,19 @@ function renderBackupModal(){
         <div style="height:1px; background:var(--line); margin:18px 0;"></div>
         <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-open-accounts="1">${icon('tag',15)} Gérer mes comptes</button>
         <div style="height:1px; background:var(--line); margin:18px 0;"></div>
+        <div class="field-label" style="margin-bottom:10px;">Thème</div>
+        <div style="display:flex; gap:10px; margin-bottom:18px;">
+          ${Object.entries(THEMES).map(([key,t])=>`
+            <button data-select-theme="${key}" style="flex:1; padding:12px; border-radius:12px; border:2px solid ${state.data.theme===key?'var(--gold)':'var(--line)'}; background:${t.bg}; text-align:left;">
+              <div style="display:flex; gap:5px; margin-bottom:8px;">
+                <span style="width:14px; height:14px; border-radius:50%; background:${t.gold}; display:inline-block;"></span>
+                <span style="width:14px; height:14px; border-radius:50%; background:${t.mint}; display:inline-block;"></span>
+                <span style="width:14px; height:14px; border-radius:50%; background:${t.surfaceHi}; display:inline-block; border:1px solid ${t.line};"></span>
+              </div>
+              <span style="font-size:12px; color:${t.paper}; font-weight:600;">${t.name}</span>
+            </button>
+          `).join('')}
+        </div>
         <div class="field-label" style="margin-bottom:10px;">Cartes du tableau de bord</div>
         <div class="row" style="margin-bottom:10px;">
           <span style="font-size:13px;">Répartition des dépenses</span>
@@ -809,6 +984,20 @@ function renderAccountsModal(){
   `;
 }
 
+function renderEditBuiltinColorModal(){
+  const base = catInfo(state.editingBuiltinColorId);
+  const palette = [COLORS.coral,COLORS.gold,COLORS.sage,COLORS.violet,COLORS.teal,COLORS.rose,COLORS.amber,COLORS.slate,COLORS.mint];
+  return `
+    <div class="modal-overlay" style="z-index:150;" data-close-builtincolor="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Couleur — ${escapeHtml(base.label)}</div><button data-close-x-builtincolor="1">${icon('x',18)}</button></div>
+        <div class="color-row">${palette.map(c=>`<button data-builtincolor-pick="${c}" class="color-swatch" style="background:${c}; outline:${base.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
+        <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-builtincolor-reset="1">Réinitialiser la couleur d'origine</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderPinCatModal(){
   const pinned = new Set(state.data.pinnedCategories||[]);
   const available = catsForType('expense').filter(c=>!pinned.has(c.id));
@@ -859,25 +1048,50 @@ function renderGaugeCatModal(){
   `;
 }
 
+function renderGoalTransferModal(){
+  const goal = state.data.goals.find(g=>g.id===state.editingGoalTransferId);
+  if(!goal) return '';
+  const existing = (state.data.goalTransfers||[]).find(t=>t.goalId===goal.id);
+  const amount = state.goalTransferForm.amount;
+  const frequency = state.goalTransferForm.frequency;
+  return `
+    <div class="modal-overlay" data-close-goaltransfer="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Virement auto — ${escapeHtml(goal.name)}</div><button data-close-x-goaltransfer="1">${icon('x',18)}</button></div>
+        <label class="field-label">Montant</label>
+        <input id="goalTransferAmount" type="number" class="field-input amount" value="${amount}">
+        <label class="field-label">Fréquence</label>
+        <div class="freq-row" style="margin-bottom:18px;">
+          ${['weekly','monthly','yearly'].map(f=>`<button data-goaltransfer-freq="${f}" class="${frequency===f?'active':''}">${freqLabel(f)}</button>`).join('')}
+        </div>
+        <button class="submit-btn" data-save-goaltransfer="1">${existing?'Mettre à jour':'Activer le virement'}</button>
+        ${existing ? `<button class="btn-ghost" style="width:100%; justify-content:center; margin-top:10px;" data-remove-goaltransfer="1">Désactiver le virement</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderAllocateModal(){
   const goals = state.data.goals||[];
+  const mode = state.allocateGoalMode || 'add';
   return `
     <div class="modal-overlay" data-close-allocate="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
-        <div class="modal-head"><div class="modal-title ledger">Épargner</div><button data-close-x-allocate="1">${icon('x',18)}</button></div>
+        <div class="modal-head"><div class="modal-title ledger">Épargne</div><button data-close-x-allocate="1">${icon('x',18)}</button></div>
+        <div class="type-toggle">
+          <button data-allocate-mode="add" style="background:${mode==='add'?'var(--sage)':'transparent'}; color:${mode==='add'?'var(--bg)':'var(--paperDim)'}">Ajouter</button>
+          <button data-allocate-mode="withdraw" style="background:${mode==='withdraw'?'var(--coral)':'transparent'}; color:${mode==='withdraw'?'var(--bg)':'var(--paperDim)'}">Retirer</button>
+        </div>
         <label class="field-label">Montant</label>
         <input id="allocateAmountInput" type="number" class="field-input amount" value="${state.allocateAmount}">
         ${goals.length===0 ? `
           <div class="empty">Aucun objectif pour l'instant. Crée d'abord un objectif d'épargne dans l'onglet Objectifs.</div>
-        ` : `
-          <div style="font-size:12.5px; color:var(--paperDim); margin:4px 0 14px;">Choisis l'objectif qui recevra ce montant :</div>
-          ${goals.map(g=>`
-            <button data-allocate-to-goal="${g.id}" class="txrow" style="width:100%; text-align:left;">
-              <div class="tx-left"><div class="swatch" style="background:${g.color}22;"><span class="dot" style="background:${g.color};"></span></div><div class="tx-note">${escapeHtml(g.name)}</div></div>
-              ${icon('chevronR',14)}
-            </button>
-          `).join('')}
-        `}
+        ` : goals.map(g=>`
+          <button data-allocate-to-goal="${g.id}" class="txrow" style="width:100%; text-align:left;">
+            <div class="tx-left"><div class="swatch" style="background:${g.color}22;"><span class="dot" style="background:${g.color};"></span></div><div class="tx-note">${escapeHtml(g.name)}</div></div>
+            <span class="mono" style="font-size:13px; color:var(--paperDim);">${fmt0(g.current)}</span>
+          </button>
+        `).join('')}
       </div>
     </div>
   `;
@@ -920,6 +1134,91 @@ function renderTabbar(){
 }
 
 /* ---------------- Dashboard ---------------- */
+function computeYearlyStats(year){
+  const txs = state.data.transactions.filter(t=> new Date(t.date).getFullYear()===year);
+  const income = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const expense = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const net = income - expense;
+  const rate = income>0 ? Math.max(0, Math.round(net/income*100)) : 0;
+  const byCat = {};
+  txs.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category] = (byCat[t.category]||0) + t.amount; });
+  const catData = Object.entries(byCat).map(([id,value])=>({ id, value, ...catInfo(id) })).sort((a,b)=>b.value-a.value);
+  const months = [];
+  for(let m=0; m<12; m++){
+    const mtx = txs.filter(t=> new Date(t.date).getMonth()===m);
+    const inc = mtx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+    const exp = mtx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+    months.push({ m, label: MONTHS_SHORT[m], income:inc, expense:exp, net: inc-exp, hasData: mtx.length>0 });
+  }
+  const withData = months.filter(mo=>mo.hasData);
+  const best = withData.length ? withData.reduce((a,b)=> b.net>a.net ? b : a) : null;
+  const worst = withData.length ? withData.reduce((a,b)=> b.net<a.net ? b : a) : null;
+  return { income, expense, net, rate, catData, months, best, worst, hasData: txs.length>0 };
+}
+
+function renderYearlyReviewModal(){
+  const year = state.reviewYear;
+  const s = computeYearlyStats(year);
+  const maxCat = Math.max(1, ...s.catData.map(c=>c.value));
+  const maxMonthAbs = Math.max(1, ...s.months.map(mo=>Math.max(mo.income, mo.expense)));
+  return `
+    <div class="modal-overlay" data-close-yearly="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Bilan annuel</div><button data-close-x-yearly="1">${icon('x',18)}</button></div>
+        <div class="month-nav" style="margin:0 auto 18px;">
+          <button data-review-year="-1">${icon('chevronL',16)}</button>
+          <div class="label ledger">${year}</div>
+          <button data-review-year="1">${icon('chevronR',16)}</button>
+        </div>
+        ${!s.hasData ? `<div class="empty">Aucune transaction en ${year}</div>` : `
+          <div style="display:flex; gap:22px; flex-wrap:wrap; margin-bottom:18px;">
+            <div><div class="stat-label">Revenus</div><div class="stat-val" style="color:var(--sage); font-size:20px;">${fmt0(s.income)}</div></div>
+            <div><div class="stat-label">Dépenses</div><div class="stat-val" style="color:var(--coral); font-size:20px;">${fmt0(s.expense)}</div></div>
+            <div><div class="stat-label">Épargné</div><div class="stat-val" style="color:var(--gold); font-size:20px;">${s.net>=0?'+':'−'}${fmt0(Math.abs(s.net))}</div></div>
+            <div><div class="stat-label">Taux d'épargne</div><div class="stat-val" style="color:var(--paper); font-size:20px;">${s.rate}%</div></div>
+          </div>
+          ${s.best && s.worst ? `
+            <div style="display:flex; gap:10px; margin-bottom:20px;">
+              <div style="flex:1; background:var(--surfaceHi); border-radius:12px; padding:12px;">
+                <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Meilleur mois</div>
+                <div style="font-size:14px; font-weight:600;">${s.best.label} <span class="mono" style="color:var(--sage); font-size:13px;">${s.best.net>=0?'+':'−'}${fmt0(Math.abs(s.best.net))}</span></div>
+              </div>
+              <div style="flex:1; background:var(--surfaceHi); border-radius:12px; padding:12px;">
+                <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Mois le plus dépensier</div>
+                <div style="font-size:14px; font-weight:600;">${s.worst.label} <span class="mono" style="color:var(--coral); font-size:13px;">${s.worst.net>=0?'+':'−'}${fmt0(Math.abs(s.worst.net))}</span></div>
+              </div>
+            </div>
+          ` : ''}
+          <div class="section-title" style="font-size:13.5px; margin-bottom:10px;">Mois par mois</div>
+          <div class="trend-scroll" style="margin-bottom:8px;">
+            <div class="chart-bars">
+              ${s.months.map(mo=>`
+                <div class="chart-col">
+                  <div class="chart-bars-pair">
+                    <div class="chart-bar" style="height:${mo.income? Math.max(2, mo.income/maxMonthAbs*100) : 0}px; background:var(--sage);" title="Revenus ${fmt0(mo.income)}"></div>
+                    <div class="chart-bar" style="height:${mo.expense? Math.max(2, mo.expense/maxMonthAbs*100) : 0}px; background:var(--coral);" title="Dépenses ${fmt0(mo.expense)}"></div>
+                  </div>
+                  <div class="chart-label">${mo.label}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="legend" style="margin-bottom:20px;"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span></div>
+          <div class="section-title" style="font-size:13.5px; margin-bottom:10px;">Dépenses par catégorie</div>
+          <div class="scroll-cats">
+            ${s.catData.map(c=>`
+              <div class="catbar-row">
+                <div class="row" style="margin-bottom:2px;"><span style="font-size:12.5px; display:flex; align-items:center; gap:6px;"><span class="dot" style="background:${c.color}"></span>${c.label}</span><span class="mono" style="font-size:12.5px;">${fmt0(c.value)}</span></div>
+                <div class="catbar-track"><div class="catbar-fill" style="width:${Math.round(c.value/maxCat*100)}%; background:${c.color};"></div></div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
 function computeForecast(){
   const today = new Date();
   const months = [];
@@ -1037,6 +1336,26 @@ function renderForecastCard(){
   `;
 }
 
+function pctChange(current, previous){
+  if(!previous || previous<=0) return null;
+  return Math.round((current-previous)/previous*100);
+}
+function changeBadge(pct, goodDirection){
+  if(pct===null || pct===undefined) return '';
+  const isUp = pct>0;
+  const isFlat = pct===0;
+  const isGood = goodDirection==='up' ? isUp : !isUp;
+  const color = isFlat ? 'var(--paperDim)' : (isGood ? 'var(--sage)' : 'var(--coral)');
+  const arrow = isFlat ? '' : (isUp ? '↑' : '↓');
+  return ` <span class="mono" style="font-size:10.5px; color:${color};">${arrow}${Math.abs(pct)}%</span>`;
+}
+function prevMonthCatSpend(catId){
+  let m = state.viewM - 1, y = state.viewY;
+  if(m<0){ m = 11; y--; }
+  return state.data.transactions
+    .filter(t=>t.type==='expense' && t.category===catId && sameMonth(t.date, y, m))
+    .reduce((s,t)=>s+t.amount, 0);
+}
 function computeMonthStats(){
   const today = new Date();
   const curIdx = monthIndex(today.getFullYear(), today.getMonth());
@@ -1054,12 +1373,21 @@ function computeMonthStats(){
   const savings = income - expense;
   const rate = income>0 ? Math.max(0, Math.round(savings/income*100)) : 0;
   const bal = balanceForViewedMonth(f, state.viewY, state.viewM);
-  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate };
+
+  let pm = state.viewM - 1, py = state.viewY;
+  if(pm<0){ pm = 11; py--; }
+  const prevTx = state.data.transactions.filter(t=>sameMonth(t.date, py, pm));
+  const prevIncome = prevTx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const prevExpense = prevTx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const incomeChange = usingEstimate ? null : pctChange(income, prevIncome);
+  const expenseChange = usingEstimate ? null : pctChange(expense, prevExpense);
+
+  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, incomeChange, expenseChange };
 }
 
 function renderBalanceContent(stats, showStats){
   if(showStats===undefined) showStats = true;
-  const { bal, income, expense, rate, usingEstimate, f } = stats;
+  const { bal, income, expense, rate, usingEstimate, f, incomeChange, expenseChange } = stats;
   return `
       <div class="row" style="margin-bottom:0;">
         <div class="eyebrow" style="margin-bottom:0;">Reste${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
@@ -1074,8 +1402,8 @@ function renderBalanceContent(stats, showStats){
         </div>
       ` : `
       <div class="row" style="margin-bottom:0; margin-top:16px;">
-        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}</div></div>
-        <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}</div></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}${changeBadge(incomeChange,'up')}</div></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}${changeBadge(expenseChange,'down')}</div></div>
       </div>
       ${(()=>{
         const gPct = income>0 ? Math.min(100, Math.round(expense/income*100)) : 0;
@@ -1276,9 +1604,11 @@ function txRow(t, delBtn){
 /* ---------------- Transactions ---------------- */
 function renderTransactions(){
   const q = state.txQuery.trim().toLowerCase();
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
   const list = state.data.transactions
     .filter(t => state.txFilter==='all' ? true : t.type===state.txFilter)
     .filter(t => !q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q))
+    .filter(t => !state.hidePastTx || new Date(t.date) >= todayStart)
     .sort((a,b)=> new Date(b.date)-new Date(a.date));
   const recurCount = (state.data.recurring||[]).length;
 
@@ -1291,10 +1621,13 @@ function renderTransactions(){
       <div class="search-wrap">${icon('search',15)}<input id="txSearch" placeholder="Rechercher…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)"></div>
       <button class="btn-ghost" data-open-recurmodal="1" style="font-size:12px; display:flex; align-items:center; gap:5px;">${icon('repeat',13)} Récurrences${recurCount?` (${recurCount})`:''}</button>
     </div>
-    <div class="filter-pills" style="margin-bottom:14px;">
-      <button data-filter="all" class="${state.txFilter==='all'?'active':''}">Tout</button>
-      <button data-filter="income" class="${state.txFilter==='income'?'active':''}">Entrées</button>
-      <button data-filter="expense" class="${state.txFilter==='expense'?'active':''}">Sorties</button>
+    <div class="row" style="margin-bottom:14px;">
+      <div class="filter-pills">
+        <button data-filter="all" class="${state.txFilter==='all'?'active':''}">Tout</button>
+        <button data-filter="income" class="${state.txFilter==='income'?'active':''}">Entrées</button>
+        <button data-filter="expense" class="${state.txFilter==='expense'?'active':''}">Sorties</button>
+      </div>
+      <button data-toggle-hide-past="1" class="toggle-switch ${state.hidePastTx?'on':''}" style="font-size:11px;">${icon('x',11)} Masquer passées</button>
     </div>
     <div class="card">${list.length===0 ? `<div class="empty">Aucune transaction trouvée</div>` : list.map(t=>txRow(t,true)).join('')}</div>
   `;
@@ -1311,7 +1644,8 @@ function renderGaugeCard(stats){
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
 
   const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id));
-  const globalLimit = nonRecurringCats.reduce((s,c)=> s + (state.data.budgets[c.id]||0), 0);
+  const totalRollover = Object.values(state.data.categoryRollover||{}).reduce((s,v)=>s+v, 0);
+  const globalLimit = nonRecurringCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
   const globalSpent = nonRecurringCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
   const globalPct = globalLimit>0 ? Math.min(100, Math.round(globalSpent/globalLimit*100)) : 0;
   const globalOver = globalLimit>0 && globalSpent>globalLimit;
@@ -1328,13 +1662,11 @@ function renderGaugeCard(stats){
       <div style="height:1px; background:var(--line); margin:16px 0;"></div>
       ${globalLimit>0 ? `
         <div class="row" style="margin-bottom:14px; align-items:flex-start;">
-          <div>
-            <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Total de mes enveloppes</div>
-          </div>
           <div style="display:flex; align-items:center; gap:8px;">
-            <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${globalPct}%</span>
+            <div class="section-title" style="margin:0; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Total de mes enveloppes</div>
             <button data-open-gaugecat="1" class="btn-ghost" style="padding:9px 11px; font-size:13px; min-width:34px; min-height:34px; display:flex; align-items:center; justify-content:center;" title="Ajouter une catégorie">${icon('plus',14)}</button>
           </div>
+          <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${globalPct}%</span>
         </div>
         <div class="catbar-track" style="height:18px; display:flex; overflow:hidden; gap:2px; border:1px solid var(--line);">
           ${gaugeSegments.map(s=>`<div style="width:${Math.min(100,(s.value/globalLimit*100))}%; background:${s.color}; height:100%;" title="${escapeHtml(s.label)}: ${fmt0(s.value)}"></div>`).join('')}
@@ -1364,9 +1696,15 @@ function renderGaugeCard(stats){
             <span class="mono" style="font-size:16px; font-weight:700; color:var(--mint);">${fmt0(remaining)}</span>
           </div>
         ` : ''}
+        ${totalRollover>0 ? `
+          <div class="row" style="margin-top:10px; margin-bottom:0;">
+            <span style="font-size:11.5px; color:var(--paperDim);">${icon('repeat',11)} Report cumulé des mois précédents</span>
+            <button data-allocate-rollover="1" data-remaining-amount="${totalRollover}" class="btn-ghost" style="font-size:11px; padding:6px 9px;">${fmt0(totalRollover)} → Épargner</button>
+          </div>
+        ` : ''}
       ` : `<div class="empty" style="padding:12px 0 16px;">Toutes les catégories sont masquées.</div>`}
       <div style="height:1px; background:var(--line); margin:16px 0;"></div>
-      <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="width:100%; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargner</button>
+      <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="width:100%; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne</button>
     </div>
   `;
 }
@@ -1391,28 +1729,39 @@ function renderBudgets(){
     </div>
     <div class="budget-stack">
       ${allExpenseCats.map(cat=>{
-        const limit = state.data.budgets[cat.id] || 0;
+        const baseLimit = state.data.budgets[cat.id] || 0;
+        const rollover = state.data.categoryRollover[cat.id] || 0;
+        const limit = baseLimit + rollover;
         const spent = byCat[cat.id] || 0;
         const pct = limit>0 ? Math.min(100, Math.round(spent/limit*100)) : 0;
         const over = limit>0 && spent>limit;
         const barColor = over ? COLORS.coral : (pct>=80 ? COLORS.amber : cat.color);
         const editing = budgetEditingId === cat.id;
         const isRecurring = recurringCatIds.has(cat.id);
+        const expanded = state.expandedBudgetCat === cat.id;
+        const catTx = tx.filter(t=>t.type==='expense' && t.category===cat.id).sort((a,b)=> new Date(b.date)-new Date(a.date));
         return `
           <div class="card" style="margin-bottom:0; position:relative;">
             <div class="budget-head">
-              <div class="budget-cat">
+              <button data-toggle-budget-detail="${cat.id}" class="budget-cat" style="background:none; border:none; padding:0; cursor:pointer;">
                 <span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}
                 ${isRecurring ? `<span title="Liée à une récurrence" style="color:var(--paperDim); display:flex;">${icon('repeat',12)}</span>` : ''}
-              </div>
+                ${catTx.length>0 ? `<span style="color:var(--paperDim); display:flex; transform:rotate(${expanded?90:0}deg); transition:transform .15s;">${icon('chevronR',12)}</span>` : ''}
+              </button>
               <div style="display:flex; align-items:center; gap:4px;">
                 <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${cat.color}; margin-right:8px;" title="Ajouter une dépense">+</button>
-                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" value="${limit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:16px;">${fmt0(limit)}</span></button>`}
+                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" value="${baseLimit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:16px;">${fmt0(baseLimit)}</span></button>`}
                 <button data-hide-budgetcat="${cat.id}" style="color:var(--paperDim); padding:4px;" title="Masquer cette catégorie">${icon('x',13)}</button>
               </div>
             </div>
             <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>
-            <div class="budget-foot"><span class="mono" style="color:${over?'var(--coral)':'var(--paperDim)'}">${fmt2(spent)} dépensés</span><span>${limit>0? pct+'%' : '—'}</span></div>
+            <div class="budget-foot"><span class="mono" style="color:${over?'var(--coral)':'var(--paperDim)'}">${fmt2(spent)} dépensés${changeBadge(pctChange(spent, prevMonthCatSpend(cat.id)),'down')}</span><span>${limit>0? pct+'%' : '—'}</span></div>
+            ${rollover>0 ? `<div style="font-size:11px; color:var(--mint); margin-top:4px;">${icon('repeat',10)} +${fmt0(rollover)} reporté des mois précédents</div>` : ''}
+            ${expanded && catTx.length>0 ? `
+              <div style="margin-top:10px; border-top:1px solid var(--lineSoft); padding-top:6px;">
+                ${catTx.map(t=>txRow(t,false)).join('')}
+              </div>
+            ` : ''}
             <div class="quick-chips" style="margin-top:10px;">
               ${[10,50].map(v=>`<button class="chip chip-add" data-budget-adjust="${cat.id}" data-amt="${v}">+${v}€</button>`).join('')}
               ${[10,50].map(v=>`<button class="chip chip-sub" data-budget-adjust="${cat.id}" data-amt="${-v}">−${v}€</button>`).join('')}
@@ -1437,12 +1786,16 @@ function renderGoals(){
         ${goals.map(g=>{
           const pct = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
           const done = pct>=100;
+          const transfer = (state.data.goalTransfers||[]).find(t=>t.goalId===g.id);
           return `
             <div class="card goal-card" style="margin-bottom:0;">
               ${done ? `<div class="goal-badge">${icon('spark',11)} Atteint</div>` : ''}
               <div class="goal-name">${escapeHtml(g.name)}</div>
               <div class="goal-amt" style="color:${g.color}">${fmt0(g.current)} <span class="target">/ ${fmt0(g.target)}</span></div>
               <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
+              <button data-open-goaltransfer="${g.id}" style="display:flex; align-items:center; gap:6px; margin-top:10px; color:${transfer?g.color:'var(--paperDim)'}; font-size:11.5px; background:none; border:none; padding:0;">
+                ${icon('repeat',12)} ${transfer ? `${fmt0(transfer.amount)} ${freqLabel(transfer.frequency).toLowerCase()} — virement auto` : 'Configurer un virement automatique'}
+              </button>
               ${g.deadline && !done ? (()=>{
                 const dl = new Date(g.deadline);
                 const now = new Date();
@@ -1632,7 +1985,8 @@ function renderManageCategoriesModal(){
   return `
     <div class="modal-overlay" style="z-index:140;" data-close-managecat="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
-        <div class="modal-head"><div class="modal-title ledger">Catégories personnalisées</div><button data-close-x-managecat="1">${icon('x',18)}</button></div>
+        <div class="modal-head"><div class="modal-title ledger">Catégories</div><button data-close-x-managecat="1">${icon('x',18)}</button></div>
+        <div class="field-label" style="margin-bottom:8px;">Personnalisées</div>
         ${customs.length===0 ? `<div class="empty">Aucune catégorie personnalisée</div>` : customs.map(c=>`
           <div class="txrow">
             <div class="tx-left"><div class="swatch" style="background:${c.color}22;"><span class="dot" style="background:${c.color};"></span></div><div class="tx-note">${escapeHtml(c.label)} <span style="color:var(--paperDim); font-size:11px;">(${c.type==='income'?'revenu':'dépense'})</span></div></div>
@@ -1643,7 +1997,18 @@ function renderManageCategoriesModal(){
             </div>
           </div>
         `).join('')}
-        <button class="btn-primary" style="width:100%; justify-content:center; margin-top:14px;" data-open-newcat-standalone="1">${icon('plus',14)} Nouvelle catégorie</button>
+        <button class="btn-primary" style="width:100%; justify-content:center; margin-top:14px; margin-bottom:18px;" data-open-newcat-standalone="1">${icon('plus',14)} Nouvelle catégorie</button>
+        <div style="height:1px; background:var(--line); margin-bottom:16px;"></div>
+        <div class="field-label" style="margin-bottom:8px;">De base <span style="text-transform:none;">— couleur modifiable</span></div>
+        ${[...EXPENSE_CATS, ...INCOME_CATS].map(base=>{
+          const c = catInfo(base.id);
+          return `
+            <div class="txrow">
+              <div class="tx-left"><div class="swatch" style="background:${c.color}22;"><span class="dot" style="background:${c.color};"></span></div><div class="tx-note">${escapeHtml(c.label)} <span style="color:var(--paperDim); font-size:11px;">(${base.type==='income'?'revenu':'dépense'})</span></div></div>
+              <button class="tx-del" style="color:var(--paperDim);" data-edit-builtin-color="${base.id}">${icon('pencil',14)}</button>
+            </div>
+          `;
+        }).join('')}
       </div>
     </div>
   `;
@@ -1724,6 +2089,12 @@ function bindEvents(){
   app.querySelectorAll('[data-edit-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.editTx); }));
   app.querySelectorAll('[data-view-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.viewTx); }));
   app.querySelectorAll('[data-filter]').forEach(el=>el.addEventListener('click', ()=> setState({txFilter: el.dataset.filter})));
+  app.querySelectorAll('[data-toggle-hide-past]').forEach(el=>el.addEventListener('click', ()=> setState({hidePastTx: !state.hidePastTx})));
+  app.querySelectorAll('[data-toggle-budget-detail]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.toggleBudgetDetail;
+    state.expandedBudgetCat = state.expandedBudgetCat===id ? null : id;
+    rerender();
+  }));
 
   app.querySelectorAll('[data-edit-budget]').forEach(el=>el.addEventListener('click', ()=>{ budgetEditingId = el.dataset.editBudget; rerender(); }));
   app.querySelectorAll('[data-save-budget]').forEach(el=>el.addEventListener('click', ()=>{
@@ -1901,6 +2272,58 @@ function bindEvents(){
   app.querySelectorAll('[data-close-security]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.securityModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-security]').forEach(el=>el.addEventListener('click', ()=>{ state.securityModalOpen=false; rerender(); }));
 
+  app.querySelectorAll('[data-open-yearly]').forEach(el=>el.addEventListener('click', ()=>{
+    state.reviewYear = new Date().getFullYear();
+    state.yearlyReviewOpen = true;
+    rerender();
+  }));
+  app.querySelectorAll('[data-close-yearly]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.yearlyReviewOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-yearly]').forEach(el=>el.addEventListener('click', ()=>{ state.yearlyReviewOpen=false; rerender(); }));
+  app.querySelectorAll('[data-review-year]').forEach(el=>el.addEventListener('click', ()=>{
+    state.reviewYear += Number(el.dataset.reviewYear);
+    rerender();
+  }));
+
+  app.querySelectorAll('[data-open-goaltransfer]').forEach(el=>el.addEventListener('click', ()=>{
+    const goalId = el.dataset.openGoaltransfer;
+    const existing = (state.data.goalTransfers||[]).find(t=>t.goalId===goalId);
+    state.goalTransferForm = existing ? { amount: existing.amount, frequency: existing.frequency } : { amount: 50, frequency: 'monthly' };
+    state.editingGoalTransferId = goalId;
+    rerender();
+  }));
+  app.querySelectorAll('[data-close-goaltransfer]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.editingGoalTransferId=null; rerender(); } }));
+  app.querySelectorAll('[data-close-x-goaltransfer]').forEach(el=>el.addEventListener('click', ()=>{ state.editingGoalTransferId=null; rerender(); }));
+  app.querySelectorAll('[data-goaltransfer-freq]').forEach(el=>el.addEventListener('click', ()=>{
+    const amtEl = document.getElementById('goalTransferAmount');
+    if(amtEl) state.goalTransferForm.amount = amtEl.value;
+    state.goalTransferForm.frequency = el.dataset.goaltransferFreq;
+    rerender();
+  }));
+  app.querySelectorAll('[data-save-goaltransfer]').forEach(el=>el.addEventListener('click', ()=>{
+    const amount = Number(document.getElementById('goalTransferAmount').value);
+    if(!amount || amount<=0) return;
+    const goalId = state.editingGoalTransferId;
+    const frequency = state.goalTransferForm.frequency;
+    mutateData(d=>{
+      if(!d.goalTransfers) d.goalTransfers = [];
+      const existing = d.goalTransfers.find(t=>t.goalId===goalId);
+      if(existing){
+        existing.amount = amount;
+        existing.frequency = frequency;
+      } else {
+        d.goalTransfers.push({ id: uid(), goalId, amount, frequency, nextDate: new Date().toISOString() });
+      }
+    });
+    state.editingGoalTransferId = null;
+    showToast('Virement automatique activé');
+  }));
+  app.querySelectorAll('[data-remove-goaltransfer]').forEach(el=>el.addEventListener('click', ()=>{
+    const goalId = state.editingGoalTransferId;
+    mutateData(d=>{ d.goalTransfers = (d.goalTransfers||[]).filter(t=>t.goalId!==goalId); });
+    state.editingGoalTransferId = null;
+    showToast('Virement automatique désactivé');
+  }));
+
   app.querySelectorAll('[data-open-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen = true; rerender(); }));
   app.querySelectorAll('[data-close-backup]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.backupModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen=false; rerender(); }));
@@ -1920,24 +2343,42 @@ function bindEvents(){
   if(backupImportInput) backupImportInput.addEventListener('change', ()=>{
     const file = backupImportInput.files[0];
     if(!file) return;
+    if(file.size > 30*1024*1024){ showToast('Fichier trop volumineux (max 30 Mo)'); return; }
     const reader = new FileReader();
+    reader.onerror = ()=>{ showToast('Impossible de lire ce fichier'); };
     reader.onload = (e)=>{
+      let parsed;
       try{
-        const parsed = JSON.parse(e.target.result);
-        if(!parsed.transactions || !Array.isArray(parsed.transactions)) throw new Error('format invalide');
+        parsed = JSON.parse(e.target.result);
+      }catch(err){
+        showToast("Ce fichier n'est pas une sauvegarde valide (JSON illisible)");
+        return;
+      }
+      try{
+        if(!parsed || typeof parsed !== 'object') throw new Error('format invalide');
+        if(!Array.isArray(parsed.transactions)) throw new Error('transactions manquantes');
         if(!parsed.customCategories) parsed.customCategories = [];
         if(!parsed.recurring) parsed.recurring = [];
         if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
         if(!parsed.goals) parsed.goals = [];
-        if(!parsed.budgets) parsed.budgets = {};
+        if(!parsed.budgets || typeof parsed.budgets !== 'object') parsed.budgets = {};
         if(!parsed.accounts || !parsed.accounts.length) parsed.accounts = [{ id:'main', name:'Compte principal', color: COLORS.gold }];
+        if(!parsed.dashboardSettings) parsed.dashboardSettings = { showBreakdown:true, showTrend:true, showEnvelopesGauge:true, showForecast:true, showPinnedEnvelopes:true };
+        if(!parsed.gaugeAlwaysShow) parsed.gaugeAlwaysShow = ['autres_d'];
+        if(!parsed.categoryColorOverrides) parsed.categoryColorOverrides = {};
+        if(!parsed.theme || !THEMES[parsed.theme]) parsed.theme = 'ledger';
+        if(!parsed.pinnedCategories) parsed.pinnedCategories = [];
+        if(!parsed.hiddenBudgetCategories) parsed.hiddenBudgetCategories = [];
         parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
         state.data = parsed;
-        saveData(state.data);
+        const ok = saveData(state.data);
+        applyTheme(state.data.theme);
         state.backupModalOpen = false;
-        showToast('Sauvegarde restaurée');
+        showToast(ok ? 'Sauvegarde restaurée' : 'Restaurée en mémoire (stockage plein, non enregistrée)');
         rerender();
-      }catch(err){ showToast('Fichier de sauvegarde invalide'); }
+      }catch(err){
+        showToast('Ce fichier ne correspond pas au format attendu');
+      }
     };
     reader.readAsText(file);
   });
@@ -1950,6 +2391,12 @@ function bindEvents(){
   app.querySelectorAll('[data-toggle-card]').forEach(el=>el.addEventListener('click', ()=>{
     const key = el.dataset.toggleCard;
     mutateData(d=>{ d.dashboardSettings[key] = !d.dashboardSettings[key]; });
+  }));
+  app.querySelectorAll('[data-select-theme]').forEach(el=>el.addEventListener('click', ()=>{
+    const theme = el.dataset.selectTheme;
+    applyTheme(theme);
+    mutateData(d=>{ d.theme = theme; });
+    showToast(`Thème « ${THEMES[theme].name} » appliqué`);
   }));
   app.querySelectorAll('[data-open-accounts]').forEach(el=>el.addEventListener('click', ()=>{
     newAccountFormState = { color: COLORS.sage };
@@ -2038,6 +2485,16 @@ function bindEvents(){
   app.querySelectorAll('[data-allocate-remaining]').forEach(el=>el.addEventListener('click', ()=>{
     const amount = Number(el.dataset.remainingAmount) || 0;
     state.allocateAmount = amount;
+    state.allocateGoalMode = 'add';
+    state.allocateIsRollover = false;
+    state.allocateModalOpen = true;
+    rerender();
+  }));
+  app.querySelectorAll('[data-allocate-rollover]').forEach(el=>el.addEventListener('click', ()=>{
+    const amount = Number(el.dataset.remainingAmount) || 0;
+    state.allocateAmount = amount;
+    state.allocateGoalMode = 'add';
+    state.allocateIsRollover = true;
     state.allocateModalOpen = true;
     rerender();
   }));
@@ -2071,13 +2528,44 @@ function bindEvents(){
     mutateData(d=>{ d.gaugeAlwaysShow = d.gaugeAlwaysShow.filter(id=>id!==catId); });
     showToast('Catégorie retirée');
   }));
+
+  app.querySelectorAll('[data-edit-builtin-color]').forEach(el=>el.addEventListener('click', ()=>{
+    state.editingBuiltinColorId = el.dataset.editBuiltinColor;
+    rerender();
+  }));
+  app.querySelectorAll('[data-close-builtincolor]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.editingBuiltinColorId=null; rerender(); } }));
+  app.querySelectorAll('[data-close-x-builtincolor]').forEach(el=>el.addEventListener('click', ()=>{ state.editingBuiltinColorId=null; rerender(); }));
+  app.querySelectorAll('[data-builtincolor-pick]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = state.editingBuiltinColorId;
+    const color = el.dataset.builtincolorPick;
+    mutateData(d=>{ d.categoryColorOverrides[id] = color; });
+    state.editingBuiltinColorId = null;
+    showToast('Couleur mise à jour');
+  }));
+  app.querySelectorAll('[data-builtincolor-reset]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = state.editingBuiltinColorId;
+    mutateData(d=>{ delete d.categoryColorOverrides[id]; });
+    state.editingBuiltinColorId = null;
+    showToast('Couleur réinitialisée');
+  }));
+  app.querySelectorAll('[data-allocate-mode]').forEach(el=>el.addEventListener('click', ()=>{
+    state.allocateGoalMode = el.dataset.allocateMode;
+    rerender();
+  }));
   app.querySelectorAll('[data-allocate-to-goal]').forEach(el=>el.addEventListener('click', ()=>{
     const goalId = el.dataset.allocateToGoal;
     const input = document.getElementById('allocateAmountInput');
     const amount = Number(input ? input.value : state.allocateAmount);
     if(!amount || amount<=0) return;
     state.allocateModalOpen = false;
-    goalContribute(goalId, amount);
+    if(state.allocateGoalMode==='withdraw'){ goalWithdraw(goalId, amount); }
+    else {
+      goalContribute(goalId, amount);
+      if(state.allocateIsRollover){
+        mutateData(d=>{ d.categoryRollover = {}; });
+      }
+    }
+    state.allocateIsRollover = false;
   }));
   app.querySelectorAll('[data-setup-key]').forEach(el=>el.addEventListener('click', ()=>{ handleSetupDigit(el.dataset.setupKey); }));
   app.querySelectorAll('[data-setup-backspace]').forEach(el=>el.addEventListener('click', handleSetupBackspace));
@@ -2146,6 +2634,9 @@ function animateBalance(el, target){
 }
 
 rerender();
+if(window.__soldeDataWasCorrupted){
+  setTimeout(()=>{ showToast("Anciennes données illisibles — appli réinitialisée (sauvegarde technique conservée)"); }, 600);
+}
 </script>
 </body>
 </html>
