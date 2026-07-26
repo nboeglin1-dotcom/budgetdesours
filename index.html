@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Solde">
-<meta name="theme-color" content="var(--ink)">
+<meta name="theme-color" content="#0E1626">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -50,14 +50,14 @@
   .page{animation:pageIn .22s ease both;}
   @keyframes pageIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
   .scroll-cats, .modal-sheet{-webkit-overflow-scrolling:touch;}
-  .header{position:sticky; top:0; z-index:20; background:rgba(14,22,38,.92); backdrop-filter:blur(10px);
+  .header{position:sticky; top:0; z-index:20; background:var(--bg); backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 14px) 18px 14px;}
   .brand{display:flex; align-items:center; gap:10px;}
   .brand .mark{width:30px; height:30px; border-radius:8px; background:var(--gold); color:var(--ink);
     display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px;}
   .brand-name{font-size:17px; font-weight:600; line-height:1; color:var(--paper) !important;}
   .brand-sub{font-size:10.5px; color:var(--paperDim); margin-top:2px;}
-  .tabbar{position:fixed; bottom:0; left:0; right:0; z-index:30; background:rgba(21,31,53,.96); backdrop-filter:blur(14px);
+  .tabbar{position:fixed; bottom:0; left:0; right:0; z-index:30; background:var(--surface); backdrop-filter:blur(14px);
     border-top:1px solid var(--line); display:flex; padding:8px 6px calc(env(safe-area-inset-bottom) + 8px);}
   .tabbar button{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; border-radius:12px; color:var(--paperDim);}
   .tabbar button.active{color:var(--gold);}
@@ -458,6 +458,10 @@ let state = {
   editingGoalTransferId: null,
   goalTransferForm: { amount: 50, frequency: 'monthly' },
   reviewYear: new Date().getFullYear(),
+  reviewPeriod: 'year',
+  reviewQuarter: Math.ceil((new Date().getMonth()+1)/3),
+  reviewCustomStart: '',
+  reviewCustomEnd: '',
   editingBuiltinColorId: null,
   allocateModalOpen: false,
   allocateAmount: 0,
@@ -475,7 +479,7 @@ let state = {
   txAdvancedOpen: false,
   toast: null,
   txFilter: 'all',
-  hidePastTx: false,
+  hidePastTx: true,
   expandedBudgetCat: null,
   txQuery: '',
   selectedTx: [],
@@ -1134,49 +1138,116 @@ function renderTabbar(){
 }
 
 /* ---------------- Dashboard ---------------- */
-function computeYearlyStats(year){
-  const txs = state.data.transactions.filter(t=> new Date(t.date).getFullYear()===year);
-  const income = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const expense = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+function getReviewRange(){
+  const period = state.reviewPeriod;
+  if(period==='quarter'){
+    const y = state.reviewYear;
+    const q = state.reviewQuarter;
+    const startM = (q-1)*3;
+    return { start: new Date(y, startM, 1), end: new Date(y, startM+3, 0, 23,59,59), label: `T${q} ${y}` };
+  }
+  if(period==='custom'){
+    const start = state.reviewCustomStart ? new Date(state.reviewCustomStart+'T00:00:00') : new Date(state.reviewYear,0,1);
+    const end = state.reviewCustomEnd ? new Date(state.reviewCustomEnd+'T23:59:59') : new Date();
+    return { start, end, label: `${start.toLocaleDateString('fr-FR')} → ${end.toLocaleDateString('fr-FR')}` };
+  }
+  const y = state.reviewYear;
+  return { start: new Date(y,0,1), end: new Date(y,11,31,23,59,59), label: String(y) };
+}
+
+function computeReviewStats(range){
+  const TRANSFER_CATS = new Set(['epargne','epargne_retour']);
+  const txs = state.data.transactions.filter(t=>{
+    const d = new Date(t.date);
+    return d >= range.start && d <= range.end;
+  });
+  const income = txs.filter(t=>t.type==='income' && !TRANSFER_CATS.has(t.category)).reduce((s,t)=>s+t.amount,0);
+  const expense = txs.filter(t=>t.type==='expense' && !TRANSFER_CATS.has(t.category)).reduce((s,t)=>s+t.amount,0);
+  const savedToGoals = txs.filter(t=>t.type==='expense' && t.category==='epargne').reduce((s,t)=>s+t.amount,0);
+  const withdrawnFromGoals = txs.filter(t=>t.type==='income' && t.category==='epargne_retour').reduce((s,t)=>s+t.amount,0);
+  const netSavedToGoals = savedToGoals - withdrawnFromGoals;
   const net = income - expense;
   const rate = income>0 ? Math.max(0, Math.round(net/income*100)) : 0;
+
   const byCat = {};
-  txs.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category] = (byCat[t.category]||0) + t.amount; });
+  txs.filter(t=>t.type==='expense' && !TRANSFER_CATS.has(t.category)).forEach(t=>{ byCat[t.category] = (byCat[t.category]||0) + t.amount; });
   const catData = Object.entries(byCat).map(([id,value])=>({ id, value, ...catInfo(id) })).sort((a,b)=>b.value-a.value);
+
   const months = [];
-  for(let m=0; m<12; m++){
-    const mtx = txs.filter(t=> new Date(t.date).getMonth()===m);
-    const inc = mtx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-    const exp = mtx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
-    months.push({ m, label: MONTHS_SHORT[m], income:inc, expense:exp, net: inc-exp, hasData: mtx.length>0 });
+  const spansYears = range.start.getFullYear() !== range.end.getFullYear();
+  let cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
+  const endCursor = new Date(range.end.getFullYear(), range.end.getMonth(), 1);
+  let guard = 0;
+  while(cursor <= endCursor && guard < 36){
+    const y = cursor.getFullYear(), m = cursor.getMonth();
+    const mtx = txs.filter(t=>{ const d=new Date(t.date); return d.getFullYear()===y && d.getMonth()===m; });
+    const inc = mtx.filter(t=>t.type==='income' && !TRANSFER_CATS.has(t.category)).reduce((s,t)=>s+t.amount,0);
+    const exp = mtx.filter(t=>t.type==='expense' && !TRANSFER_CATS.has(t.category)).reduce((s,t)=>s+t.amount,0);
+    months.push({ y, m, label: MONTHS_SHORT[m] + (spansYears ? ` ${String(y).slice(2)}` : ''), income:inc, expense:exp, net: inc-exp, hasData: mtx.length>0 });
+    cursor.setMonth(cursor.getMonth()+1);
+    guard++;
   }
   const withData = months.filter(mo=>mo.hasData);
   const best = withData.length ? withData.reduce((a,b)=> b.net>a.net ? b : a) : null;
   const worst = withData.length ? withData.reduce((a,b)=> b.net<a.net ? b : a) : null;
-  return { income, expense, net, rate, catData, months, best, worst, hasData: txs.length>0 };
+  const monthsCount = Math.max(1, withData.length);
+  const avgNet = net / monthsCount;
+
+  return { income, expense, net, rate, catData, months, best, worst, hasData: txs.length>0, netSavedToGoals, avgNet, monthsCount };
 }
 
 function renderYearlyReviewModal(){
-  const year = state.reviewYear;
-  const s = computeYearlyStats(year);
+  const range = getReviewRange();
+  const s = computeReviewStats(range);
   const maxCat = Math.max(1, ...s.catData.map(c=>c.value));
   const maxMonthAbs = Math.max(1, ...s.months.map(mo=>Math.max(mo.income, mo.expense)));
+  const period = state.reviewPeriod;
   return `
     <div class="modal-overlay" data-close-yearly="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
-        <div class="modal-head"><div class="modal-title ledger">Bilan annuel</div><button data-close-x-yearly="1">${icon('x',18)}</button></div>
-        <div class="month-nav" style="margin:0 auto 18px;">
-          <button data-review-year="-1">${icon('chevronL',16)}</button>
-          <div class="label ledger">${year}</div>
-          <button data-review-year="1">${icon('chevronR',16)}</button>
+        <div class="modal-head"><div class="modal-title ledger">Bilan</div><button data-close-x-yearly="1">${icon('x',18)}</button></div>
+
+        <div class="type-toggle" style="margin-bottom:12px;">
+          <button data-review-period="year" style="background:${period==='year'?'var(--gold)':'transparent'}; color:${period==='year'?'var(--ink)':'var(--paperDim)'}">Année</button>
+          <button data-review-period="quarter" style="background:${period==='quarter'?'var(--gold)':'transparent'}; color:${period==='quarter'?'var(--ink)':'var(--paperDim)'}">Trimestre</button>
+          <button data-review-period="custom" style="background:${period==='custom'?'var(--gold)':'transparent'}; color:${period==='custom'?'var(--ink)':'var(--paperDim)'}">Personnalisé</button>
         </div>
-        ${!s.hasData ? `<div class="empty">Aucune transaction en ${year}</div>` : `
-          <div style="display:flex; gap:22px; flex-wrap:wrap; margin-bottom:18px;">
+
+        ${period==='year' ? `
+          <div class="month-nav" style="margin:0 auto 18px;">
+            <button data-review-year="-1">${icon('chevronL',16)}</button>
+            <div class="label ledger">${state.reviewYear}</div>
+            <button data-review-year="1">${icon('chevronR',16)}</button>
+          </div>
+        ` : ''}
+        ${period==='quarter' ? `
+          <div class="month-nav" style="margin:0 auto 10px;">
+            <button data-review-year="-1">${icon('chevronL',16)}</button>
+            <div class="label ledger">${state.reviewYear}</div>
+            <button data-review-year="1">${icon('chevronR',16)}</button>
+          </div>
+          <div class="filter-pills" style="margin-bottom:18px; justify-content:center; display:flex;">
+            ${[1,2,3,4].map(q=>`<button data-review-quarter="${q}" class="${state.reviewQuarter===q?'active':''}">T${q}</button>`).join('')}
+          </div>
+        ` : ''}
+        ${period==='custom' ? `
+          <div class="row" style="gap:10px; margin-bottom:18px;">
+            <input id="reviewCustomStart" type="date" class="field-input mono" style="margin-bottom:0;" value="${state.reviewCustomStart||''}">
+            <input id="reviewCustomEnd" type="date" class="field-input mono" style="margin-bottom:0;" value="${state.reviewCustomEnd||''}">
+          </div>
+          <button data-apply-custom-range="1" class="btn-ghost" style="width:100%; justify-content:center; margin-bottom:18px;">Appliquer</button>
+        ` : ''}
+
+        ${!s.hasData ? `<div class="empty">Aucune transaction sur cette période</div>` : `
+          <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors mouvements vers/depuis vos objectifs d'épargne</div>
+          <div style="display:flex; gap:22px; flex-wrap:wrap; margin-bottom:8px;">
             <div><div class="stat-label">Revenus</div><div class="stat-val" style="color:var(--sage); font-size:20px;">${fmt0(s.income)}</div></div>
             <div><div class="stat-label">Dépenses</div><div class="stat-val" style="color:var(--coral); font-size:20px;">${fmt0(s.expense)}</div></div>
             <div><div class="stat-label">Épargné</div><div class="stat-val" style="color:var(--gold); font-size:20px;">${s.net>=0?'+':'−'}${fmt0(Math.abs(s.net))}</div></div>
             <div><div class="stat-label">Taux d'épargne</div><div class="stat-val" style="color:var(--paper); font-size:20px;">${s.rate}%</div></div>
           </div>
+          ${s.netSavedToGoals!==0 ? `<div style="font-size:12px; color:var(--paperDim); margin-bottom:18px;">${icon('faceid',11)} Dont ${s.netSavedToGoals>0?'':''}${fmt0(s.netSavedToGoals)} ${s.netSavedToGoals>=0?'placés dans':'retirés de'} vos objectifs d'épargne</div>` : `<div style="margin-bottom:18px;"></div>`}
+
           ${s.best && s.worst ? `
             <div style="display:flex; gap:10px; margin-bottom:20px;">
               <div style="flex:1; background:var(--surfaceHi); border-radius:12px; padding:12px;">
@@ -1189,6 +1260,7 @@ function renderYearlyReviewModal(){
               </div>
             </div>
           ` : ''}
+
           <div class="section-title" style="font-size:13.5px; margin-bottom:10px;">Mois par mois</div>
           <div class="trend-scroll" style="margin-bottom:8px;">
             <div class="chart-bars">
@@ -1204,12 +1276,27 @@ function renderYearlyReviewModal(){
             </div>
           </div>
           <div class="legend" style="margin-bottom:20px;"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span></div>
+
           <div class="section-title" style="font-size:13.5px; margin-bottom:10px;">Dépenses par catégorie</div>
-          <div class="scroll-cats">
-            ${s.catData.map(c=>`
+          <div class="scroll-cats" style="margin-bottom:22px;">
+            ${s.catData.length===0 ? `<div class="empty">Aucune dépense</div>` : s.catData.map(c=>`
               <div class="catbar-row">
                 <div class="row" style="margin-bottom:2px;"><span style="font-size:12.5px; display:flex; align-items:center; gap:6px;"><span class="dot" style="background:${c.color}"></span>${c.label}</span><span class="mono" style="font-size:12.5px;">${fmt0(c.value)}</span></div>
                 <div class="catbar-track"><div class="catbar-fill" style="width:${Math.round(c.value/maxCat*100)}%; background:${c.color};"></div></div>
+              </div>
+            `).join('')}
+          </div>
+
+          <div style="height:1px; background:var(--line); margin-bottom:18px;"></div>
+          <div class="section-title" style="font-size:13.5px; margin-bottom:4px;">Simulation</div>
+          <div style="font-size:12px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">
+            Au rythme moyen de cette période (${s.avgNet>=0?'+':'−'}${fmt0(Math.abs(s.avgNet))}/mois), votre solde actuel de ${fmt0(totalBalance())} pourrait évoluer ainsi :
+          </div>
+          <div style="display:flex; gap:10px;">
+            ${[3,6,12].map(n=>`
+              <div style="flex:1; background:var(--surfaceHi); border-radius:12px; padding:12px; text-align:center;">
+                <div style="font-size:11px; color:var(--paperDim); margin-bottom:6px;">Dans ${n} mois</div>
+                <div class="mono" style="font-size:15px; font-weight:700; color:${s.avgNet>=0?'var(--sage)':'var(--coral)'};">${fmt0(totalBalance() + s.avgNet*n)}</div>
               </div>
             `).join('')}
           </div>
@@ -1793,9 +1880,12 @@ function renderGoals(){
               <div class="goal-name">${escapeHtml(g.name)}</div>
               <div class="goal-amt" style="color:${g.color}">${fmt0(g.current)} <span class="target">/ ${fmt0(g.target)}</span></div>
               <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
-              <button data-open-goaltransfer="${g.id}" style="display:flex; align-items:center; gap:6px; margin-top:10px; color:${transfer?g.color:'var(--paperDim)'}; font-size:11.5px; background:none; border:none; padding:0;">
-                ${icon('repeat',12)} ${transfer ? `${fmt0(transfer.amount)} ${freqLabel(transfer.frequency).toLowerCase()} — virement auto` : 'Configurer un virement automatique'}
-              </button>
+              <div class="row" style="margin-top:10px; margin-bottom:0;">
+                <button data-open-goaltransfer="${g.id}" style="display:flex; align-items:center; gap:6px; color:${transfer?g.color:'var(--paperDim)'}; font-size:11.5px; background:none; border:none; padding:0;">
+                  ${icon('repeat',12)} ${transfer ? `${fmt0(transfer.amount)} ${freqLabel(transfer.frequency).toLowerCase()} — virement auto` : 'Configurer un virement automatique'}
+                </button>
+                ${transfer ? `<button data-stop-goaltransfer="${g.id}" style="font-size:10.5px; color:var(--coral); background:none; border:none; padding:0;">Arrêter</button>` : ''}
+              </div>
               ${g.deadline && !done ? (()=>{
                 const dl = new Date(g.deadline);
                 const now = new Date();
@@ -2274,6 +2364,10 @@ function bindEvents(){
 
   app.querySelectorAll('[data-open-yearly]').forEach(el=>el.addEventListener('click', ()=>{
     state.reviewYear = new Date().getFullYear();
+    state.reviewPeriod = 'year';
+    state.reviewQuarter = Math.ceil((new Date().getMonth()+1)/3);
+    state.reviewCustomStart = '';
+    state.reviewCustomEnd = '';
     state.yearlyReviewOpen = true;
     rerender();
   }));
@@ -2281,6 +2375,21 @@ function bindEvents(){
   app.querySelectorAll('[data-close-x-yearly]').forEach(el=>el.addEventListener('click', ()=>{ state.yearlyReviewOpen=false; rerender(); }));
   app.querySelectorAll('[data-review-year]').forEach(el=>el.addEventListener('click', ()=>{
     state.reviewYear += Number(el.dataset.reviewYear);
+    rerender();
+  }));
+  app.querySelectorAll('[data-review-period]').forEach(el=>el.addEventListener('click', ()=>{
+    state.reviewPeriod = el.dataset.reviewPeriod;
+    rerender();
+  }));
+  app.querySelectorAll('[data-review-quarter]').forEach(el=>el.addEventListener('click', ()=>{
+    state.reviewQuarter = Number(el.dataset.reviewQuarter);
+    rerender();
+  }));
+  app.querySelectorAll('[data-apply-custom-range]').forEach(el=>el.addEventListener('click', ()=>{
+    const startEl = document.getElementById('reviewCustomStart');
+    const endEl = document.getElementById('reviewCustomEnd');
+    state.reviewCustomStart = startEl ? startEl.value : '';
+    state.reviewCustomEnd = endEl ? endEl.value : '';
     rerender();
   }));
 
@@ -2322,6 +2431,12 @@ function bindEvents(){
     mutateData(d=>{ d.goalTransfers = (d.goalTransfers||[]).filter(t=>t.goalId!==goalId); });
     state.editingGoalTransferId = null;
     showToast('Virement automatique désactivé');
+  }));
+  app.querySelectorAll('[data-stop-goaltransfer]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const goalId = el.dataset.stopGoaltransfer;
+    mutateData(d=>{ d.goalTransfers = (d.goalTransfers||[]).filter(t=>t.goalId!==goalId); });
+    showToast('Virement automatique arrêté');
   }));
 
   app.querySelectorAll('[data-open-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen = true; rerender(); }));
