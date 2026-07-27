@@ -374,6 +374,7 @@ function seedData(){
     categoryRollover: {},
     lastRolloverCheck: null,
     goalTransfers: [],
+    lastExportDate: null,
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
@@ -401,6 +402,7 @@ function loadData(){
       if(!parsed.categoryRollover) parsed.categoryRollover = {};
       if(parsed.lastRolloverCheck===undefined) parsed.lastRolloverCheck = null;
       if(!parsed.goalTransfers) parsed.goalTransfers = [];
+      if(parsed.lastExportDate===undefined) parsed.lastExportDate = null;
       (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
       if(!parsed.theme) parsed.theme = 'ledger';
       if(!parsed.pinnedCategories){
@@ -574,11 +576,44 @@ function processGoalTransfers(){
   });
   if(changed) saveData(state.data);
 }
+const AUTOBACKUP_PREFIX = 'solde-autobackup-';
+const AUTOBACKUP_DAYS = 7;
+function runAutoBackup(){
+  try{
+    const todayKey = new Date().toISOString().slice(0,10);
+    const marker = localStorage.getItem(AUTOBACKUP_PREFIX + 'last');
+    if(marker === todayKey) return;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return;
+    localStorage.setItem(AUTOBACKUP_PREFIX + todayKey, raw);
+    localStorage.setItem(AUTOBACKUP_PREFIX + 'last', todayKey);
+    const keys = [];
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(k && k.startsWith(AUTOBACKUP_PREFIX) && k !== AUTOBACKUP_PREFIX+'last') keys.push(k);
+    }
+    keys.sort();
+    while(keys.length > AUTOBACKUP_DAYS){ localStorage.removeItem(keys.shift()); }
+  }catch(e){}
+}
+function listAutoBackups(){
+  const out = [];
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(k && k.startsWith(AUTOBACKUP_PREFIX) && k !== AUTOBACKUP_PREFIX+'last'){
+        out.push(k.slice(AUTOBACKUP_PREFIX.length));
+      }
+    }
+  }catch(e){}
+  return out.sort().reverse();
+}
 processRecurring();
 state.locked = !!(state.data.security && state.data.security.enabled);
 applyTheme(state.data.theme);
 processCategoryRollover();
 processGoalTransfers();
+runAutoBackup();
 
 function setState(patch){ Object.assign(state, patch); rerender(); }
 function mutateData(fn){ fn(state.data); saveData(state.data); rerender(); }
@@ -948,6 +983,9 @@ function renderSecurityModal(){
 function renderBackupModal(){
   const count = state.data.transactions.length;
   const lastExport = state.data.lastExportDate;
+  const daysSinceExport = lastExport ? Math.floor((Date.now() - new Date(lastExport).getTime()) / 86400000) : null;
+  const exportOverdue = daysSinceExport===null || daysSinceExport >= 14;
+  const autoBackups = listAutoBackups();
   return `
     <div class="modal-overlay" data-close-backup="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
@@ -958,11 +996,24 @@ function renderBackupModal(){
         <div class="txrow">
           <div class="tx-left"><div class="swatch" style="background:rgba(212,169,79,.16); color:var(--gold);">${icon('download',16)}</div><div class="tx-note">${count} transaction${count>1?'s':''} enregistrée${count>1?'s':''}</div></div>
         </div>
-        <button class="btn-primary" style="width:100%; justify-content:center; margin-top:14px;" data-export-backup="1">${icon('download',15)} Télécharger une sauvegarde</button>
+        <div style="font-size:12px; color:${exportOverdue?'var(--coral)':'var(--paperDim)'}; margin:8px 0 4px;">
+          ${lastExport ? `Dernier export téléchargé : il y a ${daysSinceExport} jour${daysSinceExport>1?'s':''}` : "Tu n'as encore jamais exporté de sauvegarde"}
+          ${exportOverdue ? ' — pense à en refaire une' : ''}
+        </div>
+        <button class="btn-primary" style="width:100%; justify-content:center; margin-top:10px;" data-export-backup="1">${icon('download',15)} Télécharger une sauvegarde</button>
         <div style="height:1px; background:var(--line); margin:18px 0;"></div>
         <label for="backupImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer;">${icon('upload',15)} Restaurer une sauvegarde</label>
         <input id="backupImportInput" type="file" accept="application/json,.json" style="display:none;">
         <div style="font-size:11.5px; color:var(--paperDim); margin-top:10px; text-align:center;">La restauration remplace toutes tes données actuelles.</div>
+        <div style="height:1px; background:var(--line); margin:18px 0;"></div>
+        <div class="field-label" style="margin-bottom:8px;">Instantanés automatiques</div>
+        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Une copie de tes données est gardée automatiquement chaque jour sur cet appareil (7 derniers jours) — utile en cas d'erreur de manipulation, mais pas si tu perds ton téléphone : pour ça, exporte une vraie sauvegarde ci-dessus.</div>
+        ${autoBackups.length===0 ? `<div class="empty">Aucun instantané pour l'instant — reviens demain.</div>` : autoBackups.map(dateStr=>`
+          <div class="txrow">
+            <div class="tx-left"><div class="swatch" style="background:var(--surfaceHi);">${icon('shield',14)}</div><div class="tx-note">${new Date(dateStr+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long'})}</div></div>
+            <button class="tx-del" style="color:var(--paperDim);" data-restore-autobackup="${dateStr}">${icon('upload',14)}</button>
+          </div>
+        `).join('')}
         <div style="height:1px; background:var(--line); margin:18px 0;"></div>
         <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-open-accounts="1">${icon('tag',15)} Gérer mes comptes</button>
         <div style="height:1px; background:var(--line); margin:18px 0;"></div>
@@ -2906,8 +2957,24 @@ function bindEvents(){
       a.href = url; a.download = `solde-sauvegarde-${dateStr}.json`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      mutateData(d=>{ d.lastExportDate = new Date().toISOString(); });
       showToast('Sauvegarde téléchargée');
     }catch(e){ showToast('Impossible de créer la sauvegarde'); }
+  }));
+  app.querySelectorAll('[data-restore-autobackup]').forEach(el=>el.addEventListener('click', ()=>{
+    const dateStr = el.dataset.restoreAutobackup;
+    try{
+      const raw = localStorage.getItem(AUTOBACKUP_PREFIX + dateStr);
+      if(!raw) throw new Error('introuvable');
+      const parsed = JSON.parse(raw);
+      if(!Array.isArray(parsed.transactions)) throw new Error('format invalide');
+      state.data = parsed;
+      saveData(state.data);
+      applyTheme(state.data.theme);
+      state.backupModalOpen = false;
+      showToast(`Instantané du ${new Date(dateStr+'T12:00:00').toLocaleDateString('fr-FR')} restauré`);
+      rerender();
+    }catch(e){ showToast('Impossible de restaurer cet instantané'); }
   }));
   const backupImportInput = app.querySelector('#backupImportInput');
   if(backupImportInput) backupImportInput.addEventListener('change', ()=>{
