@@ -3258,7 +3258,7 @@ function bindEvents(){
     let sx=null, sy=null, sInScroll=false;
     pageEl.addEventListener('touchstart', (e)=>{
       sx = e.touches[0].clientX; sy = e.touches[0].clientY;
-      sInScroll = !!e.target.closest('.trend-scroll');
+      sInScroll = !!e.target.closest('.trend-scroll') || !!e.target.closest('.month-nav');
     }, {passive:true});
     pageEl.addEventListener('touchend', (e)=>{
       if(sx===null) return;
@@ -3285,12 +3285,14 @@ function bindEvents(){
     let mx=null, my=null;
     navEl.addEventListener('touchstart', (e)=>{
       mx = e.touches[0].clientX; my = e.touches[0].clientY;
+      e.stopPropagation();
     }, {passive:true});
     navEl.addEventListener('touchend', (e)=>{
       if(mx===null) return;
       const dx = e.changedTouches[0].clientX - mx;
       const dy = e.changedTouches[0].clientY - my;
       mx = null;
+      e.stopPropagation();
       if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)*1.6){
         moveMonth(dx < 0 ? 1 : -1);
       }
