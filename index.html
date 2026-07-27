@@ -52,6 +52,7 @@
   .scroll-cats, .modal-sheet{-webkit-overflow-scrolling:touch;}
   .header{position:sticky; top:0; z-index:20; background:var(--bg); backdrop-filter:blur(10px);
     border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 14px) 18px 14px;}
+  .month-nav-sticky{position:sticky; top:var(--header-h, 76px); z-index:15; background:var(--bg); padding:14px 0 4px; margin-bottom:10px;}
   .brand{display:flex; align-items:center; gap:10px;}
   .brand .mark{width:30px; height:30px; border-radius:8px; background:var(--gold); color:var(--ink);
     display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px;}
@@ -458,6 +459,9 @@ let state = {
   gaugeCatModalOpen: false,
   yearlyReviewOpen: false,
   insightsModalOpen: false,
+  habitCalcOpen: false,
+  habitDestinationStep: false,
+  habitForm: { label:'', amount:'', frequency:'daily' },
   editingGoalTransferId: null,
   editingAccountId: null,
   activeAccountFilter: null,
@@ -485,6 +489,7 @@ let state = {
   triedBiometricAuto: false,
   recentExpanded: false,
   txAdvancedOpen: false,
+  txDuplicateWarning: false,
   toast: null,
   txFilter: 'all',
   hidePastTx: true,
@@ -782,6 +787,8 @@ const ICONS = {
   shield: `<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>`,
   chartbar: `<path d="M4 20V10M10 20V4M16 20v-7M4 20h16" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
   bulb: `<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  flame: `<path d="M12 2c1 3-3 4-3 8a3 3 0 006 0c1 1 2 2 2 4a5 5 0 01-10 0c0-4 2-5 3-9 .5 1 1 2 2 3-.3-2.5.5-4.5 0-6z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>`,
+  copy: `<rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M5 15V5a2 2 0 012-2h10" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>`,
 };
 function icon(name, size=16){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none">${ICONS[name]||''}</svg>`; }
 
@@ -841,6 +848,7 @@ function renderApp(){
     ${state.gaugeCatModalOpen ? renderGaugeCatModal() : ''}
     ${state.yearlyReviewOpen ? renderYearlyReviewModal() : ''}
     ${state.insightsModalOpen ? renderInsightsModal() : ''}
+    ${state.habitCalcOpen ? renderHabitCalcModal() : ''}
     ${state.editingGoalTransferId ? renderGoalTransferModal() : ''}
     ${state.editingBuiltinColorId ? renderEditBuiltinColorModal() : ''}
     ${state.quickTxOpen ? renderQuickTxModal() : ''}
@@ -858,11 +866,11 @@ function renderHeader(){
         <div class="brand">
           <div class="mark">S</div>
           <div>
-            <div class="brand-name ledger">Solde des Ours</div>
+            <div class="brand-name ledger">${activeAcc ? escapeHtml(activeAcc.name) : 'Solde des Ours'}</div>
             ${accounts.length>1 ? `
               <button data-open-accountfilter="1" style="display:flex; align-items:center; gap:5px; background:none; border:none; padding:0; margin-top:2px;">
                 ${activeAcc ? `<span class="dot" style="width:7px;height:7px;border-radius:50%;background:${activeAcc.color};display:inline-block;"></span>` : ''}
-                <span style="font-size:11.5px; color:var(--paperDim);">${activeAcc ? escapeHtml(activeAcc.name) : 'Tous les comptes'}</span>
+                <span style="font-size:11.5px; color:var(--paperDim);">${activeAcc ? 'Voir tous les comptes' : 'Tous les comptes'}</span>
                 ${icon('chevronR',10)}
               </button>
             ` : `<div class="brand-sub">votre grand livre personnel</div>`}
@@ -1346,6 +1354,13 @@ function computeReviewStats(range){
   return { income, expense, net, rate, catData, months, best, worst, hasData: txs.length>0, netSavedToGoals, avgNet, monthsCount };
 }
 
+function accountFilterBadge(){
+  if(!state.activeAccountFilter) return '';
+  const acc = (state.data.accounts||[]).find(a=>a.id===state.activeAccountFilter);
+  if(!acc) return '';
+  return `<div style="display:inline-flex; align-items:center; gap:6px; background:${acc.color}18; border:1px solid ${acc.color}44; border-radius:99px; padding:5px 11px; font-size:11.5px; color:${acc.color}; margin-bottom:16px;"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:${acc.color};display:inline-block;"></span>${escapeHtml(acc.name)} uniquement</div>`;
+}
+
 function renderYearlyReviewModal(){
   const range = getReviewRange();
   const s = computeReviewStats(range);
@@ -1356,6 +1371,7 @@ function renderYearlyReviewModal(){
     <div class="modal-overlay" data-close-yearly="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
         <div class="modal-head"><div class="modal-title ledger">Bilan</div><button data-close-x-yearly="1">${icon('x',18)}</button></div>
+        ${accountFilterBadge()}
 
         <div class="type-toggle" style="margin-bottom:12px;">
           <button data-review-period="year" style="background:${period==='year'?'var(--gold)':'transparent'}; color:${period==='year'?'var(--ink)':'var(--paperDim)'}">Année</button>
@@ -1456,6 +1472,85 @@ function renderYearlyReviewModal(){
   `;
 }
 
+function habitProjections(amount, frequency){
+  let perMonth;
+  if(frequency==='daily') perMonth = amount * 30.44;
+  else if(frequency==='weekly') perMonth = amount * 4.348;
+  else perMonth = amount;
+  return { perMonth, perYear: perMonth*12, per5y: perMonth*60 };
+}
+
+function renderHabitCalcModal(){
+  const f = state.habitForm;
+  const amount = Number(f.amount) || 0;
+  const proj = habitProjections(amount, f.frequency);
+  const avgExpense = computeForecast().avgExpense;
+  const freqLabels = { daily:'Chaque jour', weekly:'Chaque semaine', monthly:'Chaque mois' };
+
+  if(state.habitDestinationStep){
+    const goals = state.data.goals||[];
+    const habitName = f.label.trim() || 'Habitude non dépensée';
+    return `
+      <div class="modal-overlay" data-close-habitcalc="1">
+        <div class="modal-sheet" onclick="event.stopPropagation()">
+          <div class="modal-head">
+            <button data-habit-back="1" style="display:flex; align-items:center; gap:6px; color:var(--paperDim); font-size:13px; background:none; border:none; padding:0;">${icon('chevronL',15)} Retour</button>
+            <button data-close-x-habitcalc="1">${icon('x',18)}</button>
+          </div>
+          <div class="modal-title ledger" style="margin-bottom:6px;">Où atterrit le virement ?</div>
+          <div style="font-size:12px; color:var(--paperDim); margin-bottom:16px; line-height:1.5;">${fmt0(proj.perMonth)}/mois — choisis un objectif existant, ou crées-en un nouveau dédié à cette habitude.</div>
+          ${goals.length>0 ? `
+            <div class="field-label" style="margin-bottom:8px;">Objectif existant</div>
+            ${goals.map(g=>`
+              <button data-habit-to-existing-goal="${g.id}" class="txrow" style="width:100%; text-align:left;">
+                <div class="tx-left"><div class="swatch" style="background:${g.color}22;"><span class="dot" style="background:${g.color};"></span></div><div class="tx-note">${escapeHtml(g.name)}</div></div>
+                ${icon('chevronR',14)}
+              </button>
+            `).join('')}
+            <div style="height:1px; background:var(--line); margin:16px 0;"></div>
+          ` : ''}
+          <button data-habit-to-new-goal="1" class="btn-primary" style="width:100%; justify-content:center;">${icon('plus',14)} Nouvel objectif « ${escapeHtml(habitName)} »</button>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="modal-overlay" data-close-habitcalc="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Coût d'une habitude</div><button data-close-x-habitcalc="1">${icon('x',18)}</button></div>
+        <div style="font-size:12px; color:var(--paperDim); margin-bottom:16px; line-height:1.5;">Une petite dépense qui revient souvent pèse plus lourd qu'il n'y paraît. Calcule ce qu'elle représente vraiment.</div>
+        <label class="field-label">Description (facultatif)</label>
+        <input id="habitLabel" class="field-input" placeholder="Ex : café à emporter" value="${escapeHtml(f.label||'')}">
+        <label class="field-label">Montant</label>
+        <input id="habitAmount" type="number" class="field-input amount" value="${f.amount}">
+        <label class="field-label">Fréquence</label>
+        <div class="freq-row" style="margin-bottom:18px;">
+          ${['daily','weekly','monthly'].map(fr=>`<button data-habit-freq="${fr}" class="${f.frequency===fr?'active':''}">${freqLabels[fr]}</button>`).join('')}
+        </div>
+        ${amount>0 ? `
+          <div style="display:flex; gap:8px; margin-bottom:14px;">
+            <div style="flex:1; background:var(--surfaceHi); border-radius:12px; padding:12px; text-align:center;">
+              <div style="font-size:10.5px; color:var(--paperDim); margin-bottom:6px;">Par mois</div>
+              <div class="mono" style="font-size:14px; font-weight:700;">${fmt0(proj.perMonth)}</div>
+            </div>
+            <div style="flex:1; background:var(--surfaceHi); border-radius:12px; padding:12px; text-align:center;">
+              <div style="font-size:10.5px; color:var(--paperDim); margin-bottom:6px;">Par an</div>
+              <div class="mono" style="font-size:14px; font-weight:700; color:var(--gold);">${fmt0(proj.perYear)}</div>
+            </div>
+            <div style="flex:1; background:var(--surfaceHi); border-radius:12px; padding:12px; text-align:center;">
+              <div style="font-size:10.5px; color:var(--paperDim); margin-bottom:6px;">Sur 5 ans</div>
+              <div class="mono" style="font-size:14px; font-weight:700; color:var(--coral);">${fmt0(proj.per5y)}</div>
+            </div>
+          </div>
+          ${avgExpense>0 ? `<div style="font-size:12px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">Sur un an, ça équivaut à environ <strong style="color:var(--paper);">${(proj.perYear/avgExpense).toFixed(1)} mois</strong> de tes dépenses courantes moyennes.</div>` : `<div style="margin-bottom:18px;"></div>`}
+          <button data-habit-to-goal="1" class="btn-primary" style="width:100%; justify-content:center;">${icon('target',14)} Mettre ça de côté automatiquement</button>
+        ` : `<div class="empty">Entre un montant pour voir la projection.</div>`}
+      </div>
+    </div>
+  `;
+}
+
 function computeInsights(){
   const f = computeForecast();
   const insights = [];
@@ -1526,6 +1621,7 @@ function renderInsightsModal(){
     <div class="modal-overlay" data-close-insights="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
         <div class="modal-head"><div class="modal-title ledger">Repères</div><button data-close-x-insights="1">${icon('x',18)}</button></div>
+        ${accountFilterBadge()}
         <div style="font-size:12px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">
           Calculé localement à partir de tes transactions, sans donnée envoyée nulle part. Des repères éducatifs généraux, pas des conseils personnalisés — pour des décisions précises, un conseiller financier reste la bonne personne.
         </div>
@@ -1635,9 +1731,9 @@ function balanceForViewedMonth(f, viewY, viewM){
   return f.startBalance + f.netAvg*diff;
 }
 
-function renderForecastCard(){
+function renderForecastCard(f){
   if(!state.data.dashboardSettings.showForecast) return '';
-  const f = computeForecast();
+  if(!f) f = computeForecast();
   const maxAbs = Math.max(1, f.startBalance, ...f.points.map(p=>Math.abs(p.value)));
   return `
     <div class="card">
@@ -1787,7 +1883,7 @@ function renderDashboard(){
   const upcoming = upcomingRecurring(7);
 
   return `
-    <div class="row" style="margin-bottom:14px; justify-content:center;">
+    <div class="row month-nav-sticky" style="justify-content:center;">
       ${monthNav()}
     </div>
     ${renderGaugeCard(stats)}
@@ -1908,7 +2004,7 @@ function renderDashboard(){
       }).join('')}
     </div>
     ` : ''}
-    ${renderForecastCard()}
+    ${renderForecastCard(f)}
   `;
 }
 
@@ -1936,6 +2032,7 @@ function txRow(t, delBtn){
       </div>
       <div style="display:flex; align-items:center; gap:6px;">
         <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>
+        ${delBtn ? `<button class="tx-del" style="color:var(--paperDim);" data-duplicate-tx="${t.id}" title="Dupliquer">${icon('copy',14)}</button>` : ''}
         ${delBtn ? `<button class="tx-del" style="color:var(--paperDim);" data-edit-tx="${t.id}">${icon('pencil',14)}</button>` : ''}
         ${delBtn ? `<button class="tx-del" data-del-tx="${t.id}">${icon('trash',14)}</button>` : `${icon('chevronR',14)}`}
       </div>
@@ -1977,7 +2074,7 @@ function renderTransactions(){
 /* ---------------- Budgets ---------------- */
 let budgetEditingId = null;
 function renderGaugeCard(stats){
-  const tx = monthTx();
+  const tx = stats.tx || monthTx();
   const byCat = {};
   tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
   const hidden = state.data.hiddenBudgetCategories||[];
@@ -2047,7 +2144,7 @@ function renderGaugeCard(stats){
       <div style="height:1px; background:var(--line); margin:16px 0;"></div>
       <div style="display:flex; gap:8px;">
         <button data-allocate-quick="withdraw" data-remaining-amount="${remaining}" style="background:var(--coral); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Retirer rapidement">−</button>
-        <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne</button>
+        <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne <span class="mono" style="opacity:.75; font-weight:600;">· ${fmt0((state.data.goals||[]).reduce((s,g)=>s+g.current,0))}</span></button>
         <button data-allocate-quick="add" data-remaining-amount="${remaining}" style="background:var(--sage); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter rapidement">+</button>
       </div>
     </div>
@@ -2126,6 +2223,7 @@ function renderGoals(){
       <div class="section-title" style="margin:0;">Objectifs d'épargne</div>
       <button class="btn-primary" data-open="addGoal">${icon('plus',14)} Nouvel objectif</button>
     </div>
+    <button data-open-habitcalc="1" class="btn-ghost" style="width:100%; justify-content:center; margin-bottom:14px; display:flex; align-items:center; gap:7px;">${icon('flame',14)} Combien coûte une habitude ?</button>
     ${goals.length===0 ? `<div class="card empty">Aucun objectif pour l'instant. Créez-en un pour commencer à mettre de côté.</div>` : `
       <div class="budget-stack">
         ${goals.map(g=>{
@@ -2207,7 +2305,10 @@ function renderQuickTxModal(){
             <input id="quickTxPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;">
           `}
         </div>
-        <button class="submit-btn" data-submit-quicktx="1">Enregistrer</button>
+        ${state.txDuplicateWarning ? `
+          <div class="alert" style="margin-bottom:12px;">${icon('alert',16)}<div>Une transaction identique existe déjà ce jour-là. Tape à nouveau pour confirmer.</div></div>
+        ` : ''}
+        <button class="submit-btn" data-submit-quicktx="1">${state.txDuplicateWarning ? 'Enregistrer quand même' : 'Enregistrer'}</button>
       </div>
     </div>
   `;
@@ -2279,7 +2380,10 @@ function renderAddTxModal(){
             ` : ''}
           ` : ''}
         ` : ''}
-        <button class="submit-btn" data-submit-tx="1">${isEditing ? 'Enregistrer les modifications' : 'Enregistrer'}</button>
+        ${state.txDuplicateWarning ? `
+          <div class="alert" style="margin-bottom:12px;">${icon('alert',16)}<div>Une transaction identique (même montant, catégorie et jour) existe déjà. Tape à nouveau pour l'enregistrer quand même.</div></div>
+        ` : ''}
+        <button class="submit-btn" data-submit-tx="1">${isEditing ? 'Enregistrer les modifications' : (state.txDuplicateWarning ? 'Enregistrer quand même' : 'Enregistrer')}</button>
       </div>
     </div>
   `;
@@ -2394,6 +2498,8 @@ window.onTxSearch = onTxSearch;
 
 function bindEvents(){
   const app = document.getElementById('app');
+  const headerEl = app.querySelector('.header');
+  if(headerEl) document.documentElement.style.setProperty('--header-h', headerEl.offsetHeight + 'px');
 
   app.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click', ()=>{
     if(el.dataset.tab === state.tab) return;
@@ -2412,7 +2518,7 @@ function bindEvents(){
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{
-    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' }; state.txAdvancedOpen = false; }
+    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' }; state.txAdvancedOpen = false; state.txDuplicateWarning = false; }
     if(el.dataset.open==='addGoal'){ goalFormState = { color: COLORS.sage }; }
     setState({modal: el.dataset.open});
   }));
@@ -2420,6 +2526,7 @@ function bindEvents(){
     const type = el.dataset.quickAdd;
     txFormState = { type, category:(type==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' };
     state.txAdvancedOpen = false;
+    state.txDuplicateWarning = false;
     setState({modal:'addTx'});
     const amtEl = document.getElementById('txAmount');
     if(amtEl) amtEl.focus();
@@ -2436,6 +2543,14 @@ function bindEvents(){
     showUndoToast(pair ? 'Virement supprimé' : 'Transaction supprimée', ()=>{ mutateData(d=>{ d.transactions.unshift(tx); if(pair) d.transactions.unshift(pair); }); });
   }));
   app.querySelectorAll('[data-edit-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.editTx); }));
+  app.querySelectorAll('[data-duplicate-tx]').forEach(el=>el.addEventListener('click', ()=>{
+    const t = state.data.transactions.find(t=>t.id===el.dataset.duplicateTx);
+    if(!t) return;
+    txFormState = { type:t.type, category:t.category, date:defaultTxDate(), recurring:false, frequency:'monthly', note:t.note||'', amount:t.amount, editingId:null, photo:null, accountId:t.accountId||'main' };
+    state.txAdvancedOpen = false;
+    state.txDuplicateWarning = false;
+    setState({modal:'addTx'});
+  }));
   app.querySelectorAll('[data-view-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.viewTx); }));
   app.querySelectorAll('[data-filter]').forEach(el=>el.addEventListener('click', ()=> setState({txFilter: el.dataset.filter})));
   app.querySelectorAll('[data-toggle-hide-past]').forEach(el=>el.addEventListener('click', ()=> setState({hidePastTx: !state.hidePastTx})));
@@ -2525,12 +2640,26 @@ function bindEvents(){
       showToast('Transaction modifiée');
       return;
     }
+    if(!state.txDuplicateWarning){
+      const dayStart = new Date(date+'T00:00:00');
+      const dayEnd = new Date(date+'T23:59:59');
+      const dup = state.data.transactions.some(t=> t.type===txFormState.type && t.category===txFormState.category && t.amount===amount && new Date(t.date)>=dayStart && new Date(t.date)<=dayEnd);
+      if(dup){
+        txFormState.amount = amount;
+        txFormState.note = note;
+        txFormState.date = date;
+        state.txDuplicateWarning = true;
+        rerender();
+        return;
+      }
+    }
     mutateData(d=>{
       d.transactions.unshift({ id:uid(), type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId });
       if(txFormState.recurring){
         d.recurring.push({ id:uid(), type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
       }
     });
+    state.txDuplicateWarning = false;
     state.modal = null;
     showToast(txFormState.recurring ? 'Récurrence créée' : (txFormState.type==='income' ? 'Entrée ajoutée' : 'Dépense ajoutée'));
   });
@@ -2624,6 +2753,61 @@ function bindEvents(){
   app.querySelectorAll('[data-open-insights]').forEach(el=>el.addEventListener('click', ()=>{ state.insightsModalOpen = true; rerender(); }));
   app.querySelectorAll('[data-close-insights]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.insightsModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-insights]').forEach(el=>el.addEventListener('click', ()=>{ state.insightsModalOpen=false; rerender(); }));
+
+  app.querySelectorAll('[data-open-habitcalc]').forEach(el=>el.addEventListener('click', ()=>{
+    state.habitForm = { label:'', amount:'', frequency:'daily' };
+    state.habitDestinationStep = false;
+    state.habitCalcOpen = true;
+    rerender();
+  }));
+  app.querySelectorAll('[data-close-habitcalc]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.habitCalcOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-habitcalc]').forEach(el=>el.addEventListener('click', ()=>{ state.habitCalcOpen=false; rerender(); }));
+  app.querySelectorAll('[data-habit-back]').forEach(el=>el.addEventListener('click', ()=>{ state.habitDestinationStep = false; rerender(); }));
+  const habitAmountInput = app.querySelector('#habitAmount');
+  if(habitAmountInput) habitAmountInput.addEventListener('input', ()=>{ state.habitForm.amount = habitAmountInput.value; rerender(); });
+  const habitLabelInput = app.querySelector('#habitLabel');
+  if(habitLabelInput) habitLabelInput.addEventListener('input', ()=>{ state.habitForm.label = habitLabelInput.value; });
+  app.querySelectorAll('[data-habit-freq]').forEach(el=>el.addEventListener('click', ()=>{
+    const amtEl = document.getElementById('habitAmount');
+    const lblEl = document.getElementById('habitLabel');
+    if(amtEl) state.habitForm.amount = amtEl.value;
+    if(lblEl) state.habitForm.label = lblEl.value;
+    state.habitForm.frequency = el.dataset.habitFreq;
+    rerender();
+  }));
+  app.querySelectorAll('[data-habit-to-goal]').forEach(el=>el.addEventListener('click', ()=>{
+    const amount = Number(state.habitForm.amount) || 0;
+    if(amount<=0) return;
+    state.habitDestinationStep = true;
+    rerender();
+  }));
+  app.querySelectorAll('[data-habit-to-existing-goal]').forEach(el=>el.addEventListener('click', ()=>{
+    const goalId = el.dataset.habitToExistingGoal;
+    const amount = Number(state.habitForm.amount) || 0;
+    const proj = habitProjections(amount, state.habitForm.frequency);
+    state.habitCalcOpen = false;
+    state.habitDestinationStep = false;
+    const existing = (state.data.goalTransfers||[]).find(t=>t.goalId===goalId);
+    state.goalTransferForm = existing ? { amount: Math.round(proj.perMonth), frequency: existing.frequency } : { amount: Math.round(proj.perMonth), frequency: 'monthly' };
+    state.editingGoalTransferId = goalId;
+    rerender();
+  }));
+  app.querySelectorAll('[data-habit-to-new-goal]').forEach(el=>el.addEventListener('click', ()=>{
+    const amount = Number(state.habitForm.amount) || 0;
+    const proj = habitProjections(amount, state.habitForm.frequency);
+    const name = state.habitForm.label.trim() || 'Habitude non dépensée';
+    let newGoalId;
+    mutateData(d=>{
+      newGoalId = uid();
+      d.goals.push({ id:newGoalId, name, target: Math.round(proj.perYear), current:0, color: COLORS.mint });
+    });
+    state.habitCalcOpen = false;
+    state.habitDestinationStep = false;
+    state.goalTransferForm = { amount: Math.round(proj.perMonth), frequency: 'monthly' };
+    state.editingGoalTransferId = newGoalId;
+    showToast('Objectif créé — configure le virement automatique');
+    rerender();
+  }));
 
   app.querySelectorAll('[data-open-yearly]').forEach(el=>el.addEventListener('click', ()=>{
     state.reviewYear = new Date().getFullYear();
@@ -2884,6 +3068,7 @@ function bindEvents(){
     const catId = el.dataset.quickTxCat;
     const type = el.dataset.quickTxType;
     quickTxFormState = { category:catId, type, date:defaultTxDate(), amount:'', note:'', photo:null };
+    state.txDuplicateWarning = false;
     state.manageCatOpen = false;
     state.quickTxOpen = true;
     rerender();
@@ -2910,10 +3095,17 @@ function bindEvents(){
     const date = document.getElementById('quickTxDate').value;
     const note = document.getElementById('quickTxNote').value;
     const isoDate = new Date(date).toISOString();
+    if(!state.txDuplicateWarning){
+      const dayStart = new Date(date+'T00:00:00');
+      const dayEnd = new Date(date+'T23:59:59');
+      const dup = state.data.transactions.some(t=> t.type===quickTxFormState.type && t.category===quickTxFormState.category && t.amount===amount && new Date(t.date)>=dayStart && new Date(t.date)<=dayEnd);
+      if(dup){ quickTxFormState.amount = amount; quickTxFormState.note = note; quickTxFormState.date = date; state.txDuplicateWarning = true; rerender(); return; }
+    }
     mutateData(d=>{
       d.transactions.unshift({ id:uid(), type:quickTxFormState.type, amount, category:quickTxFormState.category, note, date: isoDate, photo:quickTxFormState.photo, accountId: state.activeAccountFilter || 'main' });
     });
     state.quickTxOpen = false;
+    state.txDuplicateWarning = false;
     showToast(quickTxFormState.type==='income' ? 'Entrée ajoutée' : 'Dépense ajoutée');
   });
 
