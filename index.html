@@ -795,7 +795,10 @@ function moveMonth(delta){
   if(m<0){m=11;y--;} if(m>11){m=0;y++;}
   setState({viewY:y, viewM:m});
 }
-function totalBalance(){ return visibleTransactions().reduce((s,t)=> s + (t.type==='income'? t.amount : -t.amount), 0); }
+function totalBalance(){
+  const now = new Date();
+  return visibleTransactions().filter(t=> new Date(t.date) <= now).reduce((s,t)=> s + (t.type==='income'? t.amount : -t.amount), 0);
+}
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 
 /* ---------------- render root ---------------- */
@@ -990,8 +993,9 @@ function renderBackupModal(){
 }
 
 function accountBalance(accountId){
+  const now = new Date();
   return state.data.transactions
-    .filter(t=>(t.accountId||'main')===accountId)
+    .filter(t=>(t.accountId||'main')===accountId && new Date(t.date) <= now)
     .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
 }
 
@@ -1684,8 +1688,11 @@ function computeMonthStats(){
 
   const f = computeForecast();
   const tx = monthTx();
-  const realIncome = tx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const realExpense = tx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const realIncome = tx.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
+  const realExpense = tx.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
+  const savedDeposits = tx.filter(t=>t.type==='expense' && t.category==='epargne').reduce((s,t)=>s+t.amount,0);
+  const savedWithdrawals = tx.filter(t=>t.type==='income' && t.category==='epargne_retour').reduce((s,t)=>s+t.amount,0);
+  const savedThisMonth = savedDeposits - savedWithdrawals;
   const usingEstimate = isFuture && tx.length===0;
   const recurThisMonth = usingEstimate ? recurringOccurrencesInMonth(state.viewY, state.viewM) : {income:0, expense:0};
   const income = usingEstimate ? (f.variableIncome + recurThisMonth.income) : realIncome;
@@ -1697,17 +1704,17 @@ function computeMonthStats(){
   let pm = state.viewM - 1, py = state.viewY;
   if(pm<0){ pm = 11; py--; }
   const prevTx = visibleTransactions().filter(t=>sameMonth(t.date, py, pm));
-  const prevIncome = prevTx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const prevExpense = prevTx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const prevIncome = prevTx.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
+  const prevExpense = prevTx.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
   const incomeChange = usingEstimate ? null : pctChange(income, prevIncome);
   const expenseChange = usingEstimate ? null : pctChange(expense, prevExpense);
 
-  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, incomeChange, expenseChange };
+  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, incomeChange, expenseChange, savedThisMonth };
 }
 
 function renderBalanceContent(stats, showStats){
   if(showStats===undefined) showStats = true;
-  const { bal, income, expense, rate, usingEstimate, f, incomeChange, expenseChange } = stats;
+  const { bal, income, expense, rate, usingEstimate, f, incomeChange, expenseChange, savedThisMonth } = stats;
   return `
       <div class="row" style="margin-bottom:0;">
         <div class="eyebrow" style="margin-bottom:0;">Reste${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
@@ -1725,6 +1732,11 @@ function renderBalanceContent(stats, showStats){
         <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}${changeBadge(incomeChange,'up')}</div></div>
         <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}${changeBadge(expenseChange,'down')}</div></div>
       </div>
+      ${savedThisMonth !== 0 ? `
+      <div class="row" style="margin-bottom:0; margin-top:14px;">
+        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Épargne du mois</div><div class="stat-val" style="color:var(--gold)">${savedThisMonth>=0?'+':'−'}${fmt2(Math.abs(savedThisMonth))}</div></div>
+      </div>
+      ` : ''}
       ${(()=>{
         const gPct = income>0 ? Math.min(100, Math.round(expense/income*100)) : 0;
         const gOver = income>0 && expense>income;
