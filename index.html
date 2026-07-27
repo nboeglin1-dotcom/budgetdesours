@@ -74,9 +74,9 @@
   .ruled{background-image:repeating-linear-gradient(to bottom, transparent, transparent 27px, rgba(43,59,92,.33) 28px);}
   .section-title{font-family:'Fraunces',serif; font-weight:600; font-size:19px; margin:0 0 14px; color:var(--paper) !important;}
   .eyebrow{font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal; text-transform:none; color:var(--paper); margin-bottom:6px;}
-  .month-nav{display:flex; align-items:center; gap:6px;}
-  .month-nav button{padding:6px; border-radius:8px; color:var(--paperDim);}
-  .month-nav .label{font-family:'Fraunces',serif; font-size:17px; font-weight:600; width:140px; text-align:center;
+  .month-nav{display:flex; align-items:center; gap:6px; width:100%;}
+  .month-nav button{padding:6px; border-radius:8px; color:var(--paperDim); flex-shrink:0;}
+  .month-nav .label{font-family:'Fraunces',serif; font-size:17px; font-weight:600; flex:1; text-align:center;
     color:#000000 !important; background:#F2EDDE; padding:7px 12px; border-radius:9px;}
   .today-btn{font-size:11px; font-weight:600; color:var(--gold); background:rgba(212,169,79,.14); border:1px solid rgba(212,169,79,.35); padding:6px 10px; border-radius:99px; margin-left:2px; white-space:nowrap;}
   .btn-primary{background:var(--gold); color:var(--ink); font-weight:600; padding:10px 16px; border-radius:12px; font-size:14px; display:inline-flex; align-items:center; gap:6px;}
@@ -257,12 +257,14 @@ const EXPENSE_CATS = [
   {id:'shopping', label:'Shopping', color:COLORS.rose, type:'expense'},
   {id:'abonnements', label:'Abonnements', color:COLORS.amber, type:'expense'},
   {id:'epargne', label:'Dépôt sur épargne', color:COLORS.mint, type:'expense'},
+  {id:'virement', label:'Virement entre comptes', color:COLORS.slate, type:'expense'},
   {id:'autres_d', label:'Autres', color:COLORS.slate, type:'expense'},
 ];
 const INCOME_CATS = [
   {id:'salaire', label:'Salaire', color:COLORS.gold, type:'income'},
   {id:'freelance', label:'Freelance', color:COLORS.sage, type:'income'},
   {id:'epargne_retour', label:"Retrait d'épargne", color:COLORS.mint, type:'income'},
+  {id:'virement_retour', label:'Virement entre comptes', color:COLORS.slate, type:'income'},
   {id:'autres_i', label:'Autres', color:COLORS.slate, type:'income'},
 ];
 const ALL_CATS = [...EXPENSE_CATS, ...INCOME_CATS];
@@ -455,7 +457,13 @@ let state = {
   pinCatModalOpen: false,
   gaugeCatModalOpen: false,
   yearlyReviewOpen: false,
+  insightsModalOpen: false,
   editingGoalTransferId: null,
+  editingAccountId: null,
+  activeAccountFilter: null,
+  accountFilterModalOpen: false,
+  transferModalOpen: false,
+  transferForm: { from:'main', to:'', amount:'', date: new Date().toISOString().slice(0,10) },
   goalTransferForm: { amount: 50, frequency: 'monthly' },
   reviewYear: new Date().getFullYear(),
   reviewPeriod: 'year',
@@ -693,6 +701,19 @@ async function tryBiometricUnlock(){
   }catch(e){ /* annulé ou échoué : l'utilisateur peut saisir son code */ }
 }
 
+function accountTransfer(fromId, toId, amt, note, date){
+  const from = state.data.accounts.find(a=>a.id===fromId);
+  const to = state.data.accounts.find(a=>a.id===toId);
+  if(!from || !to || fromId===toId || !amt || amt<=0) return false;
+  const linkId = uid();
+  const isoDate = date ? new Date(date).toISOString() : new Date().toISOString();
+  mutateData(d=>{
+    d.transactions.unshift({ id:uid(), type:'expense', amount:amt, category:'virement', note: note || `Vers ${to.name}`, date:isoDate, accountId:fromId, transferId:linkId });
+    d.transactions.unshift({ id:uid(), type:'income', amount:amt, category:'virement_retour', note: note || `Depuis ${from.name}`, date:isoDate, accountId:toId, transferId:linkId });
+  });
+  showToast(`${fmt0(amt)} viré de ${from.name} vers ${to.name}`);
+  return true;
+}
 function goalContribute(id, amt){
   let goalName = '';
   mutateData(d=>{
@@ -760,17 +781,21 @@ const ICONS = {
   upload: `<path d="M12 21V9m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/>`,
   shield: `<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>`,
   chartbar: `<path d="M4 20V10M10 20V4M16 20v-7M4 20h16" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  bulb: `<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
 };
 function icon(name, size=16){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none">${ICONS[name]||''}</svg>`; }
 
 /* ---------------- helpers ---------------- */
-function monthTx(){ return state.data.transactions.filter(t=>sameMonth(t.date, state.viewY, state.viewM)); }
+function visibleTransactions(){
+  return state.activeAccountFilter ? state.data.transactions.filter(t=>t.accountId===state.activeAccountFilter) : state.data.transactions;
+}
+function monthTx(){ return visibleTransactions().filter(t=>sameMonth(t.date, state.viewY, state.viewM)); }
 function moveMonth(delta){
   let m = state.viewM + delta, y = state.viewY;
   if(m<0){m=11;y--;} if(m>11){m=0;y++;}
   setState({viewY:y, viewM:m});
 }
-function totalBalance(){ return state.data.transactions.reduce((s,t)=> s + (t.type==='income'? t.amount : -t.amount), 0); }
+function totalBalance(){ return visibleTransactions().reduce((s,t)=> s + (t.type==='income'? t.amount : -t.amount), 0); }
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 
 /* ---------------- render root ---------------- */
@@ -805,11 +830,14 @@ function renderApp(){
     ${state.securityModalOpen ? renderSecurityModal() : ''}
     ${state.backupModalOpen ? renderBackupModal() : ''}
     ${state.accountsModalOpen ? renderAccountsModal() : ''}
+    ${state.accountFilterModalOpen ? renderAccountFilterModal() : ''}
+    ${state.transferModalOpen ? renderTransferModal() : ''}
     ${state.hiddenCatModalOpen ? renderHiddenCatModal() : ''}
     ${state.allocateModalOpen ? renderAllocateModal() : ''}
     ${state.pinCatModalOpen ? renderPinCatModal() : ''}
     ${state.gaugeCatModalOpen ? renderGaugeCatModal() : ''}
     ${state.yearlyReviewOpen ? renderYearlyReviewModal() : ''}
+    ${state.insightsModalOpen ? renderInsightsModal() : ''}
     ${state.editingGoalTransferId ? renderGoalTransferModal() : ''}
     ${state.editingBuiltinColorId ? renderEditBuiltinColorModal() : ''}
     ${state.quickTxOpen ? renderQuickTxModal() : ''}
@@ -819,6 +847,8 @@ function renderApp(){
 }
 
 function renderHeader(){
+  const accounts = state.data.accounts || [];
+  const activeAcc = state.activeAccountFilter ? accounts.find(a=>a.id===state.activeAccountFilter) : null;
   return `
     <div class="header">
       <div class="row" style="margin-bottom:0;">
@@ -826,10 +856,17 @@ function renderHeader(){
           <div class="mark">S</div>
           <div>
             <div class="brand-name ledger">Solde des Ours</div>
-            <div class="brand-sub">votre grand livre personnel</div>
+            ${accounts.length>1 ? `
+              <button data-open-accountfilter="1" style="display:flex; align-items:center; gap:5px; background:none; border:none; padding:0; margin-top:2px;">
+                ${activeAcc ? `<span class="dot" style="width:7px;height:7px;border-radius:50%;background:${activeAcc.color};display:inline-block;"></span>` : ''}
+                <span style="font-size:11.5px; color:var(--paperDim);">${activeAcc ? escapeHtml(activeAcc.name) : 'Tous les comptes'}</span>
+                ${icon('chevronR',10)}
+              </button>
+            ` : `<div class="brand-sub">votre grand livre personnel</div>`}
           </div>
         </div>
         <div style="display:flex; gap:8px;">
+          <button data-open-insights="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Repères">${icon('bulb',16)}</button>
           <button data-open-yearly="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Bilan annuel">${icon('chartbar',16)}</button>
           <button data-open-backup="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Sauvegarde">${icon('shield',16)}</button>
           <button data-open-security="1" class="btn-ghost" style="padding:9px; display:flex;" aria-label="Sécurité">${icon('lock',16)}</button>
@@ -959,26 +996,78 @@ function accountBalance(accountId){
 }
 
 let newAccountFormState = { color: COLORS.sage };
+let accountEditFormState = { color: COLORS.sage };
 function renderAccountsModal(){
   const accounts = state.data.accounts || [];
   const palette = [COLORS.gold, COLORS.sage, COLORS.violet, COLORS.teal, COLORS.rose, COLORS.coral, COLORS.amber, COLORS.slate];
+
+  if(state.editingAccountId){
+    const acc = accounts.find(a=>a.id===state.editingAccountId);
+    if(!acc) { state.editingAccountId = null; }
+    else {
+      const bal = accountBalance(acc.id);
+      const txCount = state.data.transactions.filter(t=>t.accountId===acc.id).length;
+      const isActiveFilter = state.activeAccountFilter === acc.id;
+      return `
+        <div class="modal-overlay" data-close-accounts="1">
+          <div class="modal-sheet" onclick="event.stopPropagation()">
+            <div class="modal-head">
+              <button data-back-accounts="1" style="display:flex; align-items:center; gap:6px; color:var(--paperDim); font-size:13px; background:none; border:none; padding:0;">${icon('chevronL',15)} Mes comptes</button>
+              <button data-close-x-accounts="1">${icon('x',18)}</button>
+            </div>
+            <div class="modal-title ledger" style="margin-bottom:16px;">${escapeHtml(acc.name)}</div>
+            <div style="display:flex; gap:22px; margin-bottom:20px;">
+              <div><div class="stat-label">Solde</div><div class="stat-val mono" style="font-size:18px;">${fmt0(bal)}</div></div>
+              <div><div class="stat-label">Transactions</div><div class="stat-val mono" style="font-size:18px;">${txCount}</div></div>
+            </div>
+            <button data-select-accountfilter="${isActiveFilter?'':acc.id}" class="btn-ghost" style="width:100%; justify-content:center; margin-bottom:18px; color:${isActiveFilter?'var(--gold)':'var(--paperDim)'};">
+              ${icon(isActiveFilter?'spark':'tag',14)} ${isActiveFilter ? 'Affiché seul actuellement — voir tous les comptes' : 'Afficher uniquement ce compte'}
+            </button>
+            <label class="field-label">Nom</label>
+            <input id="editAccountName" class="field-input" value="${escapeHtml(acc.name)}">
+            <label class="field-label">Couleur</label>
+            <div class="color-row">${palette.map(c=>`<button data-editaccount-color="${c}" class="color-swatch" style="background:${c}; outline:${accountEditFormState.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
+            <button class="btn-primary" style="width:100%; justify-content:center; margin-bottom:10px;" data-save-account="${acc.id}">Enregistrer</button>
+            ${accounts.length>1 ? `<button class="btn-ghost" style="width:100%; justify-content:center; color:var(--coral);" data-del-account="${acc.id}">${icon('trash',14)} Supprimer ce compte</button>` : `<div style="font-size:11.5px; color:var(--paperDim); text-align:center;">Impossible de supprimer ton seul compte</div>`}
+          </div>
+        </div>
+      `;
+    }
+  }
+
   return `
     <div class="modal-overlay" data-close-accounts="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
-        <div class="modal-head"><div class="modal-title ledger">Mes comptes</div><button data-close-x-accounts="1">${icon('x',18)}</button></div>
+        <div class="modal-head">
+          <div class="modal-title ledger">Mes comptes</div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <button data-focus-newaccount="1" class="btn-ghost" style="padding:8px; display:flex;" title="Nouveau compte">${icon('plus',16)}</button>
+            <button data-close-x-accounts="1">${icon('x',18)}</button>
+          </div>
+        </div>
+        ${accounts.length>1 ? `
+          <button data-select-accountfilter="" class="txrow" style="width:100%; text-align:left;">
+            <div class="tx-left"><div class="swatch" style="background:var(--surfaceHi);">${icon('tag',15)}</div><div class="tx-note">Tous les comptes ${!state.activeAccountFilter?'<span style="color:var(--gold);">· actif</span>':''}</div></div>
+            ${!state.activeAccountFilter ? icon('spark',15) : ''}
+          </button>
+          <div style="height:1px; background:var(--lineSoft); margin:4px 0 10px;"></div>
+        ` : ''}
         ${accounts.map(a=>{
           const bal = accountBalance(a.id);
+          const isActiveFilter = state.activeAccountFilter === a.id;
           return `
-            <div class="txrow">
-              <div class="tx-left"><div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div><div class="tx-note">${escapeHtml(a.name)}</div></div>
-              <div style="display:flex; align-items:center; gap:10px;">
-                <span class="mono" style="font-size:13.5px; font-weight:600;">${fmt0(bal)}</span>
-                ${accounts.length>1 ? `<button class="tx-del" data-del-account="${a.id}">${icon('trash',14)}</button>` : ''}
-              </div>
+            <div class="txrow" style="gap:8px;">
+              <button data-edit-account="${a.id}" style="flex:1; display:flex; align-items:center; gap:10px; text-align:left; background:none; border:none; padding:0; min-width:0;">
+                <div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div>
+                <div class="tx-note" style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(a.name)} ${isActiveFilter?'<span style="color:var(--gold); font-size:11px;">· actif</span>':''}</div>
+              </button>
+              <span class="mono" style="font-size:13.5px; font-weight:600; flex-shrink:0;">${fmt0(bal)}</span>
+              <button data-select-accountfilter="${isActiveFilter?'':a.id}" style="color:${isActiveFilter?'var(--gold)':'var(--paperDim)'}; padding:4px; flex-shrink:0;" title="${isActiveFilter?'Voir tous les comptes':'Afficher seul ce compte'}">${icon(isActiveFilter?'spark':'tag',14)}</button>
             </div>
           `;
         }).join('')}
         <div style="height:1px; background:var(--line); margin:16px 0;"></div>
+        ${accounts.length>1 ? `<button class="btn-ghost" style="width:100%; justify-content:center; margin-bottom:16px;" data-open-transfer="1">${icon('repeat',14)} Virement entre comptes</button>` : ''}
         <label class="field-label">Nouveau compte</label>
         <input id="newAccountName" class="field-input" placeholder="Ex : Livret A, Carte pro...">
         <div class="color-row">${palette.map(c=>`<button data-newaccount-color="${c}" class="color-swatch" style="background:${c}; outline:${newAccountFormState.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
@@ -997,6 +1086,63 @@ function renderEditBuiltinColorModal(){
         <div class="modal-head"><div class="modal-title ledger">Couleur — ${escapeHtml(base.label)}</div><button data-close-x-builtincolor="1">${icon('x',18)}</button></div>
         <div class="color-row">${palette.map(c=>`<button data-builtincolor-pick="${c}" class="color-swatch" style="background:${c}; outline:${base.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
         <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-builtincolor-reset="1">Réinitialiser la couleur d'origine</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderTransferModal(){
+  const accounts = state.data.accounts || [];
+  const f = state.transferForm;
+  return `
+    <div class="modal-overlay" data-close-transfer="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Virement entre comptes</div><button data-close-x-transfer="1">${icon('x',18)}</button></div>
+        <label class="field-label">Depuis</label>
+        <div class="cat-grid" style="grid-template-columns:1fr 1fr;">
+          ${accounts.map(a=>`
+            <button data-transfer-from="${a.id}" class="cat-opt" style="border-color:${f.from===a.id?a.color:'var(--line)'}; background:${f.from===a.id?a.color+'22':'var(--surfaceHi)'}">
+              <span class="dot" style="background:${a.color}"></span><span>${escapeHtml(a.name)}</span>
+            </button>
+          `).join('')}
+        </div>
+        <label class="field-label">Vers</label>
+        <div class="cat-grid" style="grid-template-columns:1fr 1fr;">
+          ${accounts.filter(a=>a.id!==f.from).map(a=>`
+            <button data-transfer-to="${a.id}" class="cat-opt" style="border-color:${f.to===a.id?a.color:'var(--line)'}; background:${f.to===a.id?a.color+'22':'var(--surfaceHi)'}">
+              <span class="dot" style="background:${a.color}"></span><span>${escapeHtml(a.name)}</span>
+            </button>
+          `).join('')}
+        </div>
+        <label class="field-label">Montant</label>
+        <input id="transferAmount" type="number" class="field-input amount" value="${f.amount}">
+        <label class="field-label">Date</label>
+        <input id="transferDate" type="date" class="field-input mono" value="${f.date}">
+        <label class="field-label">Note (facultatif)</label>
+        <input id="transferNote" class="field-input" placeholder="Ex : provision vacances">
+        <button class="submit-btn" data-submit-transfer="1">${icon('repeat',14)} Effectuer le virement</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAccountFilterModal(){
+  const accounts = state.data.accounts || [];
+  return `
+    <div class="modal-overlay" data-close-accountfilter="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Afficher</div><button data-close-x-accountfilter="1">${icon('x',18)}</button></div>
+        <div style="font-size:12px; color:var(--paperDim); margin-bottom:14px;">Filtre le solde, les transactions et les statistiques sur un seul compte, sans que l'autre n'interfère.</div>
+        <button data-select-accountfilter="" class="txrow" style="width:100%; text-align:left;">
+          <div class="tx-left"><div class="swatch" style="background:var(--surfaceHi);">${icon('tag',15)}</div><div class="tx-note">Tous les comptes</div></div>
+          ${!state.activeAccountFilter ? icon('spark',15) : ''}
+        </button>
+        ${accounts.map(a=>`
+          <button data-select-accountfilter="${a.id}" class="txrow" style="width:100%; text-align:left;">
+            <div class="tx-left"><div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div><div class="tx-note">${escapeHtml(a.name)}</div></div>
+            ${state.activeAccountFilter===a.id ? icon('spark',15) : ''}
+          </button>
+        `).join('')}
       </div>
     </div>
   `;
@@ -1156,8 +1302,8 @@ function getReviewRange(){
 }
 
 function computeReviewStats(range){
-  const TRANSFER_CATS = new Set(['epargne','epargne_retour']);
-  const txs = state.data.transactions.filter(t=>{
+  const TRANSFER_CATS = new Set(['epargne','epargne_retour','virement','virement_retour']);
+  const txs = visibleTransactions().filter(t=>{
     const d = new Date(t.date);
     return d >= range.start && d <= range.end;
   });
@@ -1306,6 +1452,93 @@ function renderYearlyReviewModal(){
   `;
 }
 
+function computeInsights(){
+  const f = computeForecast();
+  const insights = [];
+  const bal = totalBalance();
+
+  if(bal < 0){
+    insights.push({ icon:'alert', tone:'warning', title:'Solde négatif', text:`Ton solde actuel est de ${fmt0(bal)}. C'est le point à traiter en priorité avant toute autre chose.` });
+  }
+
+  if(f.avgExpense > 0){
+    const monthsCovered = bal / f.avgExpense;
+    let tone, text;
+    if(monthsCovered < 1){ tone='warning'; text=`Ton solde couvre environ ${monthsCovered.toFixed(1)} mois de dépenses. La référence généralement citée pour un fonds d'urgence est de 3 à 6 mois de dépenses courantes, sur un support liquide (Livret A, LDDS).`; }
+    else if(monthsCovered < 3){ tone='neutral'; text=`Ton solde couvre environ ${monthsCovered.toFixed(1)} mois de dépenses — en construction vers le repère habituel de 3 à 6 mois.`; }
+    else if(monthsCovered < 6){ tone='positive'; text=`Ton solde couvre environ ${monthsCovered.toFixed(1)} mois de dépenses, dans la fourchette généralement recommandée (3 à 6 mois) pour un fonds d'urgence.`; }
+    else { tone='positive'; text=`Ton solde couvre plus de 6 mois de dépenses. Le repère classique de fonds d'urgence est déjà large — une partie du surplus pourrait avoir un rôle plus actif (épargne réglementée, investissement), selon ton horizon et ta tolérance au risque.`; }
+    insights.push({ icon:'shield', tone, title:'Fonds d\'urgence', text });
+  }
+
+  if(f.avgIncome > 0){
+    const rate = Math.round((f.avgIncome - f.avgExpense) / f.avgIncome * 100);
+    let tone = rate>=20 ? 'positive' : (rate>=0 ? 'neutral' : 'warning');
+    insights.push({ icon:'faceid', tone, title:'Taux d\'épargne moyen', text:`Sur tes 3 derniers mois, tu épargnes en moyenne ${rate}% de tes revenus (${fmt0(f.avgIncome-f.avgExpense)}/mois). Un repère souvent cité est 20%, mais ça dépend beaucoup de ta situation.` });
+  }
+
+  const recurringExpensePerMonth = (state.data.recurring||[]).filter(r=>r.type==='expense').reduce((s,r)=> s + r.amount*occurrencesPerMonth(r.frequency), 0);
+  if(f.avgIncome > 0){
+    const rigidity = Math.round(recurringExpensePerMonth / f.avgIncome * 100);
+    if(rigidity > 0){
+      const tone = rigidity>50 ? 'warning' : 'neutral';
+      insights.push({ icon:'repeat', tone, title:'Charges fixes', text:`Tes transactions récurrentes représentent environ ${rigidity}% de tes revenus moyens (${fmt0(recurringExpensePerMonth)}/mois). ${rigidity>50 ? "Une part élevée de charges fixes réduit ta marge de manœuvre en cas d'imprévu." : "Ça laisse une marge de manœuvre raisonnable pour les dépenses variables."}` });
+    }
+  }
+
+  const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
+  const cats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id) && c.id!=='epargne' && c.id!=='virement');
+  let biggestRise = null;
+  cats.forEach(c=>{
+    const cur = monthTx().filter(t=>t.type==='expense' && t.category===c.id).reduce((s,t)=>s+t.amount,0);
+    const prev = prevMonthCatSpend(c.id);
+    if(prev >= 20 && cur > prev){
+      const pct = Math.round((cur-prev)/prev*100);
+      if(!biggestRise || pct > biggestRise.pct) biggestRise = { label:c.label, pct, cur, prev };
+    }
+  });
+  if(biggestRise){
+    insights.push({ icon:'up', tone:'neutral', title:'Catégorie en hausse', text:`"${biggestRise.label}" a augmenté de ${biggestRise.pct}% par rapport au mois dernier (${fmt0(biggestRise.prev)} → ${fmt0(biggestRise.cur)}). Pas forcément un problème, mais utile à remarquer.` });
+  }
+
+  const today = new Date();
+  (state.data.goals||[]).forEach(g=>{
+    if(!g.deadline || g.current >= g.target) return;
+    const dl = new Date(g.deadline);
+    const daysLeft = Math.round((dl - today) / 86400000);
+    const pct = g.target>0 ? g.current/g.target : 0;
+    if(daysLeft <= 30 && pct < 0.8){
+      insights.push({ icon:'alert', tone:'warning', title:`Objectif "${g.name}"`, text:`Échéance dans ${daysLeft>=0?daysLeft+' jours':'déjà dépassée'}, à ${Math.round(pct*100)}% de l'objectif (${fmt0(g.current)} / ${fmt0(g.target)}). Il manque ${fmt0(g.target-g.current)}.` });
+    }
+  });
+
+  return insights;
+}
+
+function renderInsightsModal(){
+  const insights = computeInsights();
+  const toneColor = { positive:'var(--sage)', neutral:'var(--paperDim)', warning:'var(--coral)' };
+  return `
+    <div class="modal-overlay" data-close-insights="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Repères</div><button data-close-x-insights="1">${icon('x',18)}</button></div>
+        <div style="font-size:12px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">
+          Calculé localement à partir de tes transactions, sans donnée envoyée nulle part. Des repères éducatifs généraux, pas des conseils personnalisés — pour des décisions précises, un conseiller financier reste la bonne personne.
+        </div>
+        ${insights.length===0 ? `<div class="empty">Pas encore assez d'historique pour générer des repères.</div>` : insights.map(ins=>`
+          <div style="background:var(--surfaceHi); border-radius:12px; padding:14px; margin-bottom:12px; border-left:3px solid ${toneColor[ins.tone]};">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; color:${toneColor[ins.tone]};">
+              ${icon(ins.icon,15)}
+              <span style="font-size:13px; font-weight:600; color:var(--paper);">${escapeHtml(ins.title)}</span>
+            </div>
+            <div style="font-size:12.5px; color:var(--paperDim); line-height:1.5;">${ins.text}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function computeForecast(){
   const today = new Date();
   const months = [];
@@ -1316,7 +1549,7 @@ function computeForecast(){
   }
   const incomes = [], expenses = [];
   months.forEach(({y,m})=>{
-    const txs = state.data.transactions.filter(t=>sameMonth(t.date,y,m));
+    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m));
     incomes.push(txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0));
     expenses.push(txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0));
   });
@@ -1339,11 +1572,11 @@ function computeForecast(){
   for(let i=1;i<=6;i++){
     let m = today.getMonth()+i, y = today.getFullYear();
     while(m>11){ m-=12; y++; }
-    const hasRealDataThisMonth = state.data.transactions.some(t=>sameMonth(t.date,y,m));
+    const hasRealDataThisMonth = visibleTransactions().some(t=>sameMonth(t.date,y,m));
     let value;
     if(hasRealDataThisMonth){
       const cutoff = new Date(y, m+1, 0, 23,59,59,999);
-      value = state.data.transactions
+      value = visibleTransactions()
         .filter(t => new Date(t.date) <= cutoff)
         .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
     } else {
@@ -1369,7 +1602,7 @@ function computeCategoryForecast(targetExpense){
   const totals = {};
   let grandTotal = 0;
   months.forEach(({y,m})=>{
-    state.data.transactions.filter(t=>t.type==='expense' && sameMonth(t.date,y,m)).forEach(t=>{
+    visibleTransactions().filter(t=>t.type==='expense' && sameMonth(t.date,y,m)).forEach(t=>{
       totals[t.category] = (totals[t.category]||0) + t.amount;
       grandTotal += t.amount;
     });
@@ -1388,11 +1621,11 @@ function balanceForViewedMonth(f, viewY, viewM){
   const viewIdx = monthIndex(viewY, viewM);
   const diff = viewIdx - curIdx;
   const cutoff = new Date(viewY, viewM+1, 0, 23,59,59,999);
-  const realBalance = state.data.transactions
+  const realBalance = visibleTransactions()
     .filter(t => new Date(t.date) <= cutoff)
     .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   if(diff <= 0) return realBalance;
-  const hasRealDataThisMonth = state.data.transactions.some(t=>sameMonth(t.date, viewY, viewM));
+  const hasRealDataThisMonth = visibleTransactions().some(t=>sameMonth(t.date, viewY, viewM));
   if(hasRealDataThisMonth) return realBalance;
   if(diff <= 6) return f.points[diff-1].value;
   return f.startBalance + f.netAvg*diff;
@@ -1439,7 +1672,7 @@ function changeBadge(pct, goodDirection){
 function prevMonthCatSpend(catId){
   let m = state.viewM - 1, y = state.viewY;
   if(m<0){ m = 11; y--; }
-  return state.data.transactions
+  return visibleTransactions()
     .filter(t=>t.type==='expense' && t.category===catId && sameMonth(t.date, y, m))
     .reduce((s,t)=>s+t.amount, 0);
 }
@@ -1463,7 +1696,7 @@ function computeMonthStats(){
 
   let pm = state.viewM - 1, py = state.viewY;
   if(pm<0){ pm = 11; py--; }
-  const prevTx = state.data.transactions.filter(t=>sameMonth(t.date, py, pm));
+  const prevTx = visibleTransactions().filter(t=>sameMonth(t.date, py, pm));
   const prevIncome = prevTx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const prevExpense = prevTx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const incomeChange = usingEstimate ? null : pctChange(income, prevIncome);
@@ -1613,13 +1846,22 @@ function renderDashboard(){
     ` : ''}
     ${(state.data.accounts||[]).length>1 ? `
       <div class="card">
-        <div class="section-title" style="font-size:15px; margin-bottom:10px;">Mes comptes</div>
-        ${state.data.accounts.map(a=>`
-          <div class="txrow">
-            <div class="tx-left"><div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div><div class="tx-note">${escapeHtml(a.name)}</div></div>
-            <span class="mono" style="font-size:13.5px; font-weight:600;">${fmt0(accountBalance(a.id))}</span>
+        <div class="row" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0; font-size:15px;">Mes comptes</div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            ${state.activeAccountFilter ? `<button data-select-accountfilter="" class="btn-ghost" style="font-size:11px; padding:6px 9px;">${icon('tag',11)} Tous les comptes</button>` : ''}
+            <button data-open-accounts-newaccount="1" class="btn-ghost" style="padding:6px 9px; display:flex;" title="Nouveau compte">${icon('plus',13)}</button>
           </div>
-        `).join('')}
+        </div>
+        ${state.data.accounts.map(a=>{
+          const isActive = state.activeAccountFilter === a.id;
+          return `
+          <button data-select-accountfilter="${isActive?'':a.id}" class="txrow" style="width:100%; text-align:left; ${isActive?`background:${a.color}14; border-radius:10px;`:''}">
+            <div class="tx-left"><div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div><div class="tx-note">${escapeHtml(a.name)} ${isActive?`<span style="color:${a.color}; font-size:11px;">· affiché seul</span>`:''}</div></div>
+            <span class="mono" style="font-size:13.5px; font-weight:600;">${fmt0(accountBalance(a.id))}</span>
+          </button>
+        `;}).join('')}
+        <button data-open-transfer="1" class="btn-ghost" style="width:100%; justify-content:center; margin-top:10px;">${icon('repeat',13)} Virement entre comptes</button>
       </div>
     ` : ''}
     ${state.data.dashboardSettings.showPinnedEnvelopes ? `
@@ -1692,7 +1934,7 @@ function txRow(t, delBtn){
 function renderTransactions(){
   const q = state.txQuery.trim().toLowerCase();
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const list = state.data.transactions
+  const list = visibleTransactions()
     .filter(t => state.txFilter==='all' ? true : t.type===state.txFilter)
     .filter(t => !q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q))
     .filter(t => !state.hidePastTx || new Date(t.date) >= todayStart)
@@ -1791,7 +2033,11 @@ function renderGaugeCard(stats){
         ` : ''}
       ` : `<div class="empty" style="padding:12px 0 16px;">Toutes les catégories sont masquées.</div>`}
       <div style="height:1px; background:var(--line); margin:16px 0;"></div>
-      <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="width:100%; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne</button>
+      <div style="display:flex; gap:8px;">
+        <button data-allocate-quick="withdraw" data-remaining-amount="${remaining}" style="background:var(--coral); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Retirer rapidement">−</button>
+        <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne</button>
+        <button data-allocate-quick="add" data-remaining-amount="${remaining}" style="background:var(--sage); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter rapidement">+</button>
+      </div>
     </div>
   `;
 }
@@ -2154,13 +2400,13 @@ function bindEvents(){
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{
-    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: txFormState.accountId||'main' }; state.txAdvancedOpen = false; }
+    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' }; state.txAdvancedOpen = false; }
     if(el.dataset.open==='addGoal'){ goalFormState = { color: COLORS.sage }; }
     setState({modal: el.dataset.open});
   }));
   app.querySelectorAll('[data-quick-add]').forEach(el=>el.addEventListener('click', ()=>{
     const type = el.dataset.quickAdd;
-    txFormState = { type, category:(type==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: txFormState.accountId||'main' };
+    txFormState = { type, category:(type==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' };
     state.txAdvancedOpen = false;
     setState({modal:'addTx'});
     const amtEl = document.getElementById('txAmount');
@@ -2173,8 +2419,9 @@ function bindEvents(){
     const id = el.dataset.delTx;
     const tx = state.data.transactions.find(t=>t.id===id);
     if(!tx) return;
-    mutateData(d=>{ d.transactions = d.transactions.filter(t=>t.id!==id); });
-    showUndoToast('Transaction supprimée', ()=>{ mutateData(d=>{ d.transactions.unshift(tx); }); });
+    const pair = tx.transferId ? state.data.transactions.find(t=>t.transferId===tx.transferId && t.id!==tx.id) : null;
+    mutateData(d=>{ d.transactions = d.transactions.filter(t=>t.id!==id && (!pair || t.id!==pair.id)); });
+    showUndoToast(pair ? 'Virement supprimé' : 'Transaction supprimée', ()=>{ mutateData(d=>{ d.transactions.unshift(tx); if(pair) d.transactions.unshift(pair); }); });
   }));
   app.querySelectorAll('[data-edit-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.editTx); }));
   app.querySelectorAll('[data-view-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.viewTx); }));
@@ -2362,6 +2609,10 @@ function bindEvents(){
   app.querySelectorAll('[data-close-security]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.securityModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-security]').forEach(el=>el.addEventListener('click', ()=>{ state.securityModalOpen=false; rerender(); }));
 
+  app.querySelectorAll('[data-open-insights]').forEach(el=>el.addEventListener('click', ()=>{ state.insightsModalOpen = true; rerender(); }));
+  app.querySelectorAll('[data-close-insights]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.insightsModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-insights]').forEach(el=>el.addEventListener('click', ()=>{ state.insightsModalOpen=false; rerender(); }));
+
   app.querySelectorAll('[data-open-yearly]').forEach(el=>el.addEventListener('click', ()=>{
     state.reviewYear = new Date().getFullYear();
     state.reviewPeriod = 'year';
@@ -2513,12 +2764,67 @@ function bindEvents(){
     mutateData(d=>{ d.theme = theme; });
     showToast(`Thème « ${THEMES[theme].name} » appliqué`);
   }));
+  app.querySelectorAll('[data-open-accountfilter]').forEach(el=>el.addEventListener('click', ()=>{ state.accountFilterModalOpen = true; rerender(); }));
+  app.querySelectorAll('[data-close-accountfilter]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.accountFilterModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-accountfilter]').forEach(el=>el.addEventListener('click', ()=>{ state.accountFilterModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-select-accountfilter]').forEach(el=>el.addEventListener('click', ()=>{
+    state.activeAccountFilter = el.dataset.selectAccountfilter || null;
+    state.accountFilterModalOpen = false;
+    rerender();
+  }));
+
+  app.querySelectorAll('[data-focus-newaccount]').forEach(el=>el.addEventListener('click', ()=>{
+    const input = document.getElementById('newAccountName');
+    if(input){ input.scrollIntoView({behavior:'smooth', block:'center'}); input.focus(); }
+  }));
+  app.querySelectorAll('[data-open-accounts-newaccount]').forEach(el=>el.addEventListener('click', ()=>{
+    newAccountFormState = { color: COLORS.sage };
+    state.editingAccountId = null;
+    state.accountsModalOpen = true;
+    rerender();
+    setTimeout(()=>{
+      const input = document.getElementById('newAccountName');
+      if(input){ input.scrollIntoView({behavior:'smooth', block:'center'}); input.focus(); }
+    }, 50);
+  }));
+  app.querySelectorAll('[data-open-transfer]').forEach(el=>el.addEventListener('click', ()=>{
+    const accounts = state.data.accounts||[];
+    const from = state.activeAccountFilter || accounts[0].id;
+    const to = accounts.find(a=>a.id!==from);
+    state.transferForm = { from, to: to?to.id:'', amount:'', date: new Date().toISOString().slice(0,10) };
+    state.transferModalOpen = true;
+    rerender();
+  }));
+  app.querySelectorAll('[data-close-transfer]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.transferModalOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-transfer]').forEach(el=>el.addEventListener('click', ()=>{ state.transferModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-transfer-from]').forEach(el=>el.addEventListener('click', ()=>{
+    state.transferForm.from = el.dataset.transferFrom;
+    if(state.transferForm.to === state.transferForm.from) state.transferForm.to = '';
+    rerender();
+  }));
+  app.querySelectorAll('[data-transfer-to]').forEach(el=>el.addEventListener('click', ()=>{
+    state.transferForm.to = el.dataset.transferTo;
+    rerender();
+  }));
+  const submitTransfer = app.querySelector('[data-submit-transfer]');
+  if(submitTransfer) submitTransfer.addEventListener('click', ()=>{
+    const amount = Number(document.getElementById('transferAmount').value);
+    const date = document.getElementById('transferDate').value;
+    const note = document.getElementById('transferNote').value.trim();
+    const { from, to } = state.transferForm;
+    if(!from || !to || from===to){ showToast('Choisis deux comptes différents'); return; }
+    if(!amount || amount<=0) return;
+    const ok = accountTransfer(from, to, amount, note, date);
+    if(ok){ state.transferModalOpen = false; rerender(); }
+  });
+
   app.querySelectorAll('[data-open-accounts]').forEach(el=>el.addEventListener('click', ()=>{
     newAccountFormState = { color: COLORS.sage };
+    state.editingAccountId = null;
     state.accountsModalOpen = true; rerender();
   }));
-  app.querySelectorAll('[data-close-accounts]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.accountsModalOpen=false; rerender(); } }));
-  app.querySelectorAll('[data-close-x-accounts]').forEach(el=>el.addEventListener('click', ()=>{ state.accountsModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-close-accounts]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.accountsModalOpen=false; state.editingAccountId=null; rerender(); } }));
+  app.querySelectorAll('[data-close-x-accounts]').forEach(el=>el.addEventListener('click', ()=>{ state.accountsModalOpen=false; state.editingAccountId=null; rerender(); }));
   app.querySelectorAll('[data-newaccount-color]').forEach(el=>el.addEventListener('click', ()=>{ newAccountFormState.color = el.dataset.newaccountColor; rerender(); }));
   const submitAccount = app.querySelector('[data-submit-account]');
   if(submitAccount) submitAccount.addEventListener('click', ()=>{
@@ -2527,6 +2833,29 @@ function bindEvents(){
     mutateData(d=>{ d.accounts.push({ id:uid(), name, color:newAccountFormState.color }); });
     showToast('Compte créé');
   });
+  app.querySelectorAll('[data-edit-account]').forEach(el=>el.addEventListener('click', ()=>{
+    const acc = (state.data.accounts||[]).find(a=>a.id===el.dataset.editAccount);
+    if(!acc) return;
+    accountEditFormState = { color: acc.color };
+    state.editingAccountId = acc.id;
+    rerender();
+  }));
+  app.querySelectorAll('[data-back-accounts]').forEach(el=>el.addEventListener('click', ()=>{
+    state.editingAccountId = null;
+    rerender();
+  }));
+  app.querySelectorAll('[data-editaccount-color]').forEach(el=>el.addEventListener('click', ()=>{ accountEditFormState.color = el.dataset.editaccountColor; rerender(); }));
+  app.querySelectorAll('[data-save-account]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.saveAccount;
+    const name = document.getElementById('editAccountName').value.trim();
+    if(!name) return;
+    mutateData(d=>{
+      const acc = d.accounts.find(a=>a.id===id);
+      if(acc){ acc.name = name; acc.color = accountEditFormState.color; }
+    });
+    state.editingAccountId = null;
+    showToast('Compte mis à jour');
+  }));
   app.querySelectorAll('[data-del-account]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.delAccount;
     if((state.data.accounts||[]).length<=1) return;
@@ -2535,6 +2864,7 @@ function bindEvents(){
       const fallback = d.accounts[0].id;
       d.transactions.forEach(t=>{ if(t.accountId===id) t.accountId = fallback; });
     });
+    state.editingAccountId = null;
     showToast('Compte supprimé, transactions transférées');
   }));
 
@@ -2569,7 +2899,7 @@ function bindEvents(){
     const note = document.getElementById('quickTxNote').value;
     const isoDate = new Date(date).toISOString();
     mutateData(d=>{
-      d.transactions.unshift({ id:uid(), type:quickTxFormState.type, amount, category:quickTxFormState.category, note, date: isoDate, photo:quickTxFormState.photo, accountId:'main' });
+      d.transactions.unshift({ id:uid(), type:quickTxFormState.type, amount, category:quickTxFormState.category, note, date: isoDate, photo:quickTxFormState.photo, accountId: state.activeAccountFilter || 'main' });
     });
     state.quickTxOpen = false;
     showToast(quickTxFormState.type==='income' ? 'Entrée ajoutée' : 'Dépense ajoutée');
@@ -2601,6 +2931,14 @@ function bindEvents(){
     const amount = Number(el.dataset.remainingAmount) || 0;
     state.allocateAmount = amount;
     state.allocateGoalMode = 'add';
+    state.allocateIsRollover = false;
+    state.allocateModalOpen = true;
+    rerender();
+  }));
+  app.querySelectorAll('[data-allocate-quick]').forEach(el=>el.addEventListener('click', ()=>{
+    const amount = Number(el.dataset.remainingAmount) || 0;
+    state.allocateAmount = amount;
+    state.allocateGoalMode = el.dataset.allocateQuick;
     state.allocateIsRollover = false;
     state.allocateModalOpen = true;
     rerender();
