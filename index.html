@@ -361,8 +361,8 @@ function seedData(){
     ],
     budgets:{alimentation:350, logement:800, transport:100, loisirs:120, sante:60, shopping:150, abonnements:40, autres_d:100},
     goals:[
-      {id:uid(), name:"Fonds d'urgence", target:3000, current:1200, color:COLORS.sage},
-      {id:uid(), name:'Voyage au Japon', target:2500, current:640, color:COLORS.violet},
+      {id:uid(), name:"Fonds d'urgence", target:3000, current:1200, color:COLORS.sage, accountId:'main'},
+      {id:uid(), name:'Voyage au Japon', target:2500, current:640, color:COLORS.violet, accountId:'main'},
     ],
     customCategories:[],
     recurring:[],
@@ -401,6 +401,7 @@ function loadData(){
       if(!parsed.categoryRollover) parsed.categoryRollover = {};
       if(parsed.lastRolloverCheck===undefined) parsed.lastRolloverCheck = null;
       if(!parsed.goalTransfers) parsed.goalTransfers = [];
+      (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
       if(!parsed.theme) parsed.theme = 'ledger';
       if(!parsed.pinnedCategories){
         const essenceCustom = (parsed.customCategories||[]).find(c=>c.type==='expense' && c.label.toLowerCase()==='essence');
@@ -564,7 +565,7 @@ function processGoalTransfers(){
     let guard = 0;
     while(next <= today && guard < 60){
       goal.current = Math.max(0, goal.current + rule.amount);
-      state.data.transactions.unshift({ id: uid(), type:'expense', amount: rule.amount, category:'epargne', note:`Virement auto vers "${goal.name}"`, date: next.toISOString() });
+      state.data.transactions.unshift({ id: uid(), type:'expense', amount: rule.amount, category:'epargne', note:`Virement auto vers "${goal.name}"`, date: next.toISOString(), accountId: goal.accountId||'main' });
       next = addPeriod(next, rule.frequency);
       guard++;
       changed = true;
@@ -726,7 +727,7 @@ function goalContribute(id, amt){
     if(g){
       goalName = g.name;
       g.current = Math.max(0,g.current+amt);
-      d.transactions.unshift({ id:uid(), type:'expense', amount:amt, category:'epargne', note:`Vers "${g.name}"`, date:new Date().toISOString() });
+      d.transactions.unshift({ id:uid(), type:'expense', amount:amt, category:'epargne', note:`Vers "${g.name}"`, date:new Date().toISOString(), accountId: g.accountId||'main' });
     }
   });
   showToast(`+${fmt0(amt)} vers ${goalName || "l'objectif"} — déduit du solde`);
@@ -738,7 +739,7 @@ function goalWithdraw(id, amt){
     if(g){
       goalName = g.name;
       g.current = Math.max(0,g.current-amt);
-      d.transactions.unshift({ id:uid(), type:'income', amount:amt, category:'epargne_retour', note:`Retrait de "${g.name}"`, date:new Date().toISOString() });
+      d.transactions.unshift({ id:uid(), type:'income', amount:amt, category:'epargne_retour', note:`Retrait de "${g.name}"`, date:new Date().toISOString(), accountId: g.accountId||'main' });
     }
   });
   showToast(`${fmt0(amt)} retirés de ${goalName || "l'objectif"} — ajoutés au solde`);
@@ -1234,7 +1235,8 @@ function renderGoalTransferModal(){
 }
 
 function renderAllocateModal(){
-  const goals = state.data.goals||[];
+  const allGoals = state.data.goals||[];
+  const goals = state.activeAccountFilter ? allGoals.filter(g=>(g.accountId||'main')===state.activeAccountFilter) : allGoals;
   const mode = state.allocateGoalMode || 'add';
   return `
     <div class="modal-overlay" data-close-allocate="1">
@@ -1488,7 +1490,8 @@ function renderHabitCalcModal(){
   const freqLabels = { daily:'Chaque jour', weekly:'Chaque semaine', monthly:'Chaque mois' };
 
   if(state.habitDestinationStep){
-    const goals = state.data.goals||[];
+    const allGoals = state.data.goals||[];
+    const goals = state.activeAccountFilter ? allGoals.filter(g=>(g.accountId||'main')===state.activeAccountFilter) : allGoals;
     const habitName = f.label.trim() || 'Habitude non dépensée';
     return `
       <div class="modal-overlay" data-close-habitcalc="1">
@@ -1601,7 +1604,8 @@ function computeInsights(){
   }
 
   const today = new Date();
-  (state.data.goals||[]).forEach(g=>{
+  const insightGoals = state.activeAccountFilter ? (state.data.goals||[]).filter(g=>(g.accountId||'main')===state.activeAccountFilter) : (state.data.goals||[]);
+  insightGoals.forEach(g=>{
     if(!g.deadline || g.current >= g.target) return;
     const dl = new Date(g.deadline);
     const daysLeft = Math.round((dl - today) / 86400000);
@@ -2081,7 +2085,7 @@ function renderGaugeCard(stats){
   const hiddenCount = hidden.length;
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
 
-  const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id));
+  const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id) && c.id!=='epargne' && c.id!=='virement');
   const totalRollover = Object.values(state.data.categoryRollover||{}).reduce((s,v)=>s+v, 0);
   const globalLimit = nonRecurringCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
   const globalSpent = nonRecurringCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
@@ -2217,7 +2221,8 @@ function renderBudgets(){
 
 /* ---------------- Goals ---------------- */
 function renderGoals(){
-  const goals = state.data.goals;
+  const allGoals = state.data.goals;
+  const goals = state.activeAccountFilter ? allGoals.filter(g=>(g.accountId||'main')===state.activeAccountFilter) : allGoals;
   return `
     <div class="row" style="margin-bottom:14px;">
       <div class="section-title" style="margin:0;">Objectifs d'épargne</div>
@@ -2230,9 +2235,12 @@ function renderGoals(){
           const pct = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
           const done = pct>=100;
           const transfer = (state.data.goalTransfers||[]).find(t=>t.goalId===g.id);
+          const goalAcc = (state.data.accounts||[]).find(a=>a.id===(g.accountId||'main'));
+          const showAccBadge = !state.activeAccountFilter && (state.data.accounts||[]).length>1 && goalAcc;
           return `
             <div class="card goal-card" style="margin-bottom:0;">
               ${done ? `<div class="goal-badge">${icon('spark',11)} Atteint</div>` : ''}
+              ${showAccBadge ? `<div style="display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:${goalAcc.color}; margin-bottom:6px;"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:${goalAcc.color};display:inline-block;"></span>${escapeHtml(goalAcc.name)}</div>` : ''}
               <div class="goal-name">${escapeHtml(g.name)}</div>
               <div class="goal-amt" style="color:${g.color}">${fmt0(g.current)} <span class="target">/ ${fmt0(g.target)}</span></div>
               <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
@@ -2682,7 +2690,7 @@ function bindEvents(){
     const target = Number(document.getElementById('goalTarget').value);
     const deadlineVal = document.getElementById('goalDeadline').value;
     if(!name || !target || target<=0) return;
-    mutateData(d=>{ d.goals.push({ id:uid(), name, target, current:0, color:goalFormState.color, deadline: deadlineVal || null }); });
+    mutateData(d=>{ d.goals.push({ id:uid(), name, target, current:0, color:goalFormState.color, deadline: deadlineVal || null, accountId: state.activeAccountFilter || (d.accounts[0] ? d.accounts[0].id : 'main') }); });
     state.modal = null;
     showToast('Objectif créé');
   });
@@ -2799,7 +2807,7 @@ function bindEvents(){
     let newGoalId;
     mutateData(d=>{
       newGoalId = uid();
-      d.goals.push({ id:newGoalId, name, target: Math.round(proj.perYear), current:0, color: COLORS.mint });
+      d.goals.push({ id:newGoalId, name, target: Math.round(proj.perYear), current:0, color: COLORS.mint, accountId: state.activeAccountFilter || (d.accounts[0] ? d.accounts[0].id : 'main') });
     });
     state.habitCalcOpen = false;
     state.habitDestinationStep = false;
@@ -3271,6 +3279,23 @@ function bindEvents(){
   }
   const trendScroll = app.querySelector('.trend-scroll');
   if(trendScroll){ trendScroll.scrollLeft = trendScroll.scrollWidth; }
+
+  app.querySelectorAll('.month-nav').forEach(navEl=>{
+    if(!navEl.querySelector('[data-move]')) return;
+    let mx=null, my=null;
+    navEl.addEventListener('touchstart', (e)=>{
+      mx = e.touches[0].clientX; my = e.touches[0].clientY;
+    }, {passive:true});
+    navEl.addEventListener('touchend', (e)=>{
+      if(mx===null) return;
+      const dx = e.changedTouches[0].clientX - mx;
+      const dy = e.changedTouches[0].clientY - my;
+      mx = null;
+      if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)*1.6){
+        moveMonth(dx < 0 ? 1 : -1);
+      }
+    }, {passive:true});
+  });
 }
 
 function animateBalance(el, target){
