@@ -184,7 +184,9 @@
 </head>
 <body>
 <div id="app"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
+if(window['pdfjsLib']) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 window.addEventListener('error', function(e){
   try{
     var el = document.getElementById('app');
@@ -375,6 +377,7 @@ function seedData(){
     lastRolloverCheck: null,
     goalTransfers: [],
     lastExportDate: null,
+    healthScoreHistory: [],
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
@@ -403,6 +406,7 @@ function loadData(){
       if(parsed.lastRolloverCheck===undefined) parsed.lastRolloverCheck = null;
       if(!parsed.goalTransfers) parsed.goalTransfers = [];
       if(parsed.lastExportDate===undefined) parsed.lastExportDate = null;
+      if(!parsed.healthScoreHistory) parsed.healthScoreHistory = [];
       (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
       if(!parsed.theme) parsed.theme = 'ledger';
       if(!parsed.pinnedCategories){
@@ -464,6 +468,10 @@ let state = {
   insightsModalOpen: false,
   habitCalcOpen: false,
   habitDestinationStep: false,
+  csvImportOpen: false,
+  csvImport: null,
+  pdfDebugOpen: false,
+  pdfDebugLines: null,
   habitForm: { label:'', amount:'', frequency:'daily' },
   editingGoalTransferId: null,
   editingAccountId: null,
@@ -614,6 +622,11 @@ applyTheme(state.data.theme);
 processCategoryRollover();
 processGoalTransfers();
 runAutoBackup();
+recordHealthScoreSnapshot();
+(function(){
+  const jointAccount = (state.data.accounts||[]).find(a=>a.name.toLowerCase().includes('joint'));
+  if(jointAccount) state.activeAccountFilter = jointAccount.id;
+})();
 
 function setState(patch){ Object.assign(state, patch); rerender(); }
 function mutateData(fn){ fn(state.data); saveData(state.data); rerender(); }
@@ -626,6 +639,174 @@ function showUndoToast(msg, undoFn){
   state.toast = { msg, undo: undoFn }; rerender();
   clearTimeout(showToast._t);
   showToast._t = setTimeout(()=>{ state.toast=null; rerender(); }, 4500);
+}
+
+function parseCSV(text){
+  text = text.replace(/^\uFEFF/, '');
+  const firstLine = text.slice(0, text.indexOf('\n')>-1 ? text.indexOf('\n') : text.length);
+  const delim = (firstLine.split(';').length >= firstLine.split(',').length) ? ';' : ',';
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i], next = text[i+1];
+    if(inQuotes){
+      if(c === '"' && next === '"'){ field += '"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else field += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === delim){ row.push(field); field = ''; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && next === '\n') i++;
+        row.push(field); field = '';
+        if(row.some(f=>f.trim()!=='')) rows.push(row);
+        row = [];
+      } else field += c;
+    }
+  }
+  if(field !== '' || row.length){ row.push(field); if(row.some(f=>f.trim()!=='')) rows.push(row); }
+  return rows;
+}
+function parseFrenchAmount(str){
+  if(str===undefined || str===null) return NaN;
+  let s = String(str).trim().replace(/\s|\u00a0/g,'').replace(/[€$]/g,'');
+  const hasComma = s.includes(','), hasDot = s.includes('.');
+  if(hasComma && hasDot){
+    if(s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g,'').replace(',', '.');
+    else s = s.replace(/,/g,'');
+  } else if(hasComma){ s = s.replace(',', '.'); }
+  return parseFloat(s);
+}
+function waitForPdfJs(timeoutMs){
+  return new Promise((resolve, reject)=>{
+    if(window.pdfjsLib) return resolve();
+    const start = Date.now();
+    const iv = setInterval(()=>{
+      if(window.pdfjsLib){ clearInterval(iv); resolve(); }
+      else if(Date.now()-start > timeoutMs){ clearInterval(iv); reject(new Error('pdfjs-non-charge')); }
+    }, 150);
+  });
+}
+async function extractPdfLines(arrayBuffer){
+  await waitForPdfJs(8000);
+  if(pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const pdf = await Promise.race([
+    loadingTask.promise,
+    new Promise((_,rej)=> setTimeout(()=>rej(new Error('pdf-timeout')), 20000)),
+  ]);
+  const lines = [];
+  const pages = [];
+  for(let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    let currentY = null, currentLine = [];
+    const pageLines = [];
+    content.items.forEach(item=>{
+      const y = Math.round(item.transform[5]);
+      if(currentY === null) currentY = y;
+      if(Math.abs(y - currentY) > 3){
+        if(currentLine.length) pageLines.push(currentLine.join(' ').replace(/\s+/g,' ').trim());
+        currentLine = [];
+        currentY = y;
+      }
+      currentLine.push(item.str);
+    });
+    if(currentLine.length) pageLines.push(currentLine.join(' ').replace(/\s+/g,' ').trim());
+    const filtered = pageLines.filter(l=>l.length>0);
+    pages.push(filtered);
+    lines.push(...filtered);
+  }
+  lines.__pages = pages;
+  return lines;
+}
+function parseFlexibleDate(str, format){
+  if(!str) return null;
+  const s = String(str).trim();
+  let m;
+  if(format==='iso' && (m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))){
+    return new Date(+m[1], +m[2]-1, +m[3]);
+  }
+  if(m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)){
+    return new Date(+m[3], +m[2]-1, +m[1]);
+  }
+  if(m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/)){
+    return new Date(+m[1], +m[2]-1, +m[3]);
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function parsePdfTransactionLines(lines){
+  const dateRe = /(\d{1,2}[\/.]\d{1,2}[\/.](?:\d{4}|\d{2}))/;
+  const amountRe = /([+-]?\d{1,3}(?:[.\s\u00a0]?\d{3})*[.,]\d{2})\s*€?/g;
+  const incomeKeywords = ['virement recu','vir recu','vir de','salaire','remboursement','remb ','credit ','versement','ref reçu','virement reçu'];
+  const rows = [];
+  lines.forEach(line=>{
+    const dm = line.match(dateRe);
+    if(!dm || dm.index > 20) return;
+    const amountMatches = [...line.matchAll(amountRe)];
+    const relevant = amountMatches.filter(m => m.index >= dm.index + dm[0].length);
+    if(relevant.length===0) return;
+    const am = relevant[0];
+    let dateStr = dm[1];
+    if(/\d{1,2}[\/.]\d{1,2}[\/.]\d{2}$/.test(dateStr)){
+      dateStr = dateStr.replace(/(\d{2})$/, (yy)=>{ const n=+yy; return n<70 ? '20'+yy : '19'+yy; });
+    }
+    const before = line.slice(0, dm.index);
+    const between = line.slice(dm.index + dm[0].length, am.index);
+    const after = line.slice(am.index + am[0].length);
+    let label = (before + ' ' + between + ' ' + after).replace(/\s+/g,' ').trim();
+    label = label.replace(/^[\s:\-–.,]+|[\s:\-–.,]+$/g,'');
+    label = label.replace(/^\d{1,2}[\/.]\d{1,2}[\/.](?:\d{4}|\d{2})\s*/, '').trim();
+    label = label.replace(/[+-]?\d{1,3}(?:[.\s\u00a0]?\d{3})*[.,]\d{2}\s*€?\s*$/, '').trim();
+    let amountStr = am[1].trim();
+    const explicitSign = amountStr.startsWith('-') ? -1 : (amountStr.startsWith('+') ? 1 : null);
+    const cleanAmount = amountStr.replace(/^[+-]/,'').trim();
+    const labelLower = label.toLowerCase();
+    const looksLikeIncome = incomeKeywords.some(k=>labelLower.includes(k));
+    const sign = explicitSign !== null ? explicitSign : (looksLikeIncome ? 1 : -1);
+    rows.push([dateStr, label || '(sans libellé)', (sign<0?'-':'') + cleanAmount]);
+  });
+  return rows;
+}
+
+function parsePdfTransactionLinesBlockMode(pages){
+  const primaryPrefixes = /^(CB\s|VIR\s|VIR[EÉ]MENT|PRLV|[EÉ]CH[EÉ]ANCE|TOTAL OPTION|COTISATION|CH[EÈ]QUE|RETRAIT|REMISE|FRAIS\s)/i;
+  const summaryPrefixes = /^(ANCIEN SOLDE|SOLDE INTERM[EÉ]DIAIRE|SOLDE EN EUROS|TOTAUX|TOTAL\s*$)/i;
+  const numericRowRe = /^(\d{1,2})[.\/](\d{1,2})\s+(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})\s+([\d\s\u00a0.,]+\d)\s*\.?\s*$/;
+  const incomeKeywords = ['virement recu','vir recu','vir de','salaire','remboursement','remb ','credit ','versement','ref reçu','virement reçu'];
+  const rows = [];
+  (pages||[]).forEach(pageLines=>{
+    const labels = pageLines.filter(l=>{
+      const t = l.trim();
+      return primaryPrefixes.test(t) && !summaryPrefixes.test(t);
+    });
+    const numerics = [];
+    pageLines.forEach(l=>{
+      const t = l.trim();
+      if(summaryPrefixes.test(t)) return;
+      const m = t.match(numericRowRe);
+      if(m) numerics.push(m);
+    });
+    const n = Math.min(labels.length, numerics.length);
+    for(let i=0;i<n;i++){
+      const label = labels[i].trim();
+      const m = numerics[i];
+      let yy = m[5];
+      if(yy.length===2){ const num=+yy; yy = (num<70?2000+num:1900+num)+''; }
+      const dateStr = `${m[3]}/${m[4]}/${yy}`;
+      const amountStr = m[6].trim();
+      const labelLower = label.toLowerCase();
+      const looksLikeIncome = incomeKeywords.some(k=>labelLower.includes(k))
+        || (/^virement\s/i.test(label) && !/sepa/i.test(label) && !/\bou\b/i.test(label));
+      const sign = looksLikeIncome ? 1 : -1;
+      rows.push([dateStr, label, (sign<0?'-':'') + amountStr]);
+    }
+  });
+  return rows;
 }
 
 function compressImage(file, maxDim, quality){
@@ -850,12 +1031,22 @@ function rerender(){
   const activeId = active && active.id;
   const selStart = active && typeof active.selectionStart === 'number' ? active.selectionStart : null;
   const scrollY = window.scrollY;
+  const modalSheets = document.querySelectorAll('.modal-sheet');
+  const modalScrollTop = modalSheets.length ? modalSheets[modalSheets.length-1].scrollTop : null;
+  const modalWasOpen = modalSheets.length > 0;
   document.getElementById('app').innerHTML = renderApp();
   bindEvents();
+  if(modalWasOpen){
+    document.querySelectorAll('.modal-sheet').forEach(el=>{ el.style.animation = 'none'; });
+  }
   if(activeId){
     const el = document.getElementById(activeId);
     if(el){ el.focus(); if(selStart!==null && el.setSelectionRange){ try{ el.setSelectionRange(selStart, selStart); }catch(e){} } }
   } else { window.scrollTo(0, scrollY); }
+  if(modalScrollTop !== null){
+    const newSheets = document.querySelectorAll('.modal-sheet');
+    if(newSheets.length) newSheets[newSheets.length-1].scrollTop = modalScrollTop;
+  }
 }
 
 function renderApp(){
@@ -885,6 +1076,8 @@ function renderApp(){
     ${state.yearlyReviewOpen ? renderYearlyReviewModal() : ''}
     ${state.insightsModalOpen ? renderInsightsModal() : ''}
     ${state.habitCalcOpen ? renderHabitCalcModal() : ''}
+    ${state.csvImportOpen ? renderCsvImportModal() : ''}
+    ${state.pdfDebugOpen ? renderPdfDebugModal() : ''}
     ${state.editingGoalTransferId ? renderGoalTransferModal() : ''}
     ${state.editingBuiltinColorId ? renderEditBuiltinColorModal() : ''}
     ${state.quickTxOpen ? renderQuickTxModal() : ''}
@@ -980,6 +1173,13 @@ function renderSecurityModal(){
   `;
 }
 
+function backupSectionHeader(iconName, label){
+  return `<div style="display:flex; align-items:center; gap:8px; margin:26px 0 12px;">
+    <div style="color:var(--gold); display:flex;">${icon(iconName,15)}</div>
+    <div style="font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--paper);">${label}</div>
+  </div>`;
+}
+
 function renderBackupModal(){
   const count = state.data.transactions.length;
   const lastExport = state.data.lastExportDate;
@@ -990,9 +1190,11 @@ function renderBackupModal(){
     <div class="modal-overlay" data-close-backup="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
         <div class="modal-head"><div class="modal-title ledger">Sauvegarde</div><button data-close-x-backup="1">${icon('x',18)}</button></div>
-        <div style="font-size:13px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">
+        <div style="font-size:13px; color:var(--paperDim); line-height:1.5;">
           Tes données ne vivent que sur cet appareil. Télécharge une sauvegarde régulièrement pour ne rien perdre en cas de problème (appareil perdu, cache effacé...).
         </div>
+
+        ${backupSectionHeader('shield', 'Sauvegarde')}
         <div class="txrow">
           <div class="tx-left"><div class="swatch" style="background:rgba(212,169,79,.16); color:var(--gold);">${icon('download',16)}</div><div class="tx-note">${count} transaction${count>1?'s':''} enregistrée${count>1?'s':''}</div></div>
         </div>
@@ -1001,24 +1203,32 @@ function renderBackupModal(){
           ${exportOverdue ? ' — pense à en refaire une' : ''}
         </div>
         <button class="btn-primary" style="width:100%; justify-content:center; margin-top:10px;" data-export-backup="1">${icon('download',15)} Télécharger une sauvegarde</button>
-        <div style="height:1px; background:var(--line); margin:18px 0;"></div>
-        <label for="backupImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer;">${icon('upload',15)} Restaurer une sauvegarde</label>
+        <label for="backupImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer; margin-top:10px;">${icon('upload',15)} Restaurer une sauvegarde</label>
         <input id="backupImportInput" type="file" accept="application/json,.json" style="display:none;">
-        <div style="font-size:11.5px; color:var(--paperDim); margin-top:10px; text-align:center;">La restauration remplace toutes tes données actuelles.</div>
-        <div style="height:1px; background:var(--line); margin:18px 0;"></div>
-        <div class="field-label" style="margin-bottom:8px;">Instantanés automatiques</div>
-        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Une copie de tes données est gardée automatiquement chaque jour sur cet appareil (7 derniers jours) — utile en cas d'erreur de manipulation, mais pas si tu perds ton téléphone : pour ça, exporte une vraie sauvegarde ci-dessus.</div>
+        <div style="font-size:11.5px; color:var(--paperDim); margin-top:8px; text-align:center;">La restauration remplace toutes tes données actuelles.</div>
+
+        ${backupSectionHeader('upload', 'Importer des transactions')}
+        <label for="csvImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer;">${icon('upload',15)} Relevé bancaire (CSV)</label>
+        <input id="csvImportInput" type="file" accept=".csv,text/csv" style="display:none;">
+        <label for="pdfImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer; margin-top:10px;">${icon('upload',15)} Relevé PDF</label>
+        <input id="pdfImportInput" type="file" accept="application/pdf,.pdf" style="display:none;">
+        <div style="font-size:11.5px; color:var(--paperDim); margin-top:8px; text-align:center; line-height:1.5;">Ajoute des transactions sans remplacer tes données actuelles. Le PDF utilise une détection automatique moins fiable que le CSV — vérifie bien l'aperçu avant de valider.</div>
+
+        ${backupSectionHeader('repeat', 'Instantanés automatiques')}
+        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Une copie de tes données est gardée automatiquement chaque jour sur cet appareil (7 derniers jours) — utile en cas d'erreur de manipulation, mais pas si tu perds ton téléphone : pour ça, exporte une vraie sauvegarde plus haut.</div>
         ${autoBackups.length===0 ? `<div class="empty">Aucun instantané pour l'instant — reviens demain.</div>` : autoBackups.map(dateStr=>`
           <div class="txrow">
             <div class="tx-left"><div class="swatch" style="background:var(--surfaceHi);">${icon('shield',14)}</div><div class="tx-note">${new Date(dateStr+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long'})}</div></div>
             <button class="tx-del" style="color:var(--paperDim);" data-restore-autobackup="${dateStr}">${icon('upload',14)}</button>
           </div>
         `).join('')}
-        <div style="height:1px; background:var(--line); margin:18px 0;"></div>
+
+        ${backupSectionHeader('tag', 'Comptes')}
         <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-open-accounts="1">${icon('tag',15)} Gérer mes comptes</button>
-        <div style="height:1px; background:var(--line); margin:18px 0;"></div>
+
+        ${backupSectionHeader('bulb', 'Apparence')}
         <div class="field-label" style="margin-bottom:10px;">Thème</div>
-        <div style="display:flex; gap:10px; margin-bottom:18px;">
+        <div style="display:flex; gap:10px; margin-bottom:8px;">
           ${Object.entries(THEMES).map(([key,t])=>`
             <button data-select-theme="${key}" style="flex:1; padding:12px; border-radius:12px; border:2px solid ${state.data.theme===key?'var(--gold)':'var(--line)'}; background:${t.bg}; text-align:left;">
               <div style="display:flex; gap:5px; margin-bottom:8px;">
@@ -1030,20 +1240,22 @@ function renderBackupModal(){
             </button>
           `).join('')}
         </div>
-        <div class="field-label" style="margin-bottom:10px;">Cartes du tableau de bord</div>
+
+        ${backupSectionHeader('chartbar', 'Tableau de bord')}
+        <div class="field-label" style="margin-bottom:10px;">Cartes affichées sur l'accueil</div>
         <div class="row" style="margin-bottom:10px;">
           <span style="font-size:13px;">Répartition des dépenses</span>
           <button data-toggle-card="showBreakdown" class="toggle-switch ${state.data.dashboardSettings.showBreakdown?'on':''}">${state.data.dashboardSettings.showBreakdown?'Visible':'Masquée'}</button>
         </div>
-        <div class="row">
+        <div class="row" style="margin-bottom:10px;">
           <span style="font-size:13px;">Revenus vs dépenses</span>
           <button data-toggle-card="showTrend" class="toggle-switch ${state.data.dashboardSettings.showTrend?'on':''}">${state.data.dashboardSettings.showTrend?'Visible':'Masquée'}</button>
         </div>
-        <div class="row" style="margin-top:10px;">
+        <div class="row" style="margin-bottom:10px;">
           <span style="font-size:13px;">Prévisionnel</span>
           <button data-toggle-card="showForecast" class="toggle-switch ${state.data.dashboardSettings.showForecast?'on':''}">${state.data.dashboardSettings.showForecast?'Visible':'Masquée'}</button>
         </div>
-        <div class="row" style="margin-top:10px;">
+        <div class="row">
           <span style="font-size:13px;">Mes enveloppes</span>
           <button data-toggle-card="showPinnedEnvelopes" class="toggle-switch ${state.data.dashboardSettings.showPinnedEnvelopes?'on':''}">${state.data.dashboardSettings.showPinnedEnvelopes?'Visible':'Masquée'}</button>
         </div>
@@ -1150,6 +1362,138 @@ function renderEditBuiltinColorModal(){
         <div class="modal-head"><div class="modal-title ledger">Couleur — ${escapeHtml(base.label)}</div><button data-close-x-builtincolor="1">${icon('x',18)}</button></div>
         <div class="color-row">${palette.map(c=>`<button data-builtincolor-pick="${c}" class="color-swatch" style="background:${c}; outline:${base.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
         <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-builtincolor-reset="1">Réinitialiser la couleur d'origine</button>
+      </div>
+    </div>
+  `;
+}
+
+function computeCsvImportRows(){
+  const st = state.csvImport;
+  if(!st) return [];
+  const { headers, rows, mapping, mode, dateFormat } = st;
+  const dateIdx = headers.indexOf(mapping.date);
+  const labelIdx = headers.indexOf(mapping.label);
+  const amountIdx = headers.indexOf(mapping.amount);
+  const debitIdx = headers.indexOf(mapping.debit);
+  const creditIdx = headers.indexOf(mapping.credit);
+  return rows.map(r=>{
+    const date = parseFlexibleDate(r[dateIdx], dateFormat);
+    const label = labelIdx>=0 ? (r[labelIdx]||'').trim() : '';
+    let amount;
+    if(mode==='single'){
+      amount = parseFrenchAmount(r[amountIdx]);
+    } else {
+      const d = parseFrenchAmount(r[debitIdx]);
+      const c = parseFrenchAmount(r[creditIdx]);
+      amount = (!isNaN(c) && c!==0) ? c : (!isNaN(d) && d!==0 ? -d : NaN);
+    }
+    const valid = date && !isNaN(amount) && amount!==0;
+    return { date, label, amount, type: amount>=0 ? 'income' : 'expense', valid };
+  });
+}
+
+function renderPdfDebugModal(){
+  const lines = state.pdfDebugLines || [];
+  return `
+    <div class="modal-overlay" data-close-pdfdebug="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Texte extrait du PDF</div><button data-close-x-pdfdebug="1">${icon('x',18)}</button></div>
+        <div style="font-size:12px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">
+          Aucune ligne ne ressemblait à une transaction dans ce format. Voici le texte brut que l'appli a réussi à lire — copie-le et partage-le pour que le modèle de reconnaissance puisse être ajusté à ton relevé.
+        </div>
+        <button data-copy-pdfdebug="1" class="btn-primary" style="width:100%; justify-content:center; margin-bottom:14px;">${icon('copy',14)} Copier ce texte</button>
+        <div class="scroll-cats" style="max-height:340px; font-family:'JetBrains Mono',monospace; font-size:11px; line-height:1.6; color:var(--paperDim); white-space:pre-wrap; background:var(--surfaceHi); border-radius:10px; padding:12px;">${lines.length===0 ? "Aucun texte n'a pu être extrait de ce fichier — c'est probablement un scan/une image, pas un vrai PDF texte." : escapeHtml(lines.join('\n'))}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCsvImportModal(){
+  const st = state.csvImport;
+  if(!st){
+    return `
+      <div class="modal-overlay" data-close-csvimport="1">
+        <div class="modal-sheet" onclick="event.stopPropagation()">
+          <div class="modal-head"><div class="modal-title ledger">Import CSV</div><button data-close-x-csvimport="1">${icon('x',18)}</button></div>
+          <div class="empty">Lecture du fichier…</div>
+        </div>
+      </div>
+    `;
+  }
+  const parsed = computeCsvImportRows();
+  const validCount = parsed.filter(r=>r.valid).length;
+  const invalidCount = parsed.length - validCount;
+  const accounts = state.data.accounts||[];
+  return `
+    <div class="modal-overlay" data-close-csvimport="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Importer un relevé</div><button data-close-x-csvimport="1">${icon('x',18)}</button></div>
+        <div style="font-size:12px; color:var(--paperDim); margin-bottom:16px;">${st.rows.length} lignes détectées dans le fichier. Fais correspondre les colonnes ci-dessous.</div>
+
+        <label class="field-label">Colonne date</label>
+        <select id="csvColDate" class="field-input" style="margin-bottom:13px;">
+          ${st.headers.map(h=>`<option value="${escapeHtml(h)}" ${st.mapping.date===h?'selected':''}>${escapeHtml(h)}</option>`).join('')}
+        </select>
+        <label class="field-label">Format de date</label>
+        <div class="type-toggle" style="margin-bottom:13px;">
+          <button data-csv-dateformat="fr" style="background:${st.dateFormat==='fr'?'var(--gold)':'transparent'}; color:${st.dateFormat==='fr'?'var(--ink)':'var(--paperDim)'}">JJ/MM/AAAA</button>
+          <button data-csv-dateformat="iso" style="background:${st.dateFormat==='iso'?'var(--gold)':'transparent'}; color:${st.dateFormat==='iso'?'var(--ink)':'var(--paperDim)'}">AAAA-MM-JJ</button>
+        </div>
+        <label class="field-label">Colonne libellé</label>
+        <select id="csvColLabel" class="field-input" style="margin-bottom:13px;">
+          ${st.headers.map(h=>`<option value="${escapeHtml(h)}" ${st.mapping.label===h?'selected':''}>${escapeHtml(h)}</option>`).join('')}
+        </select>
+
+        <label class="field-label">Montants</label>
+        <div class="type-toggle" style="margin-bottom:13px;">
+          <button data-csv-mode="single" style="background:${st.mode==='single'?'var(--gold)':'transparent'}; color:${st.mode==='single'?'var(--ink)':'var(--paperDim)'}">Une colonne signée</button>
+          <button data-csv-mode="split" style="background:${st.mode==='split'?'var(--gold)':'transparent'}; color:${st.mode==='split'?'var(--ink)':'var(--paperDim)'}">Débit / Crédit</button>
+        </div>
+        ${st.mode==='single' ? `
+          <select id="csvColAmount" class="field-input" style="margin-bottom:13px;">
+            ${st.headers.map(h=>`<option value="${escapeHtml(h)}" ${st.mapping.amount===h?'selected':''}>${escapeHtml(h)}</option>`).join('')}
+          </select>
+        ` : `
+          <div class="row" style="gap:10px; margin-bottom:13px;">
+            <select id="csvColDebit" class="field-input" style="margin-bottom:0;">
+              ${st.headers.map(h=>`<option value="${escapeHtml(h)}" ${st.mapping.debit===h?'selected':''}>${escapeHtml(h)}</option>`).join('')}
+            </select>
+            <select id="csvColCredit" class="field-input" style="margin-bottom:0;">
+              ${st.headers.map(h=>`<option value="${escapeHtml(h)}" ${st.mapping.credit===h?'selected':''}>${escapeHtml(h)}</option>`).join('')}
+            </select>
+          </div>
+        `}
+        ${st.isPdf ? `
+          <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:8px; line-height:1.5;">${icon('alert',12)} Détection PDF : le sens (dépense/revenu) est deviné et peut se tromper. Vérifie l'aperçu ci-dessous.</div>
+          <div style="display:flex; gap:8px; margin-bottom:13px;">
+            <button data-csv-flip-signs="1" class="btn-ghost" style="flex:1; justify-content:center;">${icon('repeat',13)} Inverser</button>
+            <button data-csv-download="1" class="btn-ghost" style="flex:1; justify-content:center;">${icon('download',13)} Télécharger en CSV</button>
+          </div>
+        ` : ''}
+
+        <label class="field-label">Compte de destination</label>
+        <select id="csvColAccount" class="field-input" style="margin-bottom:16px;">
+          ${accounts.map(a=>`<option value="${a.id}" ${st.accountId===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}
+        </select>
+
+        <div class="field-label" style="margin-bottom:8px;">Aperçu <span style="text-transform:none; color:var(--paperDim); font-weight:400;">— tape sur + / − pour corriger une ligne</span></div>
+        <div class="scroll-cats" style="max-height:260px; margin-bottom:14px;">
+          ${parsed.map((r,idx)=>`
+            <div class="txrow">
+              <div class="tx-left"><div class="tx-note" style="opacity:${r.valid?1:.4};">${r.valid ? (r.date.toLocaleDateString('fr-FR')+' — '+escapeHtml(r.label||'(sans libellé)')) : `<span style="color:var(--coral);">Ligne ignorée (date/montant invalide)</span>`}</div></div>
+              ${r.valid ? `
+                <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                  <span class="mono" style="font-size:12.5px; color:${r.type==='income'?'var(--sage)':'var(--coral)'};">${r.type==='income'?'+':'−'}${fmt2(Math.abs(r.amount))}</span>
+                  <button data-csv-flip-row="${idx}" class="quick-add-pastille" style="background:${r.type==='income'?'var(--sage)':'var(--coral)'}; font-size:13px; width:24px; height:24px;" title="Inverser cette ligne">${r.type==='income'?'+':'−'}</button>
+                </div>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div style="font-size:12px; color:var(--paperDim); margin-bottom:16px;">
+          <strong style="color:var(--sage);">${validCount}</strong> transaction${validCount>1?'s':''} prête${validCount>1?'s':''} à importer${invalidCount>0 ? `, <strong style="color:var(--coral);">${invalidCount}</strong> ignorée${invalidCount>1?'s':''}` : ''}. Elles seront classées "Autres" — à recatégoriser ensuite si besoin. Les doublons exacts (même date, montant et libellé qu'une transaction existante) sont automatiquement ignorés.
+        </div>
+        <button class="submit-btn" data-confirm-csv-import="1" ${validCount===0?'disabled':''}>${icon('upload',15)} Importer ${validCount} transaction${validCount>1?'s':''}</button>
       </div>
     </div>
   `;
@@ -1605,6 +1949,69 @@ function renderHabitCalcModal(){
   `;
 }
 
+function computeHealthScore(){
+  const f = computeForecast();
+  const bal = totalBalance();
+  const criteria = [];
+
+  // 1. Taux d'épargne (25 pts) — 20% de taux = score plein
+  const rate = f.avgIncome>0 ? Math.max(0, (f.avgIncome-f.avgExpense)/f.avgIncome*100) : 0;
+  const s1 = f.avgIncome>0 ? Math.min(25, Math.round(rate/20*25)) : 0;
+  criteria.push({ label:'Taux d\'épargne', score:s1, max:25, detail:`${Math.round(rate)}% en moyenne sur 3 mois` });
+
+  // 2. Fonds d'urgence (25 pts) — 6 mois de dépenses = score plein
+  const monthsCovered = f.avgExpense>0 ? bal/f.avgExpense : 0;
+  const s2 = f.avgExpense>0 ? Math.min(25, Math.round(monthsCovered/6*25)) : 0;
+  criteria.push({ label:"Fonds d'urgence", score:s2, max:25, detail:`${monthsCovered.toFixed(1)} mois de dépenses couverts` });
+
+  // 3. Rigidité budgétaire (20 pts) — moins de charges fixes = mieux
+  const recurringExpensePerMonth = (state.data.recurring||[]).filter(r=>r.type==='expense').reduce((s,r)=> s + r.amount*occurrencesPerMonth(r.frequency), 0);
+  const rigidity = f.avgIncome>0 ? recurringExpensePerMonth/f.avgIncome*100 : 0;
+  const s3 = f.avgIncome>0 ? Math.max(0, Math.round(20*(1-Math.min(100,rigidity)/100))) : 10;
+  criteria.push({ label:'Souplesse budgétaire', score:s3, max:20, detail:`${Math.round(rigidity)}% de revenus en charges fixes` });
+
+  // 4. Respect du budget (15 pts) — basé sur la jauge du mois en cours
+  const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
+  const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id) && c.id!=='epargne' && c.id!=='virement');
+  const byCat = {};
+  monthTx().filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category] = (byCat[t.category]||0) + t.amount; });
+  const globalLimit = nonRecurringCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
+  const globalSpentNow = nonRecurringCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
+  const globalPctNow = globalLimit>0 ? globalSpentNow/globalLimit*100 : null;
+  const s4 = globalPctNow===null ? 8 : Math.max(0, Math.round(15 - Math.max(0,globalPctNow-100)/10*15));
+  criteria.push({ label:'Respect du budget', score:s4, max:15, detail: globalPctNow===null ? 'Pas encore de budget défini' : `${Math.round(globalPctNow)}% des enveloppes utilisées` });
+
+  // 5. Régularité de l'épargne (15 pts) — mois avec épargne nette positive sur les 3 derniers
+  let positiveMonths = 0;
+  const today = new Date();
+  for(let i=0;i<3;i++){
+    let m = today.getMonth()-i, y = today.getFullYear();
+    if(m<0){ m+=12; y--; }
+    const mtx = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && t.category!=='epargne' && t.category!=='epargne_retour' && t.category!=='virement' && t.category!=='virement_retour');
+    const inc = mtx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+    const exp = mtx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+    if(inc>exp && inc>0) positiveMonths++;
+  }
+  const s5 = Math.round(positiveMonths/3*15);
+  criteria.push({ label:'Régularité', score:s5, max:15, detail:`${positiveMonths}/3 derniers mois excédentaires` });
+
+  const total = criteria.reduce((s,c)=>s+c.score,0);
+  return { total, criteria };
+}
+function recordHealthScoreSnapshot(){
+  try{
+    const today = new Date();
+    const monthKey = today.getFullYear() + '-' + today.getMonth();
+    const hist = state.data.healthScoreHistory || [];
+    if(hist.length && hist[hist.length-1].monthKey===monthKey) return;
+    const { total } = computeHealthScore();
+    hist.push({ monthKey, score: total });
+    while(hist.length > 12) hist.shift();
+    state.data.healthScoreHistory = hist;
+    saveData(state.data);
+  }catch(e){}
+}
+
 function computeInsights(){
   const f = computeForecast();
   const insights = [];
@@ -1669,14 +2076,53 @@ function computeInsights(){
   return insights;
 }
 
+function healthScoreLabel(score){
+  if(score>=86) return { text:'Excellent', color:'var(--sage)' };
+  if(score>=66) return { text:'Solide', color:'var(--sage)' };
+  if(score>=41) return { text:'En progrès', color:'var(--amber)' };
+  return { text:'À renforcer', color:'var(--coral)' };
+}
+
 function renderInsightsModal(){
   const insights = computeInsights();
   const toneColor = { positive:'var(--sage)', neutral:'var(--paperDim)', warning:'var(--coral)' };
+  const health = computeHealthScore();
+  const label = healthScoreLabel(health.total);
+  const hist = state.data.healthScoreHistory || [];
+  const refEntry = hist.length>=4 ? hist[hist.length-4] : (hist.length ? hist[0] : null);
+  const trend = refEntry ? health.total - refEntry.score : null;
+  const circ = 2 * Math.PI * 42;
+  const dash = circ * Math.min(1, health.total/100);
   return `
     <div class="modal-overlay" data-close-insights="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
         <div class="modal-head"><div class="modal-title ledger">Repères</div><button data-close-x-insights="1">${icon('x',18)}</button></div>
         ${accountFilterBadge()}
+        <div style="display:flex; align-items:center; gap:18px; background:var(--surfaceHi); border-radius:16px; padding:16px; margin-bottom:16px;">
+          <svg width="96" height="96" viewBox="0 0 96 96" style="flex-shrink:0; transform:rotate(-90deg);">
+            <circle cx="48" cy="48" r="42" fill="none" stroke="var(--line)" stroke-width="8"/>
+            <circle cx="48" cy="48" r="42" fill="none" stroke="${label.color}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${dash} ${circ}"/>
+          </svg>
+          <div style="flex:1;">
+            <div style="font-size:11px; color:var(--paperDim); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px;">Score financier</div>
+            <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:4px;">
+              <span class="mono" style="font-size:30px; font-weight:700;">${health.total}</span>
+              <span style="font-size:13px; color:var(--paperDim);">/100</span>
+            </div>
+            <div style="font-size:13px; font-weight:600; color:${label.color}; margin-bottom:4px;">${label.text}</div>
+            ${trend!==null ? `<div style="font-size:11px; color:${trend>=0?'var(--sage)':'var(--coral)'};">${trend>=0?'↑':'↓'} ${Math.abs(trend)} pts sur 3 mois</div>` : ''}
+          </div>
+        </div>
+        <div style="margin-bottom:20px;">
+          ${health.criteria.map(c=>`
+            <div style="margin-bottom:10px;">
+              <div class="row" style="margin-bottom:4px;"><span style="font-size:12px; color:var(--paper);">${c.label}</span><span class="mono" style="font-size:11.5px; color:var(--paperDim);">${c.score}/${c.max}</span></div>
+              <div class="catbar-track" style="height:6px;"><div class="catbar-fill" style="width:${Math.round(c.score/c.max*100)}%; background:var(--gold);"></div></div>
+              <div style="font-size:10.5px; color:var(--paperDim); margin-top:2px;">${c.detail}</div>
+            </div>
+          `).join('')}
+        </div>
+        <div style="height:1px; background:var(--line); margin-bottom:18px;"></div>
         <div style="font-size:12px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">
           Calculé localement à partir de tes transactions, sans donnée envoyée nulle part. Des repères éducatifs généraux, pas des conseils personnalisés — pour des décisions précises, un conseiller financier reste la bonne personne.
         </div>
@@ -1880,8 +2326,8 @@ function renderBalanceContent(stats, showStats){
         </div>
       ` : `
       <div class="row" style="margin-bottom:0; margin-top:16px;">
-        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Revenus du mois</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}${changeBadge(incomeChange,'up')}</div></div>
-        <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">Dépenses du mois</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}${changeBadge(expenseChange,'down')}</div></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Revenus du mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}${changeBadge(incomeChange,'up')}</div></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">Dépenses du mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}${changeBadge(expenseChange,'down')}</div></div>
       </div>
       ${savedThisMonth !== 0 ? `
       <div class="row" style="margin-bottom:0; margin-top:14px;">
@@ -2976,6 +3422,179 @@ function bindEvents(){
       rerender();
     }catch(e){ showToast('Impossible de restaurer cet instantané'); }
   }));
+
+  const csvImportInput = app.querySelector('#csvImportInput');
+  if(csvImportInput) csvImportInput.addEventListener('change', ()=>{
+    const file = csvImportInput.files[0];
+    if(!file) return;
+    if(file.size > 15*1024*1024){ showToast('Fichier trop volumineux (max 15 Mo)'); return; }
+    const reader = new FileReader();
+    reader.onerror = ()=>{ showToast('Impossible de lire ce fichier'); };
+    reader.onload = (e)=>{
+      try{
+        const table = parseCSV(String(e.target.result));
+        if(table.length < 2) throw new Error('vide');
+        const headers = table[0].map(h=>h.trim());
+        const rows = table.slice(1);
+        const findCol = (patterns)=> headers.find(h=> patterns.some(p=> h.toLowerCase().includes(p))) || headers[0];
+        const mapping = {
+          date: findCol(['date']),
+          label: findCol(['libellé','libelle','description','label','détail','intitulé']),
+          amount: findCol(['montant','amount']),
+          debit: findCol(['débit','debit']),
+          credit: findCol(['crédit','credit']),
+        };
+        const hasSeparateCols = headers.some(h=>h.toLowerCase().includes('débit')||h.toLowerCase().includes('debit')) && headers.some(h=>h.toLowerCase().includes('crédit')||h.toLowerCase().includes('credit'));
+        state.csvImport = {
+          headers, rows, mapping,
+          mode: hasSeparateCols ? 'split' : 'single',
+          dateFormat: 'fr',
+          accountId: state.activeAccountFilter || (state.data.accounts[0] ? state.data.accounts[0].id : 'main'),
+        };
+        rerender();
+      }catch(err){ showToast("Ce fichier ne ressemble pas à un CSV valide"); state.csvImportOpen = false; rerender(); }
+    };
+    reader.readAsText(file);
+    state.csvImportOpen = true;
+    state.csvImport = null;
+    rerender();
+  });
+  const pdfImportInput = app.querySelector('#pdfImportInput');
+  if(pdfImportInput) pdfImportInput.addEventListener('change', ()=>{
+    const file = pdfImportInput.files[0];
+    if(!file) return;
+    if(file.size > 20*1024*1024){ showToast('Fichier trop volumineux (max 20 Mo)'); return; }
+    state.csvImportOpen = true;
+    state.csvImport = null;
+    rerender();
+    const reader = new FileReader();
+    reader.onerror = ()=>{ showToast('Impossible de lire ce fichier'); state.csvImportOpen=false; rerender(); };
+    reader.onload = async (e)=>{
+      try{
+        const lines = await extractPdfLines(e.target.result);
+        state.pdfDebugLines = lines;
+        const simpleRows = parsePdfTransactionLines(lines);
+        const blockRows = lines.__pages ? parsePdfTransactionLinesBlockMode(lines.__pages) : [];
+        const qualityScore = (rs)=> rs.filter(r=> r[1] && r[1] !== '(sans libellé)' && r[1].length>2).length;
+        let rows = qualityScore(blockRows) >= qualityScore(simpleRows) && blockRows.length>0 ? blockRows : simpleRows;
+        if(rows.length===0) throw new Error('aucune-transaction-detectee');
+        state.csvImport = {
+          headers: ['Date','Libellé','Montant'],
+          rows,
+          mapping: { date:'Date', label:'Libellé', amount:'Montant', debit:'Date', credit:'Date' },
+          mode: 'single',
+          dateFormat: 'fr',
+          accountId: state.activeAccountFilter || (state.data.accounts[0] ? state.data.accounts[0].id : 'main'),
+          isPdf: true,
+        };
+        rerender();
+      }catch(err){
+        console.error('Import PDF:', err);
+        const msg = err && err.message;
+        if(msg==='pdfjs-non-charge'){ showToast("Le lecteur PDF n'a pas pu se charger — vérifie ta connexion internet et réessaie"); state.csvImportOpen=false; state.csvImport=null; rerender(); }
+        else if(msg==='pdf-timeout'){ showToast('Le PDF met trop de temps à se lire — réessaie ou utilise un CSV'); state.csvImportOpen=false; state.csvImport=null; rerender(); }
+        else if(msg==='aucune-transaction-detectee'){
+          state.csvImportOpen = false;
+          state.csvImport = null;
+          state.pdfDebugOpen = true;
+          rerender();
+        }
+        else { showToast('PDF illisible — vérifie que ce fichier est un vrai document texte, pas un scan'); state.csvImportOpen=false; state.csvImport=null; rerender(); }
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+  app.querySelectorAll('[data-close-csvimport]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.csvImportOpen=false; state.csvImport=null; rerender(); } }));
+  app.querySelectorAll('[data-close-x-csvimport]').forEach(el=>el.addEventListener('click', ()=>{ state.csvImportOpen=false; state.csvImport=null; rerender(); }));
+  app.querySelectorAll('[data-csv-flip-signs]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!state.csvImport) return;
+    state.csvImport.rows = state.csvImport.rows.map(r=>{
+      const idx = state.csvImport.headers.indexOf(state.csvImport.mapping.amount);
+      const v = r[idx];
+      r[idx] = v.startsWith('-') ? v.slice(1) : ('-'+v);
+      return r;
+    });
+    rerender();
+  }));
+  app.querySelectorAll('[data-csv-flip-row]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!state.csvImport) return;
+    const rowIdx = Number(el.dataset.csvFlipRow);
+    const colIdx = state.csvImport.headers.indexOf(state.csvImport.mapping.amount);
+    const row = state.csvImport.rows[rowIdx];
+    if(!row) return;
+    const v = row[colIdx];
+    row[colIdx] = v.startsWith('-') ? v.slice(1) : ('-'+v);
+    rerender();
+  }));
+  app.querySelectorAll('[data-csv-download]').forEach(el=>el.addEventListener('click', ()=>{
+    const st = state.csvImport;
+    if(!st) return;
+    try{
+      const escapeCsv = (v)=> /[;"\n]/.test(v) ? '"'+String(v).replace(/"/g,'""')+'"' : v;
+      const lines = [st.headers.map(escapeCsv).join(';')];
+      st.rows.forEach(r=> lines.push(r.map(escapeCsv).join(';')));
+      const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type:'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `releve-extrait-${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('CSV téléchargé');
+    }catch(e){ showToast('Impossible de créer le CSV'); }
+  }));
+  app.querySelectorAll('[data-close-pdfdebug]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.pdfDebugOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-close-x-pdfdebug]').forEach(el=>el.addEventListener('click', ()=>{ state.pdfDebugOpen=false; rerender(); }));
+  app.querySelectorAll('[data-copy-pdfdebug]').forEach(el=>el.addEventListener('click', async ()=>{
+    try{
+      const text = (state.pdfDebugLines||[]).join('\n');
+      await navigator.clipboard.writeText(text);
+      showToast('Texte copié');
+    }catch(e){ showToast('Impossible de copier — sélectionne le texte manuellement'); }
+  }));
+  ['csvColDate','csvColLabel','csvColAmount','csvColDebit','csvColCredit'].forEach(id=>{
+    const el = app.querySelector('#'+id);
+    if(el) el.addEventListener('change', ()=>{
+      if(!state.csvImport) return;
+      const key = id.replace('csvCol','').charAt(0).toLowerCase() + id.replace('csvCol','').slice(1);
+      state.csvImport.mapping[key] = el.value;
+      rerender();
+    });
+  });
+  const csvColAccount = app.querySelector('#csvColAccount');
+  if(csvColAccount) csvColAccount.addEventListener('change', ()=>{ if(state.csvImport){ state.csvImport.accountId = csvColAccount.value; } });
+  app.querySelectorAll('[data-csv-dateformat]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!state.csvImport) return;
+    state.csvImport.dateFormat = el.dataset.csvDateformat;
+    rerender();
+  }));
+  app.querySelectorAll('[data-csv-mode]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!state.csvImport) return;
+    state.csvImport.mode = el.dataset.csvMode;
+    rerender();
+  }));
+  app.querySelectorAll('[data-confirm-csv-import]').forEach(el=>el.addEventListener('click', ()=>{
+    const st = state.csvImport;
+    if(!st) return;
+    const accountEl = document.getElementById('csvColAccount');
+    const accountId = accountEl ? accountEl.value : st.accountId;
+    const parsed = computeCsvImportRows().filter(r=>r.valid);
+    let imported = 0, skipped = 0;
+    mutateData(d=>{
+      parsed.forEach(r=>{
+        const isoDate = r.date.toISOString();
+        const dup = d.transactions.some(t=> t.accountId===accountId && t.amount===Math.abs(r.amount) && t.type===r.type && t.note===r.label && Math.abs(new Date(t.date)-r.date) < 86400000);
+        if(dup){ skipped++; return; }
+        d.transactions.unshift({ id:uid(), type:r.type, amount:Math.abs(r.amount), category: r.type==='income'?'autres_i':'autres_d', note:r.label, date:isoDate, accountId });
+        imported++;
+      });
+    });
+    state.csvImportOpen = false;
+    state.csvImport = null;
+    state.backupModalOpen = false;
+    showToast(`${imported} transaction${imported>1?'s':''} importée${imported>1?'s':''}${skipped>0?`, ${skipped} doublon${skipped>1?'s':''} ignoré${skipped>1?'s':''}`:''}`);
+    rerender();
+  }));
+
   const backupImportInput = app.querySelector('#backupImportInput');
   if(backupImportInput) backupImportInput.addEventListener('change', ()=>{
     const file = backupImportInput.files[0];
