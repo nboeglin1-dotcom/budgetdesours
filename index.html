@@ -319,6 +319,19 @@ function recurringOccurrencesInMonth(y, m){
       guard++;
     }
   });
+  (state.data.goalTransfers||[]).forEach(rule=>{
+    let next = new Date(rule.nextDate);
+    let guard = 0;
+    while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
+      next = addPeriod(next, rule.frequency);
+      guard++;
+    }
+    while(next.getFullYear()===y && next.getMonth()===m && guard<900){
+      expense += rule.amount;
+      next = addPeriod(next, rule.frequency);
+      guard++;
+    }
+  });
   return { income, expense };
 }
 function upcomingRecurring(days){
@@ -2163,6 +2176,9 @@ function computeForecast(){
   (state.data.recurring||[]).forEach(rule=>{
     const perMonth = rule.amount * occurrencesPerMonth(rule.frequency);
     if(rule.type==='income') recurIncomePerMonth += perMonth; else recurExpensePerMonth += perMonth;
+  });
+  (state.data.goalTransfers||[]).forEach(rule=>{
+    recurExpensePerMonth += rule.amount * occurrencesPerMonth(rule.frequency);
   });
   const variableIncome = Math.max(0, avgIncome - recurIncomePerMonth);
   const variableExpense = Math.max(0, avgExpense - recurExpensePerMonth);
