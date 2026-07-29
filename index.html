@@ -529,7 +529,7 @@ function processRecurring(){
   (state.data.recurring||[]).forEach(rule=>{
     let next = new Date(rule.nextDate);
     let guard = 0;
-    while(next <= today && guard < 60){
+    while(next <= today && guard < 1000){
       state.data.transactions.unshift({ id: uid(), type: rule.type, amount: rule.amount, category: rule.category, note: rule.note, date: next.toISOString() });
       next = addPeriod(next, rule.frequency);
       guard++;
@@ -586,7 +586,7 @@ function processGoalTransfers(){
     if(!goal) return;
     let next = new Date(rule.nextDate);
     let guard = 0;
-    while(next <= today && guard < 60){
+    while(next <= today && guard < 1000){
       goal.current = Math.max(0, goal.current + rule.amount);
       state.data.transactions.unshift({ id: uid(), type:'expense', amount: rule.amount, category:'epargne', note:`Virement auto vers "${goal.name}"`, date: next.toISOString(), accountId: goal.accountId||'main' });
       next = addPeriod(next, rule.frequency);
