@@ -2186,7 +2186,7 @@ function computeForecast(){
   const startBalance = totalBalance();
   const points = [];
   let lastValue = startBalance;
-  for(let i=1;i<=6;i++){
+  for(let i=1;i<=24;i++){
     let m = today.getMonth()+i, y = today.getFullYear();
     while(m>11){ m-=12; y++; }
     const hasRealDataThisMonth = visibleTransactions().some(t=>sameMonth(t.date,y,m));
@@ -2208,7 +2208,37 @@ function computeForecast(){
   return { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory, variableIncome, variableExpense };
 }
 
-function computeCategoryForecast(targetExpense){
+function computeCategoryForecast(targetExpense, viewY, viewM){
+  const recurring = (state.data.recurring||[]).filter(r=>r.type==='expense');
+  const rows = [];
+  let recurringTotal = 0;
+  if(recurring.length && viewY!==undefined){
+    const byCategory = {};
+    recurring.forEach(rule=>{
+      let next = new Date(rule.nextDate);
+      let guard = 0;
+      while((next.getFullYear() < viewY || (next.getFullYear()===viewY && next.getMonth() < viewM)) && guard < 800){
+        next = addPeriod(next, rule.frequency);
+        guard++;
+      }
+      while(next.getFullYear()===viewY && next.getMonth()===viewM && guard<900){
+        byCategory[rule.category] = (byCategory[rule.category]||0) + rule.amount;
+        next = addPeriod(next, rule.frequency);
+        guard++;
+      }
+    });
+    Object.entries(byCategory).forEach(([id,value])=>{
+      rows.push({ id, value, ...catInfo(id) });
+      recurringTotal += value;
+    });
+  }
+  const variableEstimate = Math.max(0, targetExpense - recurringTotal);
+  if(variableEstimate > 0){
+    rows.push({ id:'__estimate_variable', value: variableEstimate, label:'Estimé (variable)', color: COLORS.slate });
+  }
+  return rows.sort((a,b)=>b.value-a.value);
+}
+function computeCategoryForecastLegacy(targetExpense){
   const today = new Date();
   const months = [];
   for(let i=2;i>=0;i--){
@@ -2244,14 +2274,17 @@ function balanceForViewedMonth(f, viewY, viewM){
   if(diff <= 0) return realBalance;
   const hasRealDataThisMonth = visibleTransactions().some(t=>sameMonth(t.date, viewY, viewM));
   if(hasRealDataThisMonth) return realBalance;
-  if(diff <= 6) return f.points[diff-1].value;
+  if(diff <= 24) return f.points[diff-1].value;
   return f.startBalance + f.netAvg*diff;
 }
 
 function renderForecastCard(f){
   if(!state.data.dashboardSettings.showForecast) return '';
   if(!f) f = computeForecast();
-  const maxAbs = Math.max(1, f.startBalance, ...f.points.map(p=>Math.abs(p.value)));
+  const viewedIdx = f.points.findIndex(p=> p.y===state.viewY && p.m===state.viewM);
+  const startIdx = viewedIdx > 0 ? viewedIdx : 0;
+  const displayPoints = f.points.slice(startIdx, startIdx+6);
+  const maxAbs = Math.max(1, f.startBalance, ...displayPoints.map(p=>Math.abs(p.value)));
   return `
     <div class="card">
       <div class="row" style="margin-bottom:14px;">
@@ -2259,7 +2292,7 @@ function renderForecastCard(f){
         <button data-hide-card="showForecast" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
       </div>
       <div class="scroll-cats">
-        ${f.points.map(p=>`
+        ${displayPoints.map(p=>`
           <button data-goto-month="${p.y}-${p.m}" class="catbar-row" style="width:100%; text-align:left; background:none; border:none; padding:0; display:block; cursor:pointer;">
             <div class="row" style="margin-bottom:0;">
               <span style="font-size:12.5px; color:var(--paperDim);">${p.label}</span>
@@ -2381,7 +2414,7 @@ function renderDashboard(){
 
   const byCat = {};
   tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
-  const catData = usingEstimate ? computeCategoryForecast(expense) : Object.entries(byCat).map(([id,value])=>({id,value,...catInfo(id)})).sort((a,b)=>b.value-a.value);
+  const catData = usingEstimate ? computeCategoryForecast(expense, state.viewY, state.viewM) : Object.entries(byCat).map(([id,value])=>({id,value,...catInfo(id)})).sort((a,b)=>b.value-a.value);
   const maxCat = Math.max(1, ...catData.map(c=>c.value));
 
   const trend = [];
