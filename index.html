@@ -294,9 +294,9 @@ function findCategoryIdByLabel(label, type){
 function freqLabel(f){ return {weekly:'Chaque semaine', monthly:'Chaque mois', yearly:'Chaque année'}[f] || f; }
 function addPeriod(date, freq){
   const d = new Date(date);
-  if(freq==='weekly') d.setDate(d.getDate()+7);
-  else if(freq==='yearly') d.setFullYear(d.getFullYear()+1);
-  else d.setMonth(d.getMonth()+1);
+  if(freq==='weekly') d.setUTCDate(d.getUTCDate()+7);
+  else if(freq==='yearly') d.setUTCFullYear(d.getUTCFullYear()+1);
+  else d.setUTCMonth(d.getUTCMonth()+1);
   return d;
 }
 function occurrencesPerMonth(freq){
@@ -3203,6 +3203,12 @@ function bindEvents(){
   });
   app.querySelectorAll('[data-tx-account]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.accountId = el.dataset.txAccount; rerender(); }));
   app.querySelectorAll('[data-toggle-tx-advanced]').forEach(el=>el.addEventListener('click', ()=>{ state.txAdvancedOpen = !state.txAdvancedOpen; rerender(); }));
+  const txAmountInput = app.querySelector('#txAmount');
+  if(txAmountInput) txAmountInput.addEventListener('input', ()=>{ txFormState.amount = txAmountInput.value; });
+  const txDateInput = app.querySelector('#txDate');
+  if(txDateInput) txDateInput.addEventListener('input', ()=>{ txFormState.date = txDateInput.value; });
+  const txNoteInput = app.querySelector('#txNote');
+  if(txNoteInput) txNoteInput.addEventListener('input', ()=>{ txFormState.note = txNoteInput.value; });
   app.querySelectorAll('[data-toggle-recurring]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.recurring = !txFormState.recurring; rerender(); }));
   app.querySelectorAll('[data-freq]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.frequency = el.dataset.freq; rerender(); }));
 
@@ -3890,6 +3896,12 @@ function bindEvents(){
     }catch(e){ showToast("Impossible de charger l'image"); }
   });
   app.querySelectorAll('[data-remove-quickphoto]').forEach(el=>el.addEventListener('click', ()=>{ quickTxFormState.photo = null; rerender(); }));
+  const quickTxAmountInput = app.querySelector('#quickTxAmount');
+  if(quickTxAmountInput) quickTxAmountInput.addEventListener('input', ()=>{ quickTxFormState.amount = quickTxAmountInput.value; });
+  const quickTxDateInput = app.querySelector('#quickTxDate');
+  if(quickTxDateInput) quickTxDateInput.addEventListener('input', ()=>{ quickTxFormState.date = quickTxDateInput.value; });
+  const quickTxNoteInput = app.querySelector('#quickTxNote');
+  if(quickTxNoteInput) quickTxNoteInput.addEventListener('input', ()=>{ quickTxFormState.note = quickTxNoteInput.value; });
   const submitQuickTx = app.querySelector('[data-submit-quicktx]');
   if(submitQuickTx) submitQuickTx.addEventListener('click', ()=>{
     const amount = Number(document.getElementById('quickTxAmount').value);
