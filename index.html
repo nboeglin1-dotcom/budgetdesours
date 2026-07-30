@@ -334,6 +334,23 @@ function recurringOccurrencesInMonth(y, m){
   });
   return { income, expense };
 }
+function recurringPreviewForMonth(y, m){
+  const entries = [];
+  (state.data.recurring||[]).forEach(rule=>{
+    let next = new Date(rule.nextDate);
+    let guard = 0;
+    while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
+      next = addPeriod(next, rule.frequency);
+      guard++;
+    }
+    while(next.getFullYear()===y && next.getMonth()===m && guard<900){
+      entries.push({ id:'preview-'+rule.id+'-'+next.getTime(), type:rule.type, amount:rule.amount, category:rule.category, note:rule.note, date:next.toISOString(), isPending:true, ruleId:rule.id });
+      next = addPeriod(next, rule.frequency);
+      guard++;
+    }
+  });
+  return entries;
+}
 function upcomingRecurring(days){
   const now = new Date();
   const cutoff = new Date(now.getTime() + days*86400000);
@@ -2636,17 +2653,24 @@ function txRow(t, delBtn){
 function renderTransactions(){
   const q = state.txQuery.trim().toLowerCase();
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const list = visibleTransactions()
+  const realList = visibleTransactions()
+    .filter(t => sameMonth(t.date, state.viewY, state.viewM))
     .filter(t => state.txFilter==='all' ? true : t.type===state.txFilter)
     .filter(t => !q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q))
-    .filter(t => !state.hidePastTx || new Date(t.date) >= todayStart)
-    .sort((a,b)=> new Date(b.date)-new Date(a.date));
+    .filter(t => !state.hidePastTx || new Date(t.date) >= todayStart);
+  const previewList = recurringPreviewForMonth(state.viewY, state.viewM)
+    .filter(t => state.txFilter==='all' ? true : t.type===state.txFilter)
+    .filter(t => !q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q));
+  const list = [...realList, ...previewList].sort((a,b)=> new Date(b.date)-new Date(a.date));
   const recurCount = (state.data.recurring||[]).length;
 
   return `
     <div class="row" style="margin-bottom:14px;">
       <div class="section-title" style="margin:0;">Transactions</div>
       <button class="btn-primary" data-open="addTx">${icon('plus',14)} Ajouter</button>
+    </div>
+    <div class="month-nav" style="margin-bottom:14px;">
+      ${monthNav()}
     </div>
     <div class="row" style="margin-bottom:14px;">
       <div class="search-wrap">${icon('search',15)}<input id="txSearch" placeholder="Rechercher…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)"></div>
@@ -2660,8 +2684,22 @@ function renderTransactions(){
       </div>
       <button data-toggle-hide-past="1" class="toggle-switch ${state.hidePastTx?'on':''}" style="font-size:11px;">${icon('x',11)} Masquer passées</button>
     </div>
-    <div class="card">${list.length===0 ? `<div class="empty">Aucune transaction trouvée</div>` : list.map(t=>txRow(t,true)).join('')}</div>
+    <div class="card">${list.length===0 ? `<div class="empty">Aucune transaction ce mois-ci</div>` : list.map(t=> t.isPending ? previewTxRow(t) : txRow(t,true)).join('')}</div>
   `;
+}
+function previewTxRow(t){
+  const info = catInfo(t.category);
+  return `
+    <div class="txrow" data-preview-tx="${t.ruleId}" style="opacity:.6; border:1px dashed var(--line); border-radius:10px; cursor:pointer;">
+      <div class="tx-left">
+        <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
+        <div style="min-width:0;">
+          <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}<span style="color:var(--gold); font-size:10px; font-weight:600; border:1px solid rgba(212,169,79,.4); border-radius:5px; padding:1px 5px;">PRÉVU</span></div>
+          <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
+        </div>
+      </div>
+      <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>
+    </div>`;
 }
 
 /* ---------------- Budgets ---------------- */
@@ -3116,6 +3154,7 @@ function bindEvents(){
     if(source==='tx'){ openEditTx(id); }
     else { state.recurringModalOpen = true; rerender(); }
   }));
+  app.querySelectorAll('[data-preview-tx]').forEach(el=>el.addEventListener('click', ()=>{ state.recurringModalOpen = true; rerender(); }));
   app.querySelectorAll('[data-goto-today]').forEach(el=>el.addEventListener('click', ()=>{
     const today = new Date();
     setState({ viewY: today.getFullYear(), viewM: today.getMonth() });
