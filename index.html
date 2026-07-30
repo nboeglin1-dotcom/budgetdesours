@@ -482,6 +482,7 @@ let state = {
   pinCatModalOpen: false,
   gaugeCatModalOpen: false,
   yearlyReviewOpen: false,
+  dueSoonBannerDismissed: false,
   insightsModalOpen: false,
   habitCalcOpen: false,
   habitDestinationStep: false,
@@ -2459,34 +2460,38 @@ function renderDashboard(){
     .map(([id,limit])=>({id,limit,spent:byCat[id]||0,...catInfo(id)}))
     .filter(b=>b.limit>0 && b.spent>b.limit);
 
-  const upcoming = upcomingRecurring(7);
+  const upcoming = upcomingRecurring(3);
   const windowStart = new Date(Date.now() - 1*86400000);
-  const windowEnd = new Date(Date.now() + 7*86400000);
+  const windowEnd = new Date(Date.now() + 3*86400000);
+  const rules = state.data.recurring||[];
+  const matchRule = (t)=> t.recurringId ? rules.find(r=>r.id===t.recurringId) : rules.find(r=> r.type===t.type && r.category===t.category && r.amount===t.amount && (r.note||'')===(t.note||''));
   const recentlyGenerated = visibleTransactions()
-    .filter(t=> t.recurringId && new Date(t.date) >= windowStart && new Date(t.date) <= windowEnd)
+    .filter(t=> new Date(t.date) >= windowStart && new Date(t.date) <= windowEnd && matchRule(t))
     .map(t=>{
       const daysUntil = Math.round((new Date(t.date) - new Date()) / 86400000);
-      return { ...t, daysUntil, isPast: daysUntil < 0 };
+      const rule = matchRule(t);
+      return { ...t, daysUntil, isPast: daysUntil < 0, matchedRuleId: rule ? rule.id : null, source:'tx' };
     });
-  const dueSoon = [
+  const dueSoon = state.dueSoonBannerDismissed ? [] : [
     ...recentlyGenerated,
-    ...upcoming.filter(r=> !recentlyGenerated.some(g=> g.recurringId===r.id)),
+    ...upcoming.filter(r=> !recentlyGenerated.some(g=> g.matchedRuleId===r.id)).map(r=>({ ...r, source:'rule' })),
   ].sort((a,b)=> a.daysUntil - b.daysUntil);
   const dayLabel = (n)=> n<0 ? (n===-1?'hier':`il y a ${Math.abs(n)} jours`) : n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
 
   return `
     ${dueSoon.length>0 ? `
-      <div class="card" style="background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); margin-bottom:14px; padding:14px 16px;">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+      <div class="card" style="background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); margin-bottom:14px; padding:14px 16px; position:relative;">
+        <button data-dismiss-banner="1" style="position:absolute; top:10px; right:10px; color:var(--paperDim); padding:4px;">${icon('x',14)}</button>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; padding-right:20px;">
           ${icon('alert',15)}
-          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} autour de cette semaine</span>
+          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} dans les 3 prochains jours</span>
         </div>
         ${dueSoon.map(r=>{
           const info = catInfo(r.category);
-          return `<div style="display:flex; justify-content:space-between; font-size:13px; padding:3px 0;">
+          return `<button data-banner-item="${r.source}:${r.id}" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; font-size:13px; padding:5px 0; background:none; border:none; color:inherit;">
             <span>${escapeHtml(r.note || info.label)} · ${dayLabel(r.daysUntil)}</span>
             <span class="mono" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</span>
-          </div>`;
+          </button>`;
         }).join('')}
       </div>
     ` : ''}
@@ -2608,12 +2613,13 @@ function monthNav(){
 
 function txRow(t, delBtn){
   const info = catInfo(t.category);
+  const isRecurringTx = t.recurringId || (state.data.recurring||[]).some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount && (r.note||'')===(t.note||''));
   return `
     <div class="txrow" ${!delBtn ? `data-view-tx="${t.id}" style="cursor:pointer;"` : ''}>
       <div class="tx-left">
         ${t.photo ? `<img src="${t.photo}" style="width:32px; height:32px; border-radius:9px; object-fit:cover; flex-shrink:0;">` : `<div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>`}
         <div style="min-width:0;">
-          <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}${t.recurringId ? `<span style="color:var(--gold); flex-shrink:0; display:flex;" title="Transaction récurrente">${icon('repeat',12)}</span>` : ''}</div>
+          <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}${isRecurringTx ? `<span style="color:var(--gold); flex-shrink:0; display:flex;" title="Transaction récurrente">${icon('repeat',12)}</span>` : ''}</div>
           <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
         </div>
       </div>
@@ -3104,6 +3110,12 @@ function bindEvents(){
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-move]').forEach(el=>el.addEventListener('click', ()=> moveMonth(Number(el.dataset.move))));
+  app.querySelectorAll('[data-dismiss-banner]').forEach(el=>el.addEventListener('click', ()=>{ state.dueSoonBannerDismissed = true; rerender(); }));
+  app.querySelectorAll('[data-banner-item]').forEach(el=>el.addEventListener('click', ()=>{
+    const [source, id] = el.dataset.bannerItem.split(':');
+    if(source==='tx'){ openEditTx(id); }
+    else { state.recurringModalOpen = true; rerender(); }
+  }));
   app.querySelectorAll('[data-goto-today]').forEach(el=>el.addEventListener('click', ()=>{
     const today = new Date();
     setState({ viewY: today.getFullYear(), viewM: today.getMonth() });
