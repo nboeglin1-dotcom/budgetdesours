@@ -391,6 +391,8 @@ function seedData(){
     goalTransfers: [],
     lastExportDate: null,
     healthScoreHistory: [],
+    notificationsEnabled: false,
+    lastNotifiedDate: null,
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
@@ -420,6 +422,8 @@ function loadData(){
       if(!parsed.goalTransfers) parsed.goalTransfers = [];
       if(parsed.lastExportDate===undefined) parsed.lastExportDate = null;
       if(!parsed.healthScoreHistory) parsed.healthScoreHistory = [];
+      if(parsed.notificationsEnabled===undefined) parsed.notificationsEnabled = false;
+      if(parsed.lastNotifiedDate===undefined) parsed.lastNotifiedDate = null;
       (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
       if(!parsed.theme) parsed.theme = 'ledger';
       if(!parsed.pinnedCategories){
@@ -530,7 +534,7 @@ function processRecurring(){
     let next = new Date(rule.nextDate);
     let guard = 0;
     while(next <= today && guard < 1000){
-      state.data.transactions.unshift({ id: uid(), type: rule.type, amount: rule.amount, category: rule.category, note: rule.note, date: next.toISOString() });
+      state.data.transactions.unshift({ id: uid(), type: rule.type, amount: rule.amount, category: rule.category, note: rule.note, date: next.toISOString(), recurringId: rule.id });
       next = addPeriod(next, rule.frequency);
       guard++;
       changed = true;
@@ -639,6 +643,23 @@ recordHealthScoreSnapshot();
 (function(){
   const jointAccount = (state.data.accounts||[]).find(a=>a.name.toLowerCase().includes('joint'));
   if(jointAccount) state.activeAccountFilter = jointAccount.id;
+})();
+(function(){
+  try{
+    if(!state.data.notificationsEnabled) return;
+    if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const todayKey = new Date().toISOString().slice(0,10);
+    if(state.data.lastNotifiedDate === todayKey) return;
+    const dueToday = upcomingRecurring(1).filter(r=>r.daysUntil===0);
+    if(dueToday.length === 0) return;
+    const total = dueToday.reduce((s,r)=> s + (r.type==='expense' ? r.amount : 0), 0);
+    const body = dueToday.length===1
+      ? `${dueToday[0].note || catInfo(dueToday[0].category).label} — ${fmt2(dueToday[0].amount)}`
+      : `${dueToday.length} échéances aujourd'hui, dont ${fmt2(total)} de dépenses`;
+    new Notification('Solde des Ours', { body, icon: undefined });
+    state.data.lastNotifiedDate = todayKey;
+    saveData(state.data);
+  }catch(e){}
 })();
 
 function setState(patch){ Object.assign(state, patch); rerender(); }
@@ -985,7 +1006,8 @@ function defaultTxDate(){
 function openEditTx(id){
   const t = state.data.transactions.find(t=>t.id===id);
   if(!t) return;
-  txFormState = { type:t.type, category:t.category, date:new Date(t.date).toISOString().slice(0,10), recurring:false, frequency:'monthly', note:t.note||'', amount:t.amount, editingId:t.id, photo:t.photo||null, accountId:t.accountId||'main' };
+  const linkedRule = t.recurringId ? (state.data.recurring||[]).find(r=>r.id===t.recurringId) : null;
+  txFormState = { type:t.type, category:t.category, date:new Date(t.date).toISOString().slice(0,10), recurring:!!linkedRule, frequency:linkedRule?linkedRule.frequency:'monthly', note:t.note||'', amount:t.amount, editingId:t.id, photo:t.photo||null, accountId:t.accountId||'main' };
   state.txAdvancedOpen = true;
   setState({modal:'addTx'});
 }
@@ -1252,6 +1274,13 @@ function renderBackupModal(){
               <span style="font-size:12px; color:${t.paper}; font-weight:600;">${t.name}</span>
             </button>
           `).join('')}
+        </div>
+
+        ${backupSectionHeader('alert', 'Notifications')}
+        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Un rappel s'affiche déjà automatiquement en haut de l'accueil pour tes échéances du jour. Active aussi une notification système si tu veux — attention, sur iPhone elle ne fonctionne de façon fiable que si l'appli a été ouverte récemment, pas comme une vraie alarme programmée.</div>
+        <div class="row">
+          <span style="font-size:13px;">Notification système</span>
+          <button data-toggle-notifications="1" class="toggle-switch ${state.data.notificationsEnabled?'on':''}">${state.data.notificationsEnabled?'Activée':'Désactivée'}</button>
         </div>
 
         ${backupSectionHeader('chartbar', 'Tableau de bord')}
@@ -2431,8 +2460,24 @@ function renderDashboard(){
     .filter(b=>b.limit>0 && b.spent>b.limit);
 
   const upcoming = upcomingRecurring(7);
+  const dueSoon = upcoming.filter(r=>r.daysUntil<=1);
 
   return `
+    ${dueSoon.length>0 ? `
+      <div class="card" style="background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); margin-bottom:14px; padding:14px 16px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+          ${icon('alert',15)}
+          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} ${dueSoon.some(r=>r.daysUntil===0)?"aujourd'hui":'demain'}</span>
+        </div>
+        ${dueSoon.map(r=>{
+          const info = catInfo(r.category);
+          return `<div style="display:flex; justify-content:space-between; font-size:13px; padding:3px 0;">
+            <span>${escapeHtml(r.note || info.label)}${r.daysUntil===0?'':' · demain'}</span>
+            <span class="mono" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    ` : ''}
     <div class="row month-nav-sticky" style="justify-content:center;">
       ${monthNav()}
     </div>
@@ -2576,7 +2621,7 @@ function txRow(t, delBtn){
       <div class="tx-left">
         ${t.photo ? `<img src="${t.photo}" style="width:32px; height:32px; border-radius:9px; object-fit:cover; flex-shrink:0;">` : `<div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>`}
         <div style="min-width:0;">
-          <div class="tx-note">${escapeHtml(t.note || info.label)}</div>
+          <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}${t.recurringId ? `<span style="color:var(--gold); flex-shrink:0; display:flex;" title="Transaction récurrente">${icon('repeat',12)}</span>` : ''}</div>
           <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
         </div>
       </div>
@@ -2922,7 +2967,13 @@ function renderAddTxModal(){
               <input id="txPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;">
             `}
           </div>
-          ${!isEditing ? `
+          ${(()=>{
+            const editedTx = isEditing ? state.data.transactions.find(t=>t.id===txFormState.editingId) : null;
+            const alreadyRecurring = editedTx && editedTx.recurringId;
+            if(alreadyRecurring){
+              return `<div style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--gold); padding:8px 0;">${icon('repeat',13)} Fait partie d'une récurrence automatique</div>`;
+            }
+            return `
             <div class="row" style="margin-bottom:10px;">
               <label class="field-label" style="margin:0;">Transaction récurrente</label>
               <button data-toggle-recurring="1" class="toggle-switch ${txFormState.recurring?'on':''}">${txFormState.recurring?'Activée':'Désactivée'}</button>
@@ -2931,8 +2982,8 @@ function renderAddTxModal(){
               <div class="freq-row">
                 ${['weekly','monthly','yearly'].map(f=>`<button data-freq="${f}" class="${txFormState.frequency===f?'active':''}">${freqLabel(f)}</button>`).join('')}
               </div>
-            ` : ''}
-          ` : ''}
+            ` : ''}`;
+          })()}
         ` : ''}
         ${state.txDuplicateWarning ? `
           <div class="alert" style="margin-bottom:12px;">${icon('alert',16)}<div>Une transaction identique (même montant, catégorie et jour) existe déjà. Tape à nouveau pour l'enregistrer quand même.</div></div>
@@ -3188,10 +3239,17 @@ function bindEvents(){
       const editId = txFormState.editingId;
       mutateData(d=>{
         const t = d.transactions.find(t=>t.id===editId);
-        if(t){ t.type=txFormState.type; t.amount=amount; t.category=txFormState.category; t.note=note; t.date=isoDate; t.photo=photo; t.accountId=accountId; }
+        if(t){
+          t.type=txFormState.type; t.amount=amount; t.category=txFormState.category; t.note=note; t.date=isoDate; t.photo=photo; t.accountId=accountId;
+          if(txFormState.recurring && !t.recurringId){
+            const newRuleId = uid();
+            d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
+            t.recurringId = newRuleId;
+          }
+        }
       });
       state.modal = null;
-      showToast('Transaction modifiée');
+      showToast(txFormState.recurring ? 'Transaction convertie en récurrence' : 'Transaction modifiée');
       return;
     }
     if(!state.txDuplicateWarning){
@@ -3208,9 +3266,13 @@ function bindEvents(){
       }
     }
     mutateData(d=>{
-      d.transactions.unshift({ id:uid(), type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId });
+      const newTxId = uid();
       if(txFormState.recurring){
-        d.recurring.push({ id:uid(), type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
+        const newRuleId = uid();
+        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
+        d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId, recurringId:newRuleId });
+      } else {
+        d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId });
       }
     });
     state.txDuplicateWarning = false;
@@ -3692,6 +3754,22 @@ function bindEvents(){
     const key = el.dataset.hideCard;
     mutateData(d=>{ d.dashboardSettings[key] = false; });
     showToast('Carte masquée — réactivable dans Réglages');
+  }));
+  app.querySelectorAll('[data-toggle-notifications]').forEach(el=>el.addEventListener('click', async ()=>{
+    if(state.data.notificationsEnabled){
+      mutateData(d=>{ d.notificationsEnabled = false; });
+      return;
+    }
+    if(typeof Notification === 'undefined'){ showToast("Les notifications ne sont pas prises en charge sur cet appareil"); return; }
+    try{
+      const perm = await Notification.requestPermission();
+      if(perm === 'granted'){
+        mutateData(d=>{ d.notificationsEnabled = true; d.lastNotifiedDate = null; });
+        showToast('Notifications activées');
+      } else {
+        showToast('Permission refusée — active-la dans les réglages de Safari si tu changes d\'avis');
+      }
+    }catch(e){ showToast("Impossible d'activer les notifications"); }
   }));
   app.querySelectorAll('[data-toggle-card]').forEach(el=>el.addEventListener('click', ()=>{
     const key = el.dataset.toggleCard;
