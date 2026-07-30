@@ -2460,7 +2460,7 @@ function renderDashboard(){
     .filter(b=>b.limit>0 && b.spent>b.limit);
 
   const upcoming = upcomingRecurring(7);
-  const dueSoon = upcoming.filter(r=>r.daysUntil<=3);
+  const dueSoon = upcoming;
   const dayLabel = (n)=> n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
 
   return `
@@ -2468,7 +2468,7 @@ function renderDashboard(){
       <div class="card" style="background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); margin-bottom:14px; padding:14px 16px;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
           ${icon('alert',15)}
-          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} dans les 3 prochains jours</span>
+          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} dans les 7 prochains jours</span>
         </div>
         ${dueSoon.map(r=>{
           const info = catInfo(r.category);
@@ -2484,26 +2484,6 @@ function renderDashboard(){
     </div>
     ${renderGaugeCard(stats)}
     ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'dépassent':'dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
-    ${upcoming.length ? `
-      <div class="card" style="padding-top:14px; padding-bottom:6px;">
-        <div class="section-title" style="font-size:14px; margin-bottom:10px; display:flex; align-items:center; gap:7px;">${icon('repeat',14)} À venir</div>
-        ${upcoming.map(r=>{
-          const info = catInfo(r.category);
-          return `
-            <div class="txrow">
-              <div class="tx-left">
-                <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
-                <div style="min-width:0;">
-                  <div class="tx-note">${escapeHtml(r.note || info.label)}</div>
-                  <div class="tx-meta">${r.daysUntil===0?"Aujourd'hui":r.daysUntil===1?"Demain":`Dans ${r.daysUntil} jours`}</div>
-                </div>
-              </div>
-              <div class="tx-amt" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    ` : ''}
     ${state.data.dashboardSettings.showBreakdown ? `
     <div class="card">
       <div class="row" style="margin-bottom:12px;">
