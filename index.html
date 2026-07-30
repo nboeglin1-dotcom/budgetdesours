@@ -2460,15 +2460,26 @@ function renderDashboard(){
     .filter(b=>b.limit>0 && b.spent>b.limit);
 
   const upcoming = upcomingRecurring(7);
-  const dueSoon = upcoming;
-  const dayLabel = (n)=> n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
+  const windowStart = new Date(Date.now() - 1*86400000);
+  const windowEnd = new Date(Date.now() + 7*86400000);
+  const recentlyGenerated = visibleTransactions()
+    .filter(t=> t.recurringId && new Date(t.date) >= windowStart && new Date(t.date) <= windowEnd)
+    .map(t=>{
+      const daysUntil = Math.round((new Date(t.date) - new Date()) / 86400000);
+      return { ...t, daysUntil, isPast: daysUntil < 0 };
+    });
+  const dueSoon = [
+    ...recentlyGenerated,
+    ...upcoming.filter(r=> !recentlyGenerated.some(g=> g.recurringId===r.id)),
+  ].sort((a,b)=> a.daysUntil - b.daysUntil);
+  const dayLabel = (n)=> n<0 ? (n===-1?'hier':`il y a ${Math.abs(n)} jours`) : n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
 
   return `
     ${dueSoon.length>0 ? `
       <div class="card" style="background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); margin-bottom:14px; padding:14px 16px;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
           ${icon('alert',15)}
-          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} dans les 7 prochains jours</span>
+          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} autour de cette semaine</span>
         </div>
         ${dueSoon.map(r=>{
           const info = catInfo(r.category);
