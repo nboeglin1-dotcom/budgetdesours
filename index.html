@@ -2481,7 +2481,7 @@ function renderDashboard(){
   return `
     ${dueSoon.length>0 ? `
       <div class="card" style="background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); margin-bottom:14px; padding:14px 16px; position:relative;">
-        <button data-dismiss-banner="1" style="position:absolute; top:10px; right:10px; color:var(--paperDim); padding:4px;">${icon('x',14)}</button>
+        <button data-dismiss-banner="1" style="position:absolute; top:8px; right:8px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; color:var(--paper); background:rgba(0,0,0,.15); border-radius:50%; z-index:2;">${icon('x',14)}</button>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; padding-right:20px;">
           ${icon('alert',15)}
           <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} dans les 3 prochains jours</span>
