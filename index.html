@@ -349,6 +349,20 @@ function recurringPreviewForMonth(y, m){
       guard++;
     }
   });
+  (state.data.goalTransfers||[]).forEach(rule=>{
+    const goal = (state.data.goals||[]).find(g=>g.id===rule.goalId);
+    let next = new Date(rule.nextDate);
+    let guard = 0;
+    while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
+      next = addPeriod(next, rule.frequency);
+      guard++;
+    }
+    while(next.getFullYear()===y && next.getMonth()===m && guard<900){
+      entries.push({ id:'preview-goal-'+rule.id+'-'+next.getTime(), type:'expense', amount:rule.amount, category:'epargne', note:`Virement auto vers "${goal?goal.name:'objectif'}"`, date:next.toISOString(), isPending:true, ruleId:rule.id });
+      next = addPeriod(next, rule.frequency);
+      guard++;
+    }
+  });
   return entries;
 }
 function upcomingRecurring(days){
@@ -2208,9 +2222,10 @@ function computeForecast(){
     if(m<0){m+=12;y--;}
     months.push({y,m});
   }
+  const TRANSFER_CATS_FC = new Set(['epargne','epargne_retour','virement','virement_retour']);
   const incomes = [], expenses = [];
   months.forEach(({y,m})=>{
-    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m));
+    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && !TRANSFER_CATS_FC.has(t.category));
     incomes.push(txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0));
     expenses.push(txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0));
   });
@@ -2224,13 +2239,14 @@ function computeForecast(){
     const perMonth = rule.amount * occurrencesPerMonth(rule.frequency);
     if(rule.type==='income') recurIncomePerMonth += perMonth; else recurExpensePerMonth += perMonth;
   });
-  (state.data.goalTransfers||[]).forEach(rule=>{
-    recurExpensePerMonth += rule.amount * occurrencesPerMonth(rule.frequency);
-  });
   const variableIncome = Math.max(0, avgIncome - recurIncomePerMonth);
   const variableExpense = Math.max(0, avgExpense - recurExpensePerMonth);
 
-  const startBalance = totalBalance();
+  const realBalanceNow = totalBalance();
+  const remainingThisMonth = recurringPreviewForMonth(today.getFullYear(), today.getMonth())
+    .filter(e => new Date(e.date) > today)
+    .reduce((s,e)=> s + (e.type==='income' ? e.amount : -e.amount), 0);
+  const startBalance = realBalanceNow + remainingThisMonth;
   const points = [];
   let lastValue = startBalance;
   for(let i=1;i<=24;i++){
@@ -2314,12 +2330,14 @@ function balanceForViewedMonth(f, viewY, viewM){
   const curIdx = monthIndex(today.getFullYear(), today.getMonth());
   const viewIdx = monthIndex(viewY, viewM);
   const diff = viewIdx - curIdx;
-  const cutoff = new Date(viewY, viewM+1, 0, 23,59,59,999);
+  const monthEnd = new Date(viewY, viewM+1, 0, 23,59,59,999);
+  const cutoff = monthEnd < today ? monthEnd : today;
   const realBalance = visibleTransactions()
     .filter(t => new Date(t.date) <= cutoff)
     .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
-  if(diff <= 0) return realBalance;
-  const hasRealDataThisMonth = visibleTransactions().some(t=>sameMonth(t.date, viewY, viewM));
+  if(diff < 0) return realBalance;
+  if(diff === 0) return f.startBalance;
+  const hasRealDataThisMonth = visibleTransactions().some(t=>sameMonth(t.date, viewY, viewM) && new Date(t.date) <= today);
   if(hasRealDataThisMonth) return realBalance;
   if(diff <= 24) return f.points[diff-1].value;
   return f.startBalance + f.netAvg*diff;
@@ -2380,7 +2398,8 @@ function computeMonthStats(){
   const isFuture = viewIdx > curIdx;
 
   const f = computeForecast();
-  const tx = monthTx();
+  const today0 = new Date();
+  const tx = monthTx().filter(t=> isFuture || new Date(t.date) <= today0);
   const realIncome = tx.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
   const realExpense = tx.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
   const savedDeposits = tx.filter(t=>t.type==='expense' && t.category==='epargne').reduce((s,t)=>s+t.amount,0);
@@ -2393,6 +2412,8 @@ function computeMonthStats(){
   const savings = income - expense;
   const rate = income>0 ? Math.max(0, Math.round(savings/income*100)) : 0;
   const bal = balanceForViewedMonth(f, state.viewY, state.viewM);
+  const isCurrentMonth = viewIdx === curIdx;
+  const resteIsEstimated = isCurrentMonth && recurringPreviewForMonth(state.viewY, state.viewM).some(e=> new Date(e.date) > today);
 
   let pm = state.viewM - 1, py = state.viewY;
   if(pm<0){ pm = 11; py--; }
@@ -2402,15 +2423,15 @@ function computeMonthStats(){
   const incomeChange = usingEstimate ? null : pctChange(income, prevIncome);
   const expenseChange = usingEstimate ? null : pctChange(expense, prevExpense);
 
-  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, incomeChange, expenseChange, savedThisMonth };
+  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, incomeChange, expenseChange, savedThisMonth, resteIsEstimated };
 }
 
 function renderBalanceContent(stats, showStats){
   if(showStats===undefined) showStats = true;
-  const { bal, income, expense, rate, usingEstimate, f, incomeChange, expenseChange, savedThisMonth } = stats;
+  const { bal, income, expense, rate, usingEstimate, f, incomeChange, expenseChange, savedThisMonth, resteIsEstimated } = stats;
   return `
       <div class="row" style="margin-bottom:0;">
-        <div class="eyebrow" style="margin-bottom:0;">Reste${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
+        <div class="eyebrow" style="margin-bottom:0;">Reste${(usingEstimate || resteIsEstimated) ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
       </div>
       <div class="row" style="margin-bottom:0; align-items:center;">
         <div class="balance-num mono" id="balanceNum">${fmt0(bal)}</div>
