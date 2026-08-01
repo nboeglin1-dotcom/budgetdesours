@@ -423,6 +423,7 @@ function seedData(){
     lastExportDate: null,
     healthScoreHistory: [],
     notificationsEnabled: false,
+    rolloverEnabled: true,
     lastNotifiedDate: null,
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
@@ -454,6 +455,7 @@ function loadData(){
       if(parsed.lastExportDate===undefined) parsed.lastExportDate = null;
       if(!parsed.healthScoreHistory) parsed.healthScoreHistory = [];
       if(parsed.notificationsEnabled===undefined) parsed.notificationsEnabled = false;
+      if(parsed.rolloverEnabled===undefined) parsed.rolloverEnabled = true;
       if(parsed.lastNotifiedDate===undefined) parsed.lastNotifiedDate = null;
       (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
       if(!parsed.theme) parsed.theme = 'ledger';
@@ -612,7 +614,7 @@ function processCategoryRollover(){
   saveData(state.data);
 }
 function effectiveLimit(catId){
-  return (state.data.budgets[catId]||0) + (state.data.categoryRollover[catId]||0);
+  return (state.data.budgets[catId]||0) + (state.data.rolloverEnabled ? (state.data.categoryRollover[catId]||0) : 0);
 }
 function processGoalTransfers(){
   const today = new Date();
@@ -1313,6 +1315,13 @@ function renderBackupModal(){
         <div class="row">
           <span style="font-size:13px;">Notification système</span>
           <button data-toggle-notifications="1" class="toggle-switch ${state.data.notificationsEnabled?'on':''}">${state.data.notificationsEnabled?'Activée':'Désactivée'}</button>
+        </div>
+
+        ${backupSectionHeader('repeat', 'Budgets')}
+        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Quand tu ne dépenses pas tout ton budget un mois, le report ajoute automatiquement le surplus au mois suivant. Désactive-le si tu préfères des limites toujours fixes.</div>
+        <div class="row">
+          <span style="font-size:13px;">Report de budget d'un mois sur l'autre</span>
+          <button data-toggle-rollover="1" class="toggle-switch ${state.data.rolloverEnabled?'on':''}">${state.data.rolloverEnabled?'Activé':'Désactivé'}</button>
         </div>
 
         ${backupSectionHeader('chartbar', 'Tableau de bord')}
@@ -2729,8 +2738,9 @@ function renderGaugeCard(stats){
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
 
   const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id) && c.id!=='epargne' && c.id!=='virement');
-  const totalRollover = Object.values(state.data.categoryRollover||{}).reduce((s,v)=>s+v, 0);
+  const totalRollover = nonRecurringCats.reduce((s,c)=> s + (state.data.categoryRollover[c.id]||0), 0);
   const globalLimit = nonRecurringCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
+  const globalBaseLimit = nonRecurringCats.reduce((s,c)=> s + (state.data.budgets[c.id]||0), 0);
   const globalSpent = nonRecurringCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
   const globalPct = globalLimit>0 ? Math.min(100, Math.round(globalSpent/globalLimit*100)) : 0;
   const globalOver = globalLimit>0 && globalSpent>globalLimit;
@@ -2760,6 +2770,7 @@ function renderGaugeCard(stats){
           <span class="mono" style="color:${globalOver?'var(--coral)':'var(--paper)'}; font-weight:600;">${fmt2(globalSpent)}</span>
           <span style="color:var(--paperDim);">sur <span class="mono" style="color:var(--paper);">${fmt0(globalLimit)}</span></span>
         </div>
+        ${totalRollover>0 ? `<div style="font-size:11px; color:var(--paperDim); margin-top:2px;">dont ${fmt0(globalBaseLimit)} de limites fixées + ${fmt0(totalRollover)} reportés des mois précédents</div>` : ''}
         <div style="height:1px; background:var(--line); margin:14px 0;"></div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px;">
           ${gaugeSegments.map(s=>`
@@ -2782,9 +2793,12 @@ function renderGaugeCard(stats){
           </div>
         ` : ''}
         ${totalRollover>0 ? `
-          <div class="row" style="margin-top:10px; margin-bottom:0;">
-            <span style="font-size:11.5px; color:var(--paperDim);">${icon('repeat',11)} Report cumulé des mois précédents</span>
-            <button data-allocate-rollover="1" data-remaining-amount="${totalRollover}" class="btn-ghost" style="font-size:11px; padding:6px 9px;">${fmt0(totalRollover)} → Épargner</button>
+          <div style="margin-top:10px; background:var(--surfaceHi); border-radius:10px; padding:10px 12px;">
+            <div class="row" style="margin-bottom:4px;">
+              <span style="font-size:11.5px; color:var(--paperDim); display:flex; align-items:center; gap:5px;">${icon('repeat',11)} Report cumulé des mois précédents</span>
+              <button data-allocate-rollover="1" data-remaining-amount="${totalRollover}" class="btn-ghost" style="font-size:11px; padding:6px 9px;">${fmt0(totalRollover)} → Épargner</button>
+            </div>
+            <div style="font-size:10.5px; color:var(--paperDim); line-height:1.5;">${state.data.rolloverEnabled ? `Tu n'as pas dépensé tout ton budget certains mois passés — ces ${fmt0(totalRollover)} non utilisés s'ajoutent à tes limites de ce mois. Tape "Épargner" pour les mettre de côté plutôt et repartir sur tes limites de base.` : `Tu n'as pas dépensé tout ton budget certains mois passés — ${fmt0(totalRollover)} de côté, sans avoir été ajoutés à tes limites (le report est désactivé). Tape "Épargner" pour les basculer vers un objectif.`}</div>
           </div>
         ` : ''}
       ` : `<div class="empty" style="padding:12px 0 16px;">Toutes les catégories sont masquées.</div>`}
@@ -3835,6 +3849,14 @@ function bindEvents(){
         showToast('Permission refusée — active-la dans les réglages de Safari si tu changes d\'avis');
       }
     }catch(e){ showToast("Impossible d'activer les notifications"); }
+  }));
+  app.querySelectorAll('[data-toggle-rollover]').forEach(el=>el.addEventListener('click', ()=>{
+    const wasEnabled = state.data.rolloverEnabled;
+    mutateData(d=>{
+      d.rolloverEnabled = !wasEnabled;
+      if(wasEnabled){ d.categoryRollover = {}; }
+    });
+    showToast(wasEnabled ? 'Report désactivé — limites remises à leur valeur de base' : 'Report réactivé');
   }));
   app.querySelectorAll('[data-toggle-card]').forEach(el=>el.addEventListener('click', ()=>{
     const key = el.dataset.toggleCard;
