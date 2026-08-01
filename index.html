@@ -424,6 +424,7 @@ function seedData(){
     healthScoreHistory: [],
     notificationsEnabled: false,
     rolloverEnabled: true,
+    envelopeCommitted: {},
     lastNotifiedDate: null,
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
@@ -456,6 +457,7 @@ function loadData(){
       if(!parsed.healthScoreHistory) parsed.healthScoreHistory = [];
       if(parsed.notificationsEnabled===undefined) parsed.notificationsEnabled = false;
       if(parsed.rolloverEnabled===undefined) parsed.rolloverEnabled = true;
+      if(!parsed.envelopeCommitted) parsed.envelopeCommitted = {};
       if(parsed.lastNotifiedDate===undefined) parsed.lastNotifiedDate = null;
       (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
       if(!parsed.theme) parsed.theme = 'ledger';
@@ -2744,7 +2746,9 @@ function renderGaugeCard(stats){
   const globalSpent = nonRecurringCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
   const globalPct = globalLimit>0 ? Math.min(100, Math.round(globalSpent/globalLimit*100)) : 0;
   const globalOver = globalLimit>0 && globalSpent>globalLimit;
-  const remaining = Math.max(0, globalLimit - globalSpent);
+  const committedKey = state.viewY + '-' + state.viewM;
+  const committedThisMonth = state.data.envelopeCommitted[committedKey] || 0;
+  const remaining = Math.max(0, globalLimit - globalSpent - committedThisMonth);
   const alwaysShow = new Set(state.data.gaugeAlwaysShow||[]);
   const gaugeSegments = nonRecurringCats
     .map(c=>({ id:c.id, color:c.color, label:c.label, value: byCat[c.id]||0 }))
@@ -2770,7 +2774,7 @@ function renderGaugeCard(stats){
           <span class="mono" style="color:${globalOver?'var(--coral)':'var(--paper)'}; font-weight:600;">${fmt2(globalSpent)}</span>
           <span style="color:var(--paperDim);">sur <span class="mono" style="color:var(--paper);">${fmt0(globalLimit)}</span></span>
         </div>
-        ${totalRollover>0 ? `<div style="font-size:11px; color:var(--paperDim); margin-top:2px;">dont ${fmt0(globalBaseLimit)} de limites fixées + ${fmt0(totalRollover)} reportés des mois précédents</div>` : ''}
+        ${(state.data.rolloverEnabled && totalRollover>0) ? `<div style="font-size:11px; color:var(--paperDim); margin-top:2px;">dont ${fmt0(globalBaseLimit)} de limites fixées + ${fmt0(totalRollover)} reportés des mois précédents</div>` : ''}
         <div style="height:1px; background:var(--line); margin:14px 0;"></div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px;">
           ${gaugeSegments.map(s=>`
@@ -2787,11 +2791,18 @@ function renderGaugeCard(stats){
           `).join('')}
         </div>
         ${remaining>0 ? `
+          <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="row" style="margin-top:14px; margin-bottom:0; width:100%; text-align:left; background:none; border:none; padding:0; cursor:pointer;">
+            <span style="font-size:12.5px; color:var(--paperDim); display:flex; align-items:center; gap:5px;">Reste à dépenser ${icon('chevronR',11)}</span>
+            <span class="mono" style="font-size:16px; font-weight:700; color:var(--mint);">${fmt0(remaining)}</span>
+          </button>
+          <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">Tape pour mettre ce solde de côté — tes limites repartent à zéro le mois prochain, comme prévu.</div>
+        ` : `
           <div class="row" style="margin-top:14px; margin-bottom:0;">
             <span style="font-size:12.5px; color:var(--paperDim);">Reste à dépenser</span>
-            <span class="mono" style="font-size:16px; font-weight:700; color:var(--mint);">${fmt0(remaining)}</span>
+            <span class="mono" style="font-size:16px; font-weight:700; color:var(--paperDim);">0 €</span>
           </div>
-        ` : ''}
+          <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">${committedThisMonth>0 ? 'Tout a été mis de côté ce mois-ci' : 'Budget entièrement utilisé ce mois-ci'} — ça repart de zéro le mois prochain.</div>
+        `}
         ${totalRollover>0 ? `
           <div style="margin-top:10px; background:var(--surfaceHi); border-radius:10px; padding:10px 12px;">
             <div class="row" style="margin-bottom:4px;">
@@ -4050,6 +4061,7 @@ function bindEvents(){
     state.allocateAmount = amount;
     state.allocateGoalMode = 'add';
     state.allocateIsRollover = false;
+    state.allocateSource = 'remaining';
     state.allocateModalOpen = true;
     rerender();
   }));
@@ -4058,6 +4070,7 @@ function bindEvents(){
     state.allocateAmount = amount;
     state.allocateGoalMode = el.dataset.allocateQuick;
     state.allocateIsRollover = false;
+    state.allocateSource = null;
     state.allocateModalOpen = true;
     rerender();
   }));
@@ -4066,6 +4079,7 @@ function bindEvents(){
     state.allocateAmount = amount;
     state.allocateGoalMode = 'add';
     state.allocateIsRollover = true;
+    state.allocateSource = null;
     state.allocateModalOpen = true;
     rerender();
   }));
@@ -4135,8 +4149,13 @@ function bindEvents(){
       if(state.allocateIsRollover){
         mutateData(d=>{ d.categoryRollover = {}; });
       }
+      if(state.allocateSource==='remaining'){
+        const key = state.viewY + '-' + state.viewM;
+        mutateData(d=>{ d.envelopeCommitted[key] = (d.envelopeCommitted[key]||0) + amount; });
+      }
     }
     state.allocateIsRollover = false;
+    state.allocateSource = null;
   }));
   app.querySelectorAll('[data-setup-key]').forEach(el=>el.addEventListener('click', ()=>{ handleSetupDigit(el.dataset.setupKey); }));
   app.querySelectorAll('[data-setup-backspace]').forEach(el=>el.addEventListener('click', handleSetupBackspace));
