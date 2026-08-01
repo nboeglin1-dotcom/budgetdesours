@@ -513,7 +513,7 @@ let state = {
   pinCatModalOpen: false,
   gaugeCatModalOpen: false,
   yearlyReviewOpen: false,
-  dueSoonBannerDismissed: false,
+  dueSoonBannerDismissedDate: null,
   insightsModalOpen: false,
   habitCalcOpen: false,
   habitDestinationStep: false,
@@ -2504,7 +2504,8 @@ function renderDashboard(){
       const rule = matchRule(t);
       return { ...t, daysUntil, isPast: daysUntil < 0, matchedRuleId: rule ? rule.id : null, source:'tx' };
     });
-  const dueSoon = state.dueSoonBannerDismissed ? [] : [
+  const isDismissedToday = state.dueSoonBannerDismissedDate === new Date().toISOString().slice(0,10);
+  const dueSoon = isDismissedToday ? [] : [
     ...recentlyGenerated,
     ...upcoming.filter(r=> !recentlyGenerated.some(g=> g.matchedRuleId===r.id)).map(r=>({ ...r, source:'rule' })),
   ].sort((a,b)=> a.daysUntil - b.daysUntil);
@@ -3163,7 +3164,7 @@ function bindEvents(){
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-move]').forEach(el=>el.addEventListener('click', ()=> moveMonth(Number(el.dataset.move))));
-  app.querySelectorAll('[data-dismiss-banner]').forEach(el=>el.addEventListener('click', ()=>{ state.dueSoonBannerDismissed = true; rerender(); }));
+  app.querySelectorAll('[data-dismiss-banner]').forEach(el=>el.addEventListener('click', ()=>{ state.dueSoonBannerDismissedDate = new Date().toISOString().slice(0,10); rerender(); }));
   app.querySelectorAll('[data-banner-item]').forEach(el=>el.addEventListener('click', ()=>{
     const [source, id] = el.dataset.bannerItem.split(':');
     if(source==='tx'){ openEditTx(id); }
