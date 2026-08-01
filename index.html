@@ -1013,7 +1013,7 @@ function goalContribute(id, amt){
     if(g){
       goalName = g.name;
       g.current = Math.max(0,g.current+amt);
-      d.transactions.unshift({ id:uid(), type:'expense', amount:amt, category:'epargne', note:`Vers "${g.name}"`, date:new Date().toISOString(), accountId: g.accountId||'main' });
+      d.transactions.unshift({ id:uid(), type:'expense', amount:amt, category:'epargne', note:`Vers "${g.name}"`, date:new Date().toISOString(), accountId: g.accountId||'main', goalId: g.id });
     }
   });
   showToast(`+${fmt0(amt)} vers ${goalName || "l'objectif"} — déduit du solde`);
@@ -1025,7 +1025,7 @@ function goalWithdraw(id, amt){
     if(g){
       goalName = g.name;
       g.current = Math.max(0,g.current-amt);
-      d.transactions.unshift({ id:uid(), type:'income', amount:amt, category:'epargne_retour', note:`Retrait de "${g.name}"`, date:new Date().toISOString(), accountId: g.accountId||'main' });
+      d.transactions.unshift({ id:uid(), type:'income', amount:amt, category:'epargne_retour', note:`Retrait de "${g.name}"`, date:new Date().toISOString(), accountId: g.accountId||'main', goalId: g.id });
     }
   });
   showToast(`${fmt0(amt)} retirés de ${goalName || "l'objectif"} — ajoutés au solde`);
@@ -1262,7 +1262,7 @@ function renderBackupModal(){
       <div class="modal-sheet" onclick="event.stopPropagation()">
         <div class="modal-head"><div class="modal-title ledger">Sauvegarde</div><button data-close-x-backup="1">${icon('x',18)}</button></div>
         <div style="font-size:13px; color:var(--paperDim); line-height:1.5;">
-          Tes données ne vivent que sur cet appareil. Télécharge une sauvegarde régulièrement pour ne rien perdre en cas de problème (appareil perdu, cache effacé...).
+          Tes données ne vivent que sur cet appareil. Enregistre une sauvegarde régulièrement (idéalement dans iCloud Drive, via "Enregistrer dans Fichiers" au moment du partage) pour ne rien perdre en cas de problème, et pouvoir la retrouver sur un autre appareil.
         </div>
 
         ${backupSectionHeader('shield', 'Sauvegarde')}
@@ -1273,7 +1273,7 @@ function renderBackupModal(){
           ${lastExport ? `Dernier export téléchargé : il y a ${daysSinceExport} jour${daysSinceExport>1?'s':''}` : "Tu n'as encore jamais exporté de sauvegarde"}
           ${exportOverdue ? ' — pense à en refaire une' : ''}
         </div>
-        <button class="btn-primary" style="width:100%; justify-content:center; margin-top:10px;" data-export-backup="1">${icon('download',15)} Télécharger une sauvegarde</button>
+        <button class="btn-primary" style="width:100%; justify-content:center; margin-top:10px;" data-export-backup="1">${icon('download',15)} Enregistrer une sauvegarde</button>
         <label for="backupImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer; margin-top:10px;">${icon('upload',15)} Restaurer une sauvegarde</label>
         <input id="backupImportInput" type="file" accept="application/json,.json" style="display:none;">
         <div style="font-size:11.5px; color:var(--paperDim); margin-top:8px; text-align:center;">La restauration remplace toutes tes données actuelles.</div>
@@ -2816,7 +2816,7 @@ function renderGaugeCard(stats){
       <div style="height:1px; background:var(--line); margin:16px 0;"></div>
       <div style="display:flex; gap:8px;">
         <button data-allocate-quick="withdraw" data-remaining-amount="${remaining}" style="background:var(--coral); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Retirer rapidement">−</button>
-        <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne <span class="mono" style="opacity:.75; font-weight:600;">· ${fmt0((state.data.goals||[]).reduce((s,g)=>s+g.current,0))}</span></button>
+        <button data-allocate-remaining="quick" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne <span class="mono" style="opacity:.75; font-weight:600;">· ${fmt0((state.data.goals||[]).reduce((s,g)=>s+g.current,0))}</span></button>
         <button data-allocate-quick="add" data-remaining-amount="${remaining}" style="background:var(--sage); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter rapidement">+</button>
       </div>
     </div>
@@ -3228,8 +3228,31 @@ function bindEvents(){
     const tx = state.data.transactions.find(t=>t.id===id);
     if(!tx) return;
     const pair = tx.transferId ? state.data.transactions.find(t=>t.transferId===tx.transferId && t.id!==tx.id) : null;
-    mutateData(d=>{ d.transactions = d.transactions.filter(t=>t.id!==id && (!pair || t.id!==pair.id)); });
-    showUndoToast(pair ? 'Virement supprimé' : 'Transaction supprimée', ()=>{ mutateData(d=>{ d.transactions.unshift(tx); if(pair) d.transactions.unshift(pair); }); });
+    const reverseGoalEffect = (d, t, sign)=>{
+      if(!t.goalId || (t.category!=='epargne' && t.category!=='epargne_retour')) return;
+      const g = d.goals.find(g=>g.id===t.goalId);
+      if(!g) return;
+      const delta = t.category==='epargne' ? t.amount : -t.amount;
+      g.current = Math.max(0, g.current + delta*sign);
+    };
+    const reverseCommitted = (d, t, sign)=>{
+      if(!t.committedMonth) return;
+      d.envelopeCommitted[t.committedMonth] = Math.max(0, (d.envelopeCommitted[t.committedMonth]||0) + t.amount*sign);
+    };
+    mutateData(d=>{
+      d.transactions = d.transactions.filter(t=>t.id!==id && (!pair || t.id!==pair.id));
+      reverseGoalEffect(d, tx, -1);
+      reverseCommitted(d, tx, -1);
+      if(pair) reverseGoalEffect(d, pair, -1);
+    });
+    showUndoToast(pair ? 'Virement supprimé' : 'Transaction supprimée', ()=>{
+      mutateData(d=>{
+        d.transactions.unshift(tx); if(pair) d.transactions.unshift(pair);
+        reverseGoalEffect(d, tx, 1);
+        reverseCommitted(d, tx, 1);
+        if(pair) reverseGoalEffect(d, pair, 1);
+      });
+    });
   }));
   app.querySelectorAll('[data-edit-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.editTx); }));
   app.querySelectorAll('[data-duplicate-tx]').forEach(el=>el.addEventListener('click', ()=>{
@@ -3330,6 +3353,15 @@ function bindEvents(){
       mutateData(d=>{
         const t = d.transactions.find(t=>t.id===editId);
         if(t){
+          const oldAmount = t.amount;
+          if(t.goalId && (t.category==='epargne' || t.category==='epargne_retour') && amount!==oldAmount){
+            const g = d.goals.find(g=>g.id===t.goalId);
+            if(g){
+              const diff = amount - oldAmount;
+              const delta = t.category==='epargne' ? diff : -diff;
+              g.current = Math.max(0, g.current + delta);
+            }
+          }
           t.type=txFormState.type; t.amount=amount; t.category=txFormState.category; t.note=note; t.date=isoDate; t.photo=photo; t.accountId=accountId;
           if(txFormState.recurring && !t.recurringId){
             const newRuleId = uid();
@@ -3595,18 +3627,35 @@ function bindEvents(){
   app.querySelectorAll('[data-open-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen = true; rerender(); }));
   app.querySelectorAll('[data-close-backup]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.backupModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen=false; rerender(); }));
-  app.querySelectorAll('[data-export-backup]').forEach(el=>el.addEventListener('click', ()=>{
+  app.querySelectorAll('[data-export-backup]').forEach(el=>el.addEventListener('click', async ()=>{
+    const dateStr = new Date().toISOString().slice(0,10);
+    const filename = `solde-sauvegarde-${dateStr}.json`;
+    const jsonStr = JSON.stringify(state.data, null, 2);
+    const downloadFallback = ()=>{
+      try{
+        const blob = new Blob([jsonStr], { type:'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        mutateData(d=>{ d.lastExportDate = new Date().toISOString(); });
+        showToast('Sauvegarde téléchargée');
+      }catch(e2){ showToast('Impossible de créer la sauvegarde'); }
+    };
     try{
-      const blob = new Blob([JSON.stringify(state.data, null, 2)], { type:'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const dateStr = new Date().toISOString().slice(0,10);
-      a.href = url; a.download = `solde-sauvegarde-${dateStr}.json`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      mutateData(d=>{ d.lastExportDate = new Date().toISOString(); });
-      showToast('Sauvegarde téléchargée');
-    }catch(e){ showToast('Impossible de créer la sauvegarde'); }
+      const file = new File([jsonStr], filename, { type:'application/json' });
+      if(navigator.canShare && navigator.canShare({ files:[file] })){
+        await navigator.share({ files:[file], title:'Sauvegarde Solde des Ours' });
+        mutateData(d=>{ d.lastExportDate = new Date().toISOString(); });
+        showToast('Sauvegarde partagée');
+      } else {
+        downloadFallback();
+      }
+    }catch(e){
+      if(e.name === 'AbortError') return;
+      downloadFallback();
+    }
   }));
   app.querySelectorAll('[data-restore-autobackup]').forEach(el=>el.addEventListener('click', ()=>{
     const dateStr = el.dataset.restoreAutobackup;
@@ -4061,7 +4110,7 @@ function bindEvents(){
     state.allocateAmount = amount;
     state.allocateGoalMode = 'add';
     state.allocateIsRollover = false;
-    state.allocateSource = 'remaining';
+    state.allocateSource = el.dataset.allocateRemaining==='save' ? 'remaining' : null;
     state.allocateModalOpen = true;
     rerender();
   }));
@@ -4151,7 +4200,10 @@ function bindEvents(){
       }
       if(state.allocateSource==='remaining'){
         const key = state.viewY + '-' + state.viewM;
-        mutateData(d=>{ d.envelopeCommitted[key] = (d.envelopeCommitted[key]||0) + amount; });
+        mutateData(d=>{
+          d.envelopeCommitted[key] = (d.envelopeCommitted[key]||0) + amount;
+          if(d.transactions[0]) d.transactions[0].committedMonth = key;
+        });
       }
     }
     state.allocateIsRollover = false;
