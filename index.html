@@ -2507,7 +2507,7 @@ function renderDashboard(){
 
   const now0 = new Date();
   const rules0 = state.data.recurring||[];
-  const matchesAnyRule = (t)=> t.recurringId ? rules0.some(r=>r.id===t.recurringId) : rules0.some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount && (r.note||'')===(t.note||''));
+  const matchesAnyRule = (t)=> t.recurringId ? rules0.some(r=>r.id===t.recurringId) : rules0.some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount);
   const futureRealTx = visibleTransactions()
     .filter(t=> new Date(t.date) > now0 && matchesAnyRule(t))
     .map(t=> ({ ...t, daysUntil: Math.ceil((new Date(t.date)-now0)/86400000), source:'tx' }));
@@ -2657,7 +2657,7 @@ function monthNav(){
 
 function txRow(t, delBtn){
   const info = catInfo(t.category);
-  const isRecurringTx = t.recurringId || (state.data.recurring||[]).some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount && (r.note||'')===(t.note||''));
+  const isRecurringTx = t.recurringId || (state.data.recurring||[]).some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount);
   return `
     <div class="txrow" ${!delBtn ? `data-view-tx="${t.id}" style="cursor:pointer;"` : ''}>
       <div class="tx-left">
