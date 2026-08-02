@@ -1314,6 +1314,10 @@ function renderBackupModal(){
           `).join('')}
         </div>
 
+        ${backupSectionHeader('alert', 'Diagnostic')}
+        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Vérifie ce que l'appli calcule réellement comme prochaines échéances, pour comparer avec ce qui s'affiche dans le bandeau.</div>
+        <button data-debug-banner="1" class="btn-ghost" style="width:100%; justify-content:center; display:flex;">${icon('alert',15)} Voir le calcul du bandeau</button>
+
         ${backupSectionHeader('alert', 'Notifications')}
         <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Un rappel s'affiche déjà automatiquement en haut de l'accueil pour tes échéances du jour. Active aussi une notification système si tu veux — attention, sur iPhone elle ne fonctionne de façon fiable que si l'appli a été ouverte récemment, pas comme une vraie alarme programmée.</div>
         <div class="row">
@@ -2507,13 +2511,23 @@ function renderDashboard(){
 
   const now0 = new Date();
   const rules0 = state.data.recurring||[];
-  const matchesAnyRule = (t)=> t.recurringId ? rules0.some(r=>r.id===t.recurringId) : rules0.some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount);
+  const isLinkedToRecurring = (t)=> (t.recurringId && rules0.some(r=>r.id===t.recurringId)) || rules0.some(r=> r.category===t.category && r.amount===t.amount) || rules0.some(r=> r.amount===t.amount && (r.note||'').trim()===(t.note||'').trim() && (r.note||'').trim()!=='');
   const futureRealTx = visibleTransactions()
-    .filter(t=> new Date(t.date) > now0 && matchesAnyRule(t))
+    .filter(t=> new Date(t.date) > now0 && isLinkedToRecurring(t))
     .map(t=> ({ ...t, daysUntil: Math.ceil((new Date(t.date)-now0)/86400000), source:'tx' }));
-  const pendingRules = upcomingRecurring(365).map(r=> ({ ...r, source:'rule' }));
-  const dedupedRules = pendingRules.filter(r=> !futureRealTx.some(t=> t.category===r.category && t.amount===r.amount && Math.abs(new Date(t.date)-r.next) < 2*86400000));
-  const dueSoon = [...futureRealTx, ...dedupedRules].sort((a,b)=> a.daysUntil - b.daysUntil).slice(0,2);
+  const pendingRules = upcomingRecurring(365).map(r=> ({ ...r, daysUntil: Math.ceil((r.next-now0)/86400000), source:'rule' }));
+  const combined = [...futureRealTx, ...pendingRules];
+  const seen = new Set();
+  const dueSoon = combined
+    .sort((a,b)=> new Date(a.date||a.next) - new Date(b.date||b.next))
+    .filter(item=>{
+      const dateKey = new Date(item.date||item.next).toISOString().slice(0,10);
+      const key = item.category+'|'+item.amount+'|'+dateKey;
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0,2);
   const dayLabel = (n)=> n<0 ? (n===-1?'hier':`il y a ${Math.abs(n)} jours`) : n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
   const bannerCollapsed = state.data.bannerCollapsed;
 
@@ -3909,6 +3923,24 @@ function bindEvents(){
         showToast('Permission refusée — active-la dans les réglages de Safari si tu changes d\'avis');
       }
     }catch(e){ showToast("Impossible d'activer les notifications"); }
+  }));
+  app.querySelectorAll('[data-debug-banner]').forEach(el=>el.addEventListener('click', ()=>{
+    const now0 = new Date();
+    const rules0 = state.data.recurring||[];
+    const isLinkedToRecurring = (t)=> (t.recurringId && rules0.some(r=>r.id===t.recurringId)) || rules0.some(r=> r.category===t.category && r.amount===t.amount) || rules0.some(r=> r.amount===t.amount && (r.note||'').trim()===(t.note||'').trim() && (r.note||'').trim()!=='');
+    const futureRealTx = visibleTransactions()
+      .filter(t=> new Date(t.date) > now0 && isLinkedToRecurring(t))
+      .map(t=> ({ note:t.note, date:t.date, daysUntil: Math.ceil((new Date(t.date)-now0)/86400000), src:'transaction' }));
+    const pendingRules = upcomingRecurring(365).map(r=> ({ note:r.note, date:r.nextDate, daysUntil: Math.ceil((r.next-now0)/86400000), src:'règle' }));
+    const combined = [...futureRealTx, ...pendingRules].sort((a,b)=> new Date(a.date)-new Date(b.date)).slice(0,6);
+    const lines = combined.map(x=> `${x.note} (${x.src}) — ${x.daysUntil}j — ${new Date(x.date).toLocaleDateString('fr-FR')}`).join('\n');
+    const suspects = state.data.transactions.filter(t=> (t.note||'').toLowerCase().includes('canal') || (t.note||'').toLowerCase().includes('remboursement'));
+    const suspectLines = suspects.map(t=>{
+      const linked = isLinkedToRecurring(t);
+      const matchingRule = rules0.find(r=> r.category===t.category && r.amount===t.amount) || rules0.find(r=> r.amount===t.amount && (r.note||'').trim()===(t.note||'').trim() && (r.note||'').trim()!=='');
+      return `${t.note} | cat:${t.category} | montant:${t.amount} | date:${new Date(t.date).toLocaleDateString('fr-FR')} | recurringId:${t.recurringId||'aucun'} | lié:${linked} | règle correspondante:${matchingRule?matchingRule.note+' (cat:'+matchingRule.category+', montant:'+matchingRule.amount+')':'aucune'}`;
+    }).join('\n\n');
+    alert(`Maintenant : ${now0.toLocaleString('fr-FR')}\n\n6 prochains éléments détectés :\n${lines || '(aucun trouvé)'}\n\n--- Détail Canal+/Remboursement ---\n${suspectLines || '(aucune transaction trouvée avec ce nom)'}`);
   }));
   app.querySelectorAll('[data-toggle-rollover]').forEach(el=>el.addEventListener('click', ()=>{
     const wasEnabled = state.data.rolloverEnabled;
