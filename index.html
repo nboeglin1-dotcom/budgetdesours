@@ -425,6 +425,7 @@ function seedData(){
     notificationsEnabled: false,
     rolloverEnabled: true,
     envelopeCommitted: {},
+    bannerCollapsed: false,
     lastNotifiedDate: null,
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
@@ -458,6 +459,7 @@ function loadData(){
       if(parsed.notificationsEnabled===undefined) parsed.notificationsEnabled = false;
       if(parsed.rolloverEnabled===undefined) parsed.rolloverEnabled = true;
       if(!parsed.envelopeCommitted) parsed.envelopeCommitted = {};
+      if(parsed.bannerCollapsed===undefined) parsed.bannerCollapsed = false;
       if(parsed.lastNotifiedDate===undefined) parsed.lastNotifiedDate = null;
       (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
       if(!parsed.theme) parsed.theme = 'ledger';
@@ -2503,42 +2505,40 @@ function renderDashboard(){
     .map(([id,limit])=>({id,limit,spent:byCat[id]||0,...catInfo(id)}))
     .filter(b=>b.limit>0 && b.spent>b.limit);
 
-  const upcoming = upcomingRecurring(3);
-  const windowStart = new Date(Date.now() - 1*86400000);
-  const windowEnd = new Date(Date.now() + 3*86400000);
-  const rules = state.data.recurring||[];
-  const matchRule = (t)=> t.recurringId ? rules.find(r=>r.id===t.recurringId) : rules.find(r=> r.type===t.type && r.category===t.category && r.amount===t.amount && (r.note||'')===(t.note||''));
-  const recentlyGenerated = visibleTransactions()
-    .filter(t=> new Date(t.date) >= windowStart && new Date(t.date) <= windowEnd && matchRule(t))
-    .map(t=>{
-      const daysUntil = Math.round((new Date(t.date) - new Date()) / 86400000);
-      const rule = matchRule(t);
-      return { ...t, daysUntil, isPast: daysUntil < 0, matchedRuleId: rule ? rule.id : null, source:'tx' };
-    });
-  const isDismissedToday = state.dueSoonBannerDismissedDate === new Date().toISOString().slice(0,10);
-  const dueSoon = isDismissedToday ? [] : [
-    ...recentlyGenerated,
-    ...upcoming.filter(r=> !recentlyGenerated.some(g=> g.matchedRuleId===r.id)).map(r=>({ ...r, source:'rule' })),
-  ].sort((a,b)=> a.daysUntil - b.daysUntil);
+  const now0 = new Date();
+  const rules0 = state.data.recurring||[];
+  const matchesAnyRule = (t)=> t.recurringId ? rules0.some(r=>r.id===t.recurringId) : rules0.some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount && (r.note||'')===(t.note||''));
+  const futureRealTx = visibleTransactions()
+    .filter(t=> new Date(t.date) > now0 && matchesAnyRule(t))
+    .map(t=> ({ ...t, daysUntil: Math.ceil((new Date(t.date)-now0)/86400000), source:'tx' }));
+  const pendingRules = upcomingRecurring(365).map(r=> ({ ...r, source:'rule' }));
+  const dedupedRules = pendingRules.filter(r=> !futureRealTx.some(t=> t.category===r.category && t.amount===r.amount && Math.abs(new Date(t.date)-r.next) < 2*86400000));
+  const dueSoon = [...futureRealTx, ...dedupedRules].sort((a,b)=> a.daysUntil - b.daysUntil).slice(0,2);
   const dayLabel = (n)=> n<0 ? (n===-1?'hier':`il y a ${Math.abs(n)} jours`) : n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
+  const bannerCollapsed = state.data.bannerCollapsed;
 
   return `
-    ${dueSoon.length>0 ? `
+    ${dueSoon.length>0 ? (bannerCollapsed ? `
+      <button data-toggle-banner="1" class="row" style="width:100%; background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); border-radius:14px; margin-bottom:14px; padding:10px 14px; text-align:left;">
+        <span style="font-size:13px; font-weight:700; color:var(--gold); display:flex; align-items:center; gap:7px;">${icon('alert',14)} ${dueSoon.length>1?`${dueSoon.length} échéances à venir`:'1 échéance à venir'}</span>
+        ${icon('chevronR',14)}
+      </button>
+    ` : `
       <div class="card" style="background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); margin-bottom:14px; padding:14px 16px; position:relative;">
-        <button data-dismiss-banner="1" style="position:absolute; top:8px; right:8px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; color:var(--paper); background:rgba(0,0,0,.15); border-radius:50%; z-index:2;">${icon('x',14)}</button>
+        <button data-toggle-banner="1" style="position:absolute; top:8px; right:8px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; color:var(--paper); background:rgba(0,0,0,.15); border-radius:50%; z-index:2;">${icon('x',14)}</button>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; padding-right:20px;">
           ${icon('alert',15)}
-          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?`${dueSoon.length} échéances`:'1 échéance'} dans les 3 prochains jours</span>
+          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?'2 prochaines échéances':'1 prochaine échéance'}</span>
         </div>
         ${dueSoon.map(r=>{
           const info = catInfo(r.category);
-          return `<button data-banner-item="${r.source}:${r.id}" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; font-size:13px; padding:5px 0; background:none; border:none; color:inherit;">
-            <span>${escapeHtml(r.note || info.label)} · ${dayLabel(r.daysUntil)}</span>
+          return `<button data-banner-item="${r.source}:${r.id}" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; font-size:13px; padding:5px 0; background:none; border:none;">
+            <span style="color:var(--paper);">${escapeHtml(r.note || info.label)} · ${dayLabel(r.daysUntil)}</span>
             <span class="mono" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</span>
           </button>`;
         }).join('')}
       </div>
-    ` : ''}
+    `) : ''}
     <div class="row month-nav-sticky" style="justify-content:center;">
       ${monthNav()}
     </div>
@@ -3189,7 +3189,7 @@ function bindEvents(){
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-move]').forEach(el=>el.addEventListener('click', ()=> moveMonth(Number(el.dataset.move))));
-  app.querySelectorAll('[data-dismiss-banner]').forEach(el=>el.addEventListener('click', ()=>{ state.dueSoonBannerDismissedDate = new Date().toISOString().slice(0,10); rerender(); }));
+  app.querySelectorAll('[data-toggle-banner]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.bannerCollapsed = !d.bannerCollapsed; }); }));
   app.querySelectorAll('[data-banner-item]').forEach(el=>el.addEventListener('click', ()=>{
     const [source, id] = el.dataset.bannerItem.split(':');
     if(source==='tx'){ openEditTx(id); }
