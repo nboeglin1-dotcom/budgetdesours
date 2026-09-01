@@ -2262,13 +2262,14 @@ function computeForecast(){
   const prevMonthEndFC = new Date(today.getFullYear(), today.getMonth(), 0, 23,59,59,999);
   const prevBalanceFC = visibleTransactions().filter(t => new Date(t.date) <= prevMonthEndFC).reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   const curMonthTxFC = visibleTransactions().filter(t=>sameMonth(t.date, today.getFullYear(), today.getMonth()));
-  const hasIncomeTxFC = curMonthTxFC.some(t=>t.type==='income' && t.category!=='epargne_retour');
-  const hasExpenseTxFC = curMonthTxFC.some(t=>t.type==='expense' && t.category!=='epargne');
   const realIncomeFC = curMonthTxFC.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
   const realExpenseFC = curMonthTxFC.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
   const recFC = recurringOccurrencesInMonth(today.getFullYear(), today.getMonth());
-  const curMonthIncomeFC = hasIncomeTxFC ? realIncomeFC : (variableIncome + recFC.income);
-  const curMonthExpenseFC = hasExpenseTxFC ? realExpenseFC : (variableExpense + recFC.expense);
+  const daysInMonthFC = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
+  const daysRemainingFC = Math.max(0, daysInMonthFC - today.getDate() + 1);
+  const proratedVariableFC = variableExpense * (daysRemainingFC/daysInMonthFC);
+  const curMonthIncomeFC = realIncomeFC + recFC.income;
+  const curMonthExpenseFC = realExpenseFC + recFC.expense + proratedVariableFC;
   const startBalance = prevBalanceFC + curMonthIncomeFC - curMonthExpenseFC;
   const points = [];
   let lastValue = startBalance;
@@ -2427,15 +2428,27 @@ function computeMonthStats(){
   const savedDeposits = tx.filter(t=>t.type==='expense' && t.category==='epargne').reduce((s,t)=>s+t.amount,0);
   const savedWithdrawals = tx.filter(t=>t.type==='income' && t.category==='epargne_retour').reduce((s,t)=>s+t.amount,0);
   const savedThisMonth = savedDeposits - savedWithdrawals;
-  const isCurrentOrFuture = isFuture || viewIdx===curIdx;
+  const isCurrentMonth = viewIdx===curIdx;
+  const isCurrentOrFuture = isFuture || isCurrentMonth;
   const hasIncomeTx = tx.some(t=>t.type==='income' && t.category!=='epargne_retour');
   const hasExpenseTx = tx.some(t=>t.type==='expense' && t.category!=='epargne');
-  const useIncomeEstimate = isCurrentOrFuture && !hasIncomeTx;
-  const useExpenseEstimate = isCurrentOrFuture && !hasExpenseTx;
+  const recurThisMonth = recurringOccurrencesInMonth(state.viewY, state.viewM);
+  const useIncomeEstimate = isCurrentMonth ? (recurThisMonth.income > 0) : (isCurrentOrFuture && !hasIncomeTx);
+  const useExpenseEstimate = isCurrentMonth ? true : (isCurrentOrFuture && !hasExpenseTx);
   const usingEstimate = useIncomeEstimate || useExpenseEstimate;
-  const recurThisMonth = usingEstimate ? recurringOccurrencesInMonth(state.viewY, state.viewM) : {income:0, expense:0};
-  const income = useIncomeEstimate ? (f.variableIncome + recurThisMonth.income) : realIncome;
-  const expense = useExpenseEstimate ? (f.variableExpense + recurThisMonth.expense) : realExpense;
+  let income, expense;
+  if(isCurrentMonth){
+    // Mois en cours : combiner le reel deja enregistre, les recurrences pas encore passees,
+    // et une estimation des depenses variables (courses, etc.) pour les jours restants
+    const daysInMonth = new Date(state.viewY, state.viewM+1, 0).getDate();
+    const daysRemaining = Math.max(0, daysInMonth - today.getDate() + 1);
+    const proratedVariable = f.variableExpense * (daysRemaining/daysInMonth);
+    income = realIncome + recurThisMonth.income;
+    expense = realExpense + recurThisMonth.expense + proratedVariable;
+  } else {
+    income = useIncomeEstimate ? (f.variableIncome + recurThisMonth.income) : realIncome;
+    expense = useExpenseEstimate ? (f.variableExpense + recurThisMonth.expense) : realExpense;
+  }
   const savings = income - expense;
   const rate = income>0 ? Math.max(0, Math.round(savings/income*100)) : 0;
   const bal = balanceForViewedMonth(f, state.viewY, state.viewM);
