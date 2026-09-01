@@ -2424,10 +2424,15 @@ function computeMonthStats(){
   const savedDeposits = tx.filter(t=>t.type==='expense' && t.category==='epargne').reduce((s,t)=>s+t.amount,0);
   const savedWithdrawals = tx.filter(t=>t.type==='income' && t.category==='epargne_retour').reduce((s,t)=>s+t.amount,0);
   const savedThisMonth = savedDeposits - savedWithdrawals;
-  const usingEstimate = (isFuture || viewIdx===curIdx) && tx.length===0;
+  const isCurrentOrFuture = isFuture || viewIdx===curIdx;
+  const hasIncomeTx = tx.some(t=>t.type==='income' && t.category!=='epargne_retour');
+  const hasExpenseTx = tx.some(t=>t.type==='expense' && t.category!=='epargne');
+  const useIncomeEstimate = isCurrentOrFuture && !hasIncomeTx;
+  const useExpenseEstimate = isCurrentOrFuture && !hasExpenseTx;
+  const usingEstimate = useIncomeEstimate || useExpenseEstimate;
   const recurThisMonth = usingEstimate ? recurringOccurrencesInMonth(state.viewY, state.viewM) : {income:0, expense:0};
-  const income = usingEstimate ? (f.variableIncome + recurThisMonth.income) : realIncome;
-  const expense = usingEstimate ? (f.variableExpense + recurThisMonth.expense) : realExpense;
+  const income = useIncomeEstimate ? (f.variableIncome + recurThisMonth.income) : realIncome;
+  const expense = useExpenseEstimate ? (f.variableExpense + recurThisMonth.expense) : realExpense;
   const savings = income - expense;
   const rate = income>0 ? Math.max(0, Math.round(savings/income*100)) : 0;
   const bal = balanceForViewedMonth(f, state.viewY, state.viewM);
@@ -2437,15 +2442,15 @@ function computeMonthStats(){
   const prevTx = visibleTransactions().filter(t=>sameMonth(t.date, py, pm));
   const prevIncome = prevTx.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
   const prevExpense = prevTx.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
-  const incomeChange = usingEstimate ? null : pctChange(income, prevIncome);
-  const expenseChange = usingEstimate ? null : pctChange(expense, prevExpense);
+  const incomeChange = useIncomeEstimate ? null : pctChange(income, prevIncome);
+  const expenseChange = useExpenseEstimate ? null : pctChange(expense, prevExpense);
 
-  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, incomeChange, expenseChange, savedThisMonth };
+  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth };
 }
 
 function renderBalanceContent(stats, showStats){
   if(showStats===undefined) showStats = true;
-  const { bal, income, expense, rate, usingEstimate, f, incomeChange, expenseChange, savedThisMonth } = stats;
+  const { bal, income, expense, rate, usingEstimate, useIncomeEstimate, useExpenseEstimate, f, incomeChange, expenseChange, savedThisMonth } = stats;
   return `
       <div class="row" style="margin-bottom:0;">
         <div class="eyebrow" style="margin-bottom:0;">Reste${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
@@ -2460,8 +2465,8 @@ function renderBalanceContent(stats, showStats){
         </div>
       ` : `
       <div class="row" style="margin-bottom:0; margin-top:16px;">
-        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Revenus du mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}${changeBadge(incomeChange,'up')}</div></div>
-        <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">Dépenses du mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}${changeBadge(expenseChange,'down')}</div></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Revenus du mois${useIncomeEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}${changeBadge(incomeChange,'up')}</div></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">Dépenses du mois${useExpenseEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}${changeBadge(expenseChange,'down')}</div></div>
       </div>
       ${savedThisMonth !== 0 ? `
       <div class="row" style="margin-bottom:0; margin-top:14px;">
