@@ -2259,10 +2259,17 @@ function computeForecast(){
   const variableIncome = Math.max(0, avgIncome - recurIncomePerMonth);
   const variableExpense = Math.max(0, avgExpense - recurExpensePerMonth);
 
-  const curMonthEnd = new Date(today.getFullYear(), today.getMonth()+1, 0, 23,59,59,999);
-  const startBalance = visibleTransactions()
-    .filter(t => new Date(t.date) <= curMonthEnd)
-    .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
+  const prevMonthEndFC = new Date(today.getFullYear(), today.getMonth(), 0, 23,59,59,999);
+  const prevBalanceFC = visibleTransactions().filter(t => new Date(t.date) <= prevMonthEndFC).reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
+  const curMonthTxFC = visibleTransactions().filter(t=>sameMonth(t.date, today.getFullYear(), today.getMonth()));
+  const hasIncomeTxFC = curMonthTxFC.some(t=>t.type==='income' && t.category!=='epargne_retour');
+  const hasExpenseTxFC = curMonthTxFC.some(t=>t.type==='expense' && t.category!=='epargne');
+  const realIncomeFC = curMonthTxFC.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
+  const realExpenseFC = curMonthTxFC.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
+  const recFC = recurringOccurrencesInMonth(today.getFullYear(), today.getMonth());
+  const curMonthIncomeFC = hasIncomeTxFC ? realIncomeFC : (variableIncome + recFC.income);
+  const curMonthExpenseFC = hasExpenseTxFC ? realExpenseFC : (variableExpense + recFC.expense);
+  const startBalance = prevBalanceFC + curMonthIncomeFC - curMonthExpenseFC;
   const points = [];
   let lastValue = startBalance;
   for(let i=1;i<=24;i++){
@@ -2351,20 +2358,9 @@ function balanceForViewedMonth(f, viewY, viewM){
     .filter(t => new Date(t.date) <= monthEnd)
     .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   const monthTxNow = visibleTransactions().filter(t=>sameMonth(t.date, viewY, viewM));
-  const hasIncomeTx = monthTxNow.some(t=>t.type==='income' && t.category!=='epargne_retour');
-  const hasExpenseTx = monthTxNow.some(t=>t.type==='expense' && t.category!=='epargne');
   const hasRealDataThisMonth = monthTxNow.length > 0;
-  if(diff === 0 && (!hasIncomeTx || !hasExpenseTx)){
-    const prevMonthEnd = new Date(viewY, viewM, 0, 23,59,59,999);
-    const prevBalance = visibleTransactions().filter(t => new Date(t.date) <= prevMonthEnd).reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
-    const realIncome = monthTxNow.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
-    const realExpense = monthTxNow.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
-    const rec = recurringOccurrencesInMonth(viewY, viewM);
-    const income = hasIncomeTx ? realIncome : (f.variableIncome + rec.income);
-    const expense = hasExpenseTx ? realExpense : (f.variableExpense + rec.expense);
-    return prevBalance + income - expense;
-  }
-  if(diff <= 0) return realBalance;
+  if(diff === 0) return f.startBalance;
+  if(diff < 0) return realBalance;
   if(hasRealDataThisMonth) return realBalance;
   if(diff <= 24) return f.points[diff-1].value;
   return f.startBalance + f.netAvg*diff;
