@@ -2350,8 +2350,14 @@ function balanceForViewedMonth(f, viewY, viewM){
   const realBalance = visibleTransactions()
     .filter(t => new Date(t.date) <= monthEnd)
     .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
-  if(diff <= 0) return realBalance;
   const hasRealDataThisMonth = visibleTransactions().some(t=>sameMonth(t.date, viewY, viewM));
+  if(diff === 0 && !hasRealDataThisMonth){
+    const rec = recurringOccurrencesInMonth(viewY, viewM);
+    const estIncome = f.variableIncome + rec.income;
+    const estExpense = f.variableExpense + rec.expense;
+    return realBalance + estIncome - estExpense;
+  }
+  if(diff <= 0) return realBalance;
   if(hasRealDataThisMonth) return realBalance;
   if(diff <= 24) return f.points[diff-1].value;
   return f.startBalance + f.netAvg*diff;
@@ -2418,7 +2424,7 @@ function computeMonthStats(){
   const savedDeposits = tx.filter(t=>t.type==='expense' && t.category==='epargne').reduce((s,t)=>s+t.amount,0);
   const savedWithdrawals = tx.filter(t=>t.type==='income' && t.category==='epargne_retour').reduce((s,t)=>s+t.amount,0);
   const savedThisMonth = savedDeposits - savedWithdrawals;
-  const usingEstimate = isFuture && tx.length===0;
+  const usingEstimate = (isFuture || viewIdx===curIdx) && tx.length===0;
   const recurThisMonth = usingEstimate ? recurringOccurrencesInMonth(state.viewY, state.viewM) : {income:0, expense:0};
   const income = usingEstimate ? (f.variableIncome + recurThisMonth.income) : realIncome;
   const expense = usingEstimate ? (f.variableExpense + recurThisMonth.expense) : realExpense;
