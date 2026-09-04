@@ -529,6 +529,7 @@ let state = {
   recurringSearchQuery: '',
   monthPickerOpen: false,
   monthPickerYear: undefined,
+  miniBalanceVisible: false,
   dueSoonBannerDismissedDate: null,
   insightsModalOpen: false,
   habitCalcOpen: false,
@@ -2656,7 +2657,7 @@ function renderDashboard(){
         }).join('')}
       </div>
     `) : ''}
-    <div class="row" id="miniBalanceBar" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:8px 14px; margin-bottom:10px; justify-content:space-between; align-items:center; opacity:0; transform:translateY(-6px); pointer-events:none; transition:opacity .18s ease, transform .18s ease;">
+    <div class="row" id="miniBalanceBar" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:8px 14px; margin-bottom:10px; justify-content:space-between; align-items:center; opacity:${state.miniBalanceVisible?1:0}; transform:translateY(${state.miniBalanceVisible?'0':'-6px'}); pointer-events:${state.miniBalanceVisible?'auto':'none'}; transition:opacity .18s ease, transform .18s ease;">
       <span style="font-size:12px; color:var(--paperDim); display:flex; align-items:center; gap:6px;">${bearMascot(bearMoodFromRate(stats.rate),18)} Reste${stats.usingEstimate ? ' · estimé' : ''}</span>
       <span class="mono" style="font-size:15px; font-weight:700; color:var(--paper);">${fmt0(stats.bal)}</span>
     </div>
@@ -3543,11 +3544,13 @@ function bindEvents(){
     if(!target || !bar) return;
     if(window.__miniBalanceObserver) window.__miniBalanceObserver.disconnect();
     window.__miniBalanceObserver = new IntersectionObserver((entries)=>{
-      const visible = entries[0].isIntersecting;
-      bar.style.opacity = visible ? '0' : '1';
-      bar.style.transform = visible ? 'translateY(-6px)' : 'translateY(0)';
-      bar.style.pointerEvents = visible ? 'none' : 'auto';
-      document.documentElement.style.setProperty('--minibar-h', visible ? '0px' : (bar.offsetHeight + 10) + 'px');
+      const targetVisible = entries[0].isIntersecting;
+      const barShouldShow = !targetVisible;
+      state.miniBalanceVisible = barShouldShow;
+      bar.style.opacity = barShouldShow ? '1' : '0';
+      bar.style.transform = barShouldShow ? 'translateY(0)' : 'translateY(-6px)';
+      bar.style.pointerEvents = barShouldShow ? 'auto' : 'none';
+      document.documentElement.style.setProperty('--minibar-h', barShouldShow ? (bar.offsetHeight + 10) + 'px' : '0px');
     }, { threshold:0 });
     window.__miniBalanceObserver.observe(target);
   })();
