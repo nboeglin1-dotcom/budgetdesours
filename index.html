@@ -701,7 +701,7 @@ recordHealthScoreSnapshot();
 })();
 
 function setState(patch){ Object.assign(state, patch); rerender(); }
-function mutateData(fn){ fn(state.data); saveData(state.data); rerender(); }
+function mutateData(fn){ fn(state.data); saveData(state.data); _forecastCache = null; rerender(); }
 function showToast(msg){
   state.toast = { msg, undo:null }; rerender();
   clearTimeout(showToast._t);
@@ -1123,6 +1123,7 @@ function rerender(){
 }
 
 function renderApp(){
+  _renderToken++;
   if(state.locked) return renderLockScreen();
   return `
     ${renderHeader()}
@@ -2231,7 +2232,11 @@ function renderInsightsModal(){
   `;
 }
 
+let _renderToken = 0;
+let _forecastCache = null;
+let _forecastCacheToken = -1;
 function computeForecast(){
+  if(_forecastCache && _forecastCacheToken === _renderToken) return _forecastCache;
   const today = new Date();
   const months = [];
   for(let i=2;i>=0;i--){
@@ -2262,15 +2267,12 @@ function computeForecast(){
   const prevMonthEndFC = new Date(today.getFullYear(), today.getMonth(), 0, 23,59,59,999);
   const prevBalanceFC = visibleTransactions().filter(t => new Date(t.date) <= prevMonthEndFC).reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   const curMonthTxFC = visibleTransactions().filter(t=>sameMonth(t.date, today.getFullYear(), today.getMonth()));
-  const realIncomeFC = curMonthTxFC.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
-  const realExpenseFC = curMonthTxFC.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
+  const realBalanceEffectFC = curMonthTxFC.reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   const recFC = recurringOccurrencesInMonth(today.getFullYear(), today.getMonth());
   const daysInMonthFC = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
   const daysRemainingFC = Math.max(0, daysInMonthFC - today.getDate() + 1);
   const proratedVariableFC = variableExpense * (daysRemainingFC/daysInMonthFC);
-  const curMonthIncomeFC = realIncomeFC + recFC.income;
-  const curMonthExpenseFC = realExpenseFC + recFC.expense + proratedVariableFC;
-  const startBalance = prevBalanceFC + curMonthIncomeFC - curMonthExpenseFC;
+  const startBalance = prevBalanceFC + realBalanceEffectFC + recFC.income - recFC.expense - proratedVariableFC;
   const points = [];
   let lastValue = startBalance;
   for(let i=1;i<=24;i++){
@@ -2292,7 +2294,10 @@ function computeForecast(){
     lastValue = value;
     points.push({ label: `${MONTHS_SHORT[m]} ${String(y).slice(2)}`, value, y, m });
   }
-  return { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory, variableIncome, variableExpense };
+  const result = { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory, variableIncome, variableExpense };
+  _forecastCache = result;
+  _forecastCacheToken = _renderToken;
+  return result;
 }
 
 function computeCategoryForecast(targetExpense, viewY, viewM){
@@ -2699,21 +2704,29 @@ function monthNav(){
 function txRow(t, delBtn){
   const info = catInfo(t.category);
   const isRecurringTx = t.recurringId || (state.data.recurring||[]).some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount);
+  const content = `
+    <div class="tx-left">
+      ${t.photo ? `<img src="${t.photo}" style="width:32px; height:32px; border-radius:9px; object-fit:cover; flex-shrink:0;">` : `<div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>`}
+      <div style="min-width:0;">
+        <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}${isRecurringTx ? `<span style="color:var(--gold); flex-shrink:0; display:flex;" title="Transaction récurrente">${icon('repeat',12)}</span>` : ''}</div>
+        <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>
+      ${!delBtn ? icon('chevronR',14) : ''}
+    </div>`;
+  if(!delBtn){
+    return `<div class="txrow" data-view-tx="${t.id}" style="cursor:pointer;">${content}</div>`;
+  }
   return `
-    <div class="txrow" ${!delBtn ? `data-view-tx="${t.id}" style="cursor:pointer;"` : ''}>
-      <div class="tx-left">
-        ${t.photo ? `<img src="${t.photo}" style="width:32px; height:32px; border-radius:9px; object-fit:cover; flex-shrink:0;">` : `<div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>`}
-        <div style="min-width:0;">
-          <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}${isRecurringTx ? `<span style="color:var(--gold); flex-shrink:0; display:flex;" title="Transaction récurrente">${icon('repeat',12)}</span>` : ''}</div>
-          <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
-        </div>
+    <div class="swipe-wrap" style="position:relative; overflow:hidden; border-radius:12px;">
+      <div class="swipe-actions" style="position:absolute; inset:0; display:flex; align-items:stretch; justify-content:flex-end;">
+        <button data-duplicate-tx="${t.id}" style="width:56px; background:var(--surfaceHi); color:var(--paperDim); display:flex; align-items:center; justify-content:center;" title="Dupliquer">${icon('copy',16)}</button>
+        <button data-edit-tx="${t.id}" style="width:56px; background:var(--gold); color:var(--ink); display:flex; align-items:center; justify-content:center;" title="Modifier">${icon('pencil',16)}</button>
+        <button data-del-tx="${t.id}" style="width:56px; background:var(--coral); color:var(--ink); display:flex; align-items:center; justify-content:center;">${icon('trash',16)}</button>
       </div>
-      <div style="display:flex; align-items:center; gap:6px;">
-        <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>
-        ${delBtn ? `<button class="tx-del" style="color:var(--paperDim);" data-duplicate-tx="${t.id}" title="Dupliquer">${icon('copy',14)}</button>` : ''}
-        ${delBtn ? `<button class="tx-del" style="color:var(--paperDim);" data-edit-tx="${t.id}">${icon('pencil',14)}</button>` : ''}
-        ${delBtn ? `<button class="tx-del" data-del-tx="${t.id}">${icon('trash',14)}</button>` : `${icon('chevronR',14)}`}
-      </div>
+      <div class="txrow swipe-content" data-swipe-row="${t.id}" style="background:var(--surface); position:relative; touch-action:pan-y;">${content}</div>
     </div>`;
 }
 
@@ -3305,6 +3318,63 @@ function bindEvents(){
     setState({modal:'addTx'});
   }));
   app.querySelectorAll('[data-view-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.viewTx); }));
+  (function(){
+    const REVEAL = 168;
+    let active = null; // { row, startX, startY, dx, dragging, wasOpen }
+    const closeAll = (exceptId)=>{
+      app.querySelectorAll('[data-swipe-row]').forEach(row=>{
+        if(row.dataset.swipeRow !== exceptId){ row.style.transition = 'transform .2s ease'; row.style.transform = 'translateX(0px)'; row.dataset.open = '0'; }
+      });
+    };
+    app.querySelectorAll('[data-swipe-row]').forEach(row=>{
+      row.addEventListener('touchstart', (e)=>{
+        const t = e.touches[0];
+        const wasOpen = row.dataset.open === '1';
+        active = { row, startX:t.clientX, startY:t.clientY, dx:0, dragging:false, wasOpen };
+        row.style.transition = 'none';
+        closeAll(row.dataset.swipeRow);
+      }, { passive:true });
+      row.addEventListener('touchmove', (e)=>{
+        if(!active || active.row!==row) return;
+        const t = e.touches[0];
+        const dx = t.clientX - active.startX;
+        const dy = t.clientY - active.startY;
+        if(!active.dragging){
+          if(Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+          active.dragging = Math.abs(dx) > Math.abs(dy);
+          if(!active.dragging) return;
+        }
+        e.preventDefault();
+        let base = active.wasOpen ? -REVEAL : 0;
+        let pos = base + dx;
+        pos = Math.max(-REVEAL, Math.min(0, pos));
+        active.dx = pos;
+        row.style.transform = `translateX(${pos}px)`;
+      }, { passive:false });
+      const finish = ()=>{
+        if(!active || active.row!==row) return;
+        row.style.transition = 'transform .2s ease';
+        const wasTap = !active.dragging;
+        const shouldOpen = active.dragging && active.dx < -REVEAL*0.4;
+        row.style.transform = shouldOpen ? `translateX(-${REVEAL}px)` : 'translateX(0px)';
+        row.dataset.open = shouldOpen ? '1' : '0';
+        if(wasTap && !active.wasOpen){ openEditTx(row.dataset.swipeRow); }
+        active = null;
+      };
+      row.addEventListener('touchend', finish);
+      row.addEventListener('touchcancel', finish);
+    });
+    if(!window.__swipeCloseListenerAttached){
+      window.__swipeCloseListenerAttached = true;
+      document.addEventListener('click', (e)=>{
+        if(!e.target.closest('[data-swipe-row]') && !e.target.closest('.swipe-actions')){
+          document.querySelectorAll('[data-swipe-row]').forEach(row=>{
+            row.style.transition = 'transform .2s ease'; row.style.transform = 'translateX(0px)'; row.dataset.open = '0';
+          });
+        }
+      }, { capture:true });
+    }
+  })();
   app.querySelectorAll('[data-filter]').forEach(el=>el.addEventListener('click', ()=> setState({txFilter: el.dataset.filter})));
   app.querySelectorAll('[data-toggle-hide-past]').forEach(el=>el.addEventListener('click', ()=> setState({hidePastTx: !state.hidePastTx})));
   app.querySelectorAll('[data-toggle-budget-detail]').forEach(el=>el.addEventListener('click', ()=>{
@@ -4294,7 +4364,7 @@ function bindEvents(){
     let sx=null, sy=null, sInScroll=false;
     pageEl.addEventListener('touchstart', (e)=>{
       sx = e.touches[0].clientX; sy = e.touches[0].clientY;
-      sInScroll = !!e.target.closest('.trend-scroll') || !!e.target.closest('.month-nav');
+      sInScroll = !!e.target.closest('.trend-scroll') || !!e.target.closest('.month-nav') || !!e.target.closest('[data-swipe-row]');
     }, {passive:true});
     pageEl.addEventListener('touchend', (e)=>{
       if(sx===null) return;
