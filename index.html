@@ -4645,6 +4645,19 @@ function animateBalance(el, target){
   window.visualViewport.addEventListener('resize', setVVH);
   setVVH();
 })();
+(function(){
+  const resetMiniBalance = ()=>{
+    if(window.scrollY < 200){
+      state.miniBalanceVisible = false;
+      document.documentElement.style.setProperty('--minibar-h', '0px');
+    }
+    if(window.__miniBalanceObserver) window.__miniBalanceObserver.disconnect();
+    window.__miniBalanceObserver = null;
+    rerender();
+  };
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) resetMiniBalance(); });
+  window.addEventListener('pageshow', resetMiniBalance);
+})();
 rerender();
 if(window.__soldeDataWasCorrupted){
   setTimeout(()=>{ showToast("Anciennes données illisibles — appli réinitialisée (sauvegarde technique conservée)"); }, 600);
