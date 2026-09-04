@@ -2657,7 +2657,7 @@ function renderDashboard(){
         }).join('')}
       </div>
     `) : ''}
-    <div class="row" id="miniBalanceBar" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:8px 14px; margin-bottom:10px; justify-content:space-between; align-items:center; opacity:${state.miniBalanceVisible?1:0}; transform:translateY(${state.miniBalanceVisible?'0':'-6px'}); pointer-events:${state.miniBalanceVisible?'auto':'none'}; transition:opacity .18s ease, transform .18s ease;">
+    <div class="row" id="miniBalanceBar" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:${state.miniBalanceVisible?'8px 14px':'0px 14px'}; margin-bottom:${state.miniBalanceVisible?'10px':'0px'}; max-height:${state.miniBalanceVisible?'60px':'0px'}; overflow:hidden; justify-content:space-between; align-items:center; opacity:${state.miniBalanceVisible?1:0}; transform:translateY(${state.miniBalanceVisible?'0':'-6px'}); pointer-events:${state.miniBalanceVisible?'auto':'none'}; border-width:${state.miniBalanceVisible?'1px':'0px'}; transition:opacity .18s ease, transform .18s ease, max-height .18s ease, padding .18s ease, margin .18s ease;">
       <span style="font-size:12px; color:var(--paperDim); display:flex; align-items:center; gap:6px;">${bearMascot(bearMoodFromRate(stats.rate),18)} Reste${stats.usingEstimate ? ' · estimé' : ''}</span>
       <span class="mono" style="font-size:15px; font-weight:700; color:var(--paper);">${fmt0(stats.bal)}</span>
     </div>
@@ -3550,7 +3550,11 @@ function bindEvents(){
       bar.style.opacity = barShouldShow ? '1' : '0';
       bar.style.transform = barShouldShow ? 'translateY(0)' : 'translateY(-6px)';
       bar.style.pointerEvents = barShouldShow ? 'auto' : 'none';
-      document.documentElement.style.setProperty('--minibar-h', barShouldShow ? (bar.offsetHeight + 10) + 'px' : '0px');
+      bar.style.maxHeight = barShouldShow ? '60px' : '0px';
+      bar.style.padding = barShouldShow ? '8px 14px' : '0px 14px';
+      bar.style.marginBottom = barShouldShow ? '10px' : '0px';
+      bar.style.borderWidth = barShouldShow ? '1px' : '0px';
+      document.documentElement.style.setProperty('--minibar-h', barShouldShow ? '70px' : '0px');
     }, { threshold:0 });
     window.__miniBalanceObserver.observe(target);
   })();
