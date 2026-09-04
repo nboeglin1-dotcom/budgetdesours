@@ -142,9 +142,9 @@
   .lock-dot.error{background:var(--coral); border-color:var(--coral);}
   .pin-pad{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; width:100%; max-width:260px; margin:10px auto 0;}
   .pin-key{aspect-ratio:1; border-radius:50%; background:var(--surfaceHi); border:1px solid var(--line); font-size:21px; font-weight:600; color:var(--paper); display:flex; align-items:center; justify-content:center;}
-  .modal-overlay{position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; justify-content:center;}
+  .modal-overlay{position:fixed; left:0; right:0; top:0; height:var(--vvh, 100vh); z-index:100; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; justify-content:center;}
   .modal-sheet{width:100%; max-width:480px; background:var(--surface); border:1px solid var(--line); border-radius:24px 24px 0 0;
-    padding:18px 18px calc(env(safe-area-inset-bottom) + 22px); max-height:88vh; overflow-y:auto; animation:slideUp .28s ease;}
+    padding:18px 18px calc(env(safe-area-inset-bottom) + 22px); max-height:min(88vh, calc(var(--vvh, 100vh) - 24px)); overflow-y:auto; animation:slideUp .28s ease;}
   @keyframes slideUp{from{transform:translateY(100%);} to{transform:translateY(0);}}
   @keyframes confettiFall{
     0%{ transform:translate(0,0) rotate(0deg); opacity:1; }
@@ -527,6 +527,8 @@ let state = {
   yearlyReviewOpen: false,
   rolloverInfoOpen: false,
   recurringSearchQuery: '',
+  monthPickerOpen: false,
+  monthPickerYear: undefined,
   dueSoonBannerDismissedDate: null,
   insightsModalOpen: false,
   habitCalcOpen: false,
@@ -1215,6 +1217,7 @@ function renderApp(){
     ${state.pinCatModalOpen ? renderPinCatModal() : ''}
     ${state.gaugeCatModalOpen ? renderGaugeCatModal() : ''}
     ${state.yearlyReviewOpen ? renderYearlyReviewModal() : ''}
+    ${state.monthPickerOpen ? renderMonthPickerModal() : ''}
     ${state.insightsModalOpen ? renderInsightsModal() : ''}
     ${state.habitCalcOpen ? renderHabitCalcModal() : ''}
     ${state.csvImportOpen ? renderCsvImportModal() : ''}
@@ -2767,10 +2770,35 @@ function monthNav(){
   const isCurrent = state.viewY===today.getFullYear() && state.viewM===today.getMonth();
   return `<div class="month-nav">
     <button data-move="-1">${icon('chevronL',16)}</button>
-    <div class="label ledger">${MONTHS[state.viewM]} ${state.viewY}</div>
+    <button data-open-monthpicker="1" class="label ledger" style="background:none; border:none;">${MONTHS[state.viewM]} ${state.viewY}</button>
     <button data-move="1">${icon('chevronR',16)}</button>
     ${!isCurrent ? `<button data-goto-today="1" class="today-btn">Aujourd'hui</button>` : ''}
   </div>`;
+}
+function renderMonthPickerModal(){
+  const y = state.monthPickerYear!==undefined ? state.monthPickerYear : state.viewY;
+  const today = new Date();
+  return `
+    <div class="modal-overlay" data-close-monthpicker="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Aller à un mois</div><button data-close-x-monthpicker="1">${icon('x',18)}</button></div>
+        <div class="row" style="margin-bottom:16px; justify-content:center; gap:24px;">
+          <button data-monthpicker-year="-1">${icon('chevronL',16)}</button>
+          <div class="ledger" style="font-size:19px; font-weight:600;">${y}</div>
+          <button data-monthpicker-year="1">${icon('chevronR',16)}</button>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+          ${MONTHS.map((m,i)=>{
+            const active = state.viewY===y && state.viewM===i;
+            const isCur = today.getFullYear()===y && today.getMonth()===i;
+            return `<button data-goto-month="${y}-${i}" style="padding:14px 6px; border-radius:12px; border:1px solid ${active?'var(--gold)':'var(--line)'}; background:${active?'rgba(212,169,79,.14)':'var(--surfaceHi)'}; color:${active?'var(--gold)':'var(--paper)'}; font-size:13px; position:relative;">
+              ${m}${isCur ? `<span style="position:absolute; top:5px; right:7px; width:5px; height:5px; border-radius:50%; background:var(--sage);"></span>` : ''}
+            </button>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function txRow(t, delBtn){
@@ -3378,9 +3406,16 @@ function bindEvents(){
     setState({ viewY: today.getFullYear(), viewM: today.getMonth() });
   }));
   app.querySelectorAll('[data-toggle-recent]').forEach(el=>el.addEventListener('click', ()=>{ state.recentExpanded = !state.recentExpanded; rerender(); }));
+  app.querySelectorAll('[data-open-monthpicker]').forEach(el=>el.addEventListener('click', ()=>{ setState({ monthPickerOpen:true, monthPickerYear: state.viewY }); }));
+  app.querySelectorAll('[data-close-monthpicker]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({monthPickerOpen:false}); }));
+  app.querySelectorAll('[data-close-x-monthpicker]').forEach(el=>el.addEventListener('click', ()=> setState({monthPickerOpen:false})));
+  app.querySelectorAll('[data-monthpicker-year]').forEach(el=>el.addEventListener('click', ()=>{
+    const delta = Number(el.dataset.monthpickerYear);
+    setState({ monthPickerYear: (state.monthPickerYear!==undefined?state.monthPickerYear:state.viewY) + delta });
+  }));
   app.querySelectorAll('[data-goto-month]').forEach(el=>el.addEventListener('click', ()=>{
     const [y,m] = el.dataset.gotoMonth.split('-').map(Number);
-    setState({ viewY: y, viewM: m });
+    setState({ viewY: y, viewM: m, monthPickerOpen: false });
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{
@@ -4601,6 +4636,12 @@ function animateBalance(el, target){
   state.balanceAnim.raf = requestAnimationFrame(step);
 }
 
+(function(){
+  if(!window.visualViewport) return;
+  const setVVH = ()=> document.documentElement.style.setProperty('--vvh', window.visualViewport.height+'px');
+  window.visualViewport.addEventListener('resize', setVVH);
+  setVVH();
+})();
 rerender();
 if(window.__soldeDataWasCorrupted){
   setTimeout(()=>{ showToast("Anciennes données illisibles — appli réinitialisée (sauvegarde technique conservée)"); }, 600);
