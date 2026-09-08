@@ -528,6 +528,7 @@ let state = {
   recurringSearchQuery: '',
   monthPickerOpen: false,
   monthPickerYear: undefined,
+  goalDeadlineModalId: null,
   dueSoonBannerDismissedDate: null,
   insightsModalOpen: false,
   habitCalcOpen: false,
@@ -1219,6 +1220,7 @@ function renderApp(){
     ${state.monthPickerOpen ? renderMonthPickerModal() : ''}
     ${state.insightsModalOpen ? renderInsightsModal() : ''}
     ${state.habitCalcOpen ? renderHabitCalcModal() : ''}
+    ${state.goalDeadlineModalId ? renderGoalDeadlineModal() : ''}
     ${state.csvImportOpen ? renderCsvImportModal() : ''}
     ${state.pdfDebugOpen ? renderPdfDebugModal() : ''}
     ${state.editingGoalTransferId ? renderGoalTransferModal() : ''}
@@ -3044,11 +3046,22 @@ function renderBudgets(){
 function renderGoals(){
   const allGoals = state.data.goals;
   const goals = state.activeAccountFilter ? allGoals.filter(g=>(g.accountId||'main')===state.activeAccountFilter) : allGoals;
+  const totalSaved = goals.reduce((s,g)=>s+g.current,0);
+  const totalTarget = goals.reduce((s,g)=>s+g.target,0);
   return `
     <div class="row" style="margin-bottom:14px;">
       <div class="section-title" style="margin:0;">Objectifs d'épargne</div>
       <button class="btn-primary" data-open="addGoal">${icon('plus',14)} Nouvel objectif</button>
     </div>
+    ${goals.length>0 ? `
+      <div class="card" style="margin-bottom:14px; padding:16px 18px;">
+        <div class="eyebrow" style="margin-bottom:4px;">Total épargné</div>
+        <div class="row" style="align-items:baseline; margin-bottom:0;">
+          <div class="mono" style="font-size:28px; font-weight:700; color:var(--paper);">${fmt0(totalSaved)}</div>
+          <div style="font-size:13px; color:var(--paperDim);">sur ${fmt0(totalTarget)} visés</div>
+        </div>
+      </div>
+    ` : ''}
     <button data-open-habitcalc="1" class="btn-ghost" style="width:100%; justify-content:center; margin-bottom:14px; display:flex; align-items:center; gap:7px;">${icon('flame',14)} Combien coûte une habitude ?</button>
     ${goals.length===0 ? `
       <div class="card" style="padding:32px 20px; text-align:center;">
@@ -3085,11 +3098,11 @@ function renderGoals(){
                 const remaining = Math.max(0, g.target - g.current);
                 const perMonth = remaining / monthsLeft;
                 const overdue = dl < now;
-                return `<div style="font-size:11.5px; color:${overdue?'var(--coral)':'var(--paperDim)'}; margin-top:8px;">
+                return `<button data-open-goaldeadline="${g.id}" style="display:block; width:100%; text-align:left; background:none; border:none; padding:0; font-size:11.5px; color:${overdue?'var(--coral)':'var(--paperDim)'}; margin-top:8px;">
                   ${overdue ? "Échéance dépassée" : `Échéance : ${dl.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'})}`}
-                  ${!overdue ? ` · suggéré <span class="mono" style="color:${g.color};">${fmt0(perMonth)}</span>/mois` : ''}
-                </div>`;
-              })() : ''}
+                  ${!overdue ? ` · suggéré <span class="mono" style="color:${g.color};">${fmt0(perMonth)}</span>/mois` : ''} · <span style="text-decoration:underline;">modifier</span>
+                </button>`;
+              })() : !done ? `<button data-open-goaldeadline="${g.id}" style="display:flex; align-items:center; gap:6px; color:var(--paperDim); font-size:11.5px; background:none; border:none; padding:0; margin-top:8px;">${icon('target',12)} Définir une échéance</button>` : ''}
               <div class="quick-chips" style="margin-top:12px;">
                 ${[10,50,100].map(v=>`<button class="chip chip-add" data-quick-contribute="${g.id}" data-amt="${v}">+${v}€</button>`).join('')}
                 ${[10,50].map(v=>`<button class="chip chip-sub" data-quick-withdraw="${g.id}" data-amt="${v}">−${v}€</button>`).join('')}
@@ -3105,6 +3118,26 @@ function renderGoals(){
         }).join('')}
       </div>
     `}
+  `;
+}
+function renderGoalDeadlineModal(){
+  const g = state.data.goals.find(g=>g.id===state.goalDeadlineModalId);
+  if(!g) return '';
+  const remaining = Math.max(0, g.target - g.current);
+  return `
+    <div class="modal-overlay" data-close-goaldeadline="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Échéance — ${escapeHtml(g.name)}</div><button data-close-x-goaldeadline="1">${icon('x',18)}</button></div>
+        <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">Il te reste ${fmt0(remaining)} à épargner. Choisis une date et l'appli calculera le rythme mensuel nécessaire.</div>
+        <label class="field-label">Date cible</label>
+        <input id="goalDeadlineInput" type="date" class="field-input mono" value="${g.deadline ? new Date(g.deadline).toISOString().slice(0,10) : ''}">
+        <div id="goalDeadlinePreview" style="font-size:12.5px; color:var(--paperDim); margin:10px 0 16px; min-height:18px;"></div>
+        <div class="row" style="gap:10px; margin-bottom:0;">
+          ${g.deadline ? `<button data-remove-goaldeadline="${g.id}" class="btn-ghost" style="flex:1; justify-content:center; color:var(--coral);">Retirer l'échéance</button>` : ''}
+          <button data-save-goaldeadline="${g.id}" class="btn-primary" style="flex:1; justify-content:center;">Enregistrer</button>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -3803,6 +3836,36 @@ function bindEvents(){
     rerender();
   }));
   app.querySelectorAll('[data-close-habitcalc]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.habitCalcOpen=false; rerender(); } }));
+  app.querySelectorAll('[data-open-goaldeadline]').forEach(el=>el.addEventListener('click', ()=>{ setState({goalDeadlineModalId: el.dataset.openGoaldeadline}); }));
+  app.querySelectorAll('[data-close-goaldeadline]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({goalDeadlineModalId:null}); }));
+  app.querySelectorAll('[data-close-x-goaldeadline]').forEach(el=>el.addEventListener('click', ()=> setState({goalDeadlineModalId:null})));
+  app.querySelectorAll('[data-save-goaldeadline]').forEach(el=>el.addEventListener('click', ()=>{
+    const val = document.getElementById('goalDeadlineInput').value;
+    if(!val) return;
+    mutateData(d=>{ const g = d.goals.find(g=>g.id===el.dataset.saveGoaldeadline); if(g) g.deadline = new Date(val).toISOString(); });
+    setState({goalDeadlineModalId:null});
+  }));
+  app.querySelectorAll('[data-remove-goaldeadline]').forEach(el=>el.addEventListener('click', ()=>{
+    mutateData(d=>{ const g = d.goals.find(g=>g.id===el.dataset.removeGoaldeadline); if(g) g.deadline = null; });
+    setState({goalDeadlineModalId:null});
+  }));
+  const goalDeadlineInput = app.querySelector('#goalDeadlineInput');
+  if(goalDeadlineInput){
+    const updatePreview = ()=>{
+      const preview = document.getElementById('goalDeadlinePreview');
+      if(!preview) return;
+      const g = state.data.goals.find(g=>g.id===state.goalDeadlineModalId);
+      if(!g || !goalDeadlineInput.value){ preview.textContent = ''; return; }
+      const dl = new Date(goalDeadlineInput.value);
+      const now = new Date();
+      const monthsLeft = Math.max(1, Math.round((dl - now) / (1000*60*60*24*30.44)));
+      const remaining = Math.max(0, g.target - g.current);
+      const perMonth = remaining / monthsLeft;
+      preview.innerHTML = dl < now ? '<span style="color:var(--coral);">Cette date est déjà passée</span>' : `Soit environ <strong style="color:var(--paper);">${fmt0(perMonth)}</strong>/mois sur ${monthsLeft} mois`;
+    };
+    goalDeadlineInput.addEventListener('input', updatePreview);
+    updatePreview();
+  }
   app.querySelectorAll('[data-close-x-habitcalc]').forEach(el=>el.addEventListener('click', ()=>{ state.habitCalcOpen=false; rerender(); }));
   app.querySelectorAll('[data-habit-back]').forEach(el=>el.addEventListener('click', ()=>{ state.habitDestinationStep = false; rerender(); }));
   const habitAmountInput = app.querySelector('#habitAmount');
