@@ -110,8 +110,8 @@
   @media (max-width:420px){.grid2{grid-template-columns:1fr;}}
   .budget-stack{display:flex; flex-direction:column; gap:14px;}
   .budget-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
-  .budget-cat{display:flex; align-items:center; gap:9px; font-size:13.5px; font-weight:500; color:var(--paper) !important;}
-  .budget-limit-btn{font-size:15px; font-weight:600; color:var(--paperDim); display:flex; align-items:center; gap:4px; padding:0; margin:0;}
+  .budget-cat{display:flex; align-items:center; gap:9px; font-size:15.5px; font-weight:600; color:var(--paper) !important;}
+  .budget-limit-btn{font-size:17px; font-weight:600; color:var(--paperDim); display:flex; align-items:center; gap:4px; padding:0; margin:0;}
   .budget-limit-edit{display:flex; gap:6px; align-items:center;}
   .budget-limit-edit input{width:62px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:12px;}
   .budget-limit-edit button{background:var(--gold); color:var(--ink); font-size:11px; font-weight:600; padding:5px 9px; border-radius:8px;}
@@ -120,9 +120,9 @@
     display:flex; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(0,0,0,.4); font-weight:700;}
   .goal-card{position:relative; overflow:hidden;}
   .goal-badge{position:absolute; top:14px; right:14px; display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:4px 9px; border-radius:99px; background:rgba(212,169,79,.16); color:var(--gold);}
-  .goal-name{font-size:13.5px; font-weight:500; margin-bottom:4px; color:var(--paper) !important;}
-  .goal-amt{font-family:'JetBrains Mono',monospace; font-size:23px; font-weight:600; margin-bottom:10px;}
-  .goal-amt .target{font-size:13px; font-weight:400; color:var(--paperDim); font-family:'Inter',sans-serif;}
+  .goal-name{font-size:16px; font-weight:600; margin-bottom:5px; color:var(--paper) !important;}
+  .goal-amt{font-family:'JetBrains Mono',monospace; font-size:29px; font-weight:600; margin-bottom:10px;}
+  .goal-amt .target{font-size:15px; font-weight:400; color:var(--paperDim); font-family:'Inter',sans-serif;}
   .goal-form{display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;}
   .quick-chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;}
   .chip{font-size:12px; font-weight:600; padding:7px 11px; border-radius:99px; border:1px solid var(--line);}
@@ -2839,19 +2839,20 @@ function renderTransactions(){
   const previewList = recurringPreviewForMonth(state.viewY, state.viewM)
     .filter(t => state.txFilter==='all' ? true : t.type===state.txFilter)
     .filter(t => !q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q));
-  const list = [...realList, ...previewList].sort((a,b)=> new Date(b.date)-new Date(a.date));
+  const pastAndToday = realList.filter(t=> new Date(t.date) <= todayStart.getTime()+86399999).sort((a,b)=> new Date(b.date)-new Date(a.date));
+  const upcoming = [...realList.filter(t=> new Date(t.date) > todayStart.getTime()+86399999), ...previewList].sort((a,b)=> new Date(a.date)-new Date(b.date));
+  const list = [...pastAndToday, ...upcoming];
   const recurCount = (state.data.recurring||[]).length;
 
   return `
     <div class="row" style="margin-bottom:14px;">
       <div class="section-title" style="margin:0;">Transactions</div>
-      <button class="btn-primary" data-open="addTx">${icon('plus',14)} Ajouter</button>
     </div>
     <div class="month-nav" style="margin-bottom:14px;">
       ${monthNav()}
     </div>
     <div class="row" style="margin-bottom:14px;">
-      <div class="search-wrap">${icon('search',15)}<input id="txSearch" placeholder="Rechercher…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)"></div>
+      <div class="search-wrap" style="position:relative;">${icon('search',15)}<input id="txSearch" placeholder="Rechercher…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>
       <button class="btn-ghost" data-open-recurmodal="1" style="font-size:12px; display:flex; align-items:center; gap:5px;">${icon('repeat',13)} Récurrences${recurCount?` (${recurCount})`:''}</button>
     </div>
     <div class="row" style="margin-bottom:14px;">
@@ -2868,7 +2869,23 @@ function renderTransactions(){
         <div style="font-size:13.5px; color:var(--paperDim); margin:12px 0 16px;">Rien par ici ce mois-ci — ton ours fait la sieste 🐻</div>
         <button data-open="addTx" class="btn-ghost" style="display:inline-flex; margin:0 auto;">${icon('plus',14)} Ajouter une transaction</button>
       </div>
-    ` : list.map(t=> t.isPending ? previewTxRow(t) : txRow(t,true)).join('')}</div>
+    ` : (()=>{
+      const dayLabelFor = (dateStr)=>{
+        const d = new Date(dateStr); d.setHours(0,0,0,0);
+        const diffDays = Math.round((d - todayStart)/86400000);
+        if(diffDays===0) return "Aujourd'hui";
+        if(diffDays===-1) return 'Hier';
+        if(diffDays===1) return 'Demain';
+        return d.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
+      };
+      let lastKey = null;
+      return list.map(t=>{
+        const key = new Date(t.date).toDateString();
+        const header = key!==lastKey ? `<div style="font-size:11.5px; font-weight:600; color:var(--paperDim); text-transform:uppercase; letter-spacing:.03em; padding:${lastKey===null?'2px':'14px'} 2px 6px;">${dayLabelFor(t.date)}</div>` : '';
+        lastKey = key;
+        return header + (t.isPending ? previewTxRow(t) : txRow(t,true));
+      }).join('');
+    })()}</div>
   `;
 }
 function previewTxRow(t){
@@ -2996,6 +3013,24 @@ function renderBudgets(){
         ${hiddenCount ? `<button class="btn-ghost" data-open-hiddencat="1" style="font-size:11px; padding:8px; display:flex; align-items:center; gap:4px;" title="Catégories masquées">${icon('x',12)} ${hiddenCount}</button>` : ''}
       </div>
     </div>
+    ${(()=>{
+      const totalLimit = allExpenseCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
+      const totalSpent = allExpenseCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
+      if(totalLimit<=0) return '';
+      const pctTotal = Math.min(100, Math.round(totalSpent/totalLimit*100));
+      const overTotal = totalSpent > totalLimit;
+      return `<div class="card" style="margin-bottom:14px; padding:16px 18px;">
+        <div class="row" style="margin-bottom:8px;">
+          <div class="eyebrow" style="margin-bottom:0;">Total du mois</div>
+          <span class="mono" style="font-size:13px; color:${overTotal?'var(--coral)':'var(--paperDim)'};">${pctTotal}%</span>
+        </div>
+        <div class="row" style="align-items:baseline; margin-bottom:8px;">
+          <div class="mono" style="font-size:24px; font-weight:700; color:${overTotal?'var(--coral)':'var(--paper)'};">${fmt0(totalSpent)}</div>
+          <div style="font-size:13px; color:var(--paperDim);">sur ${fmt0(totalLimit)}</div>
+        </div>
+        <div class="catbar-track"><div class="catbar-fill" style="width:${pctTotal}%; background:${overTotal?'var(--coral)':'var(--gold)'};"></div></div>
+      </div>`;
+    })()}
     <div class="budget-stack">
       ${allExpenseCats.map(cat=>{
         const baseLimit = state.data.budgets[cat.id] || 0;
@@ -3019,7 +3054,7 @@ function renderBudgets(){
               </button>
               <div style="display:flex; align-items:center; gap:4px;">
                 <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${cat.color}; margin-right:8px;" title="Ajouter une dépense">+</button>
-                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" inputmode="decimal" value="${baseLimit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:16px;">${fmt0(baseLimit)}</span></button>`}
+                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" inputmode="decimal" value="${baseLimit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:18px;">${fmt0(baseLimit)}</span></button>`}
                 <button data-hide-budgetcat="${cat.id}" style="color:var(--paperDim); padding:4px;" title="Masquer cette catégorie">${icon('x',13)}</button>
               </div>
             </div>
@@ -3031,10 +3066,6 @@ function renderBudgets(){
                 ${catTx.map(t=>txRow(t,false)).join('')}
               </div>
             ` : ''}
-            <div class="quick-chips" style="margin-top:10px;">
-              ${[10,50].map(v=>`<button class="chip chip-add" data-budget-adjust="${cat.id}" data-amt="${v}">+${v}€</button>`).join('')}
-              ${[10,50].map(v=>`<button class="chip chip-sub" data-budget-adjust="${cat.id}" data-amt="${-v}">−${v}€</button>`).join('')}
-            </div>
           </div>
         `;
       }).join('')}
@@ -3045,7 +3076,15 @@ function renderBudgets(){
 /* ---------------- Goals ---------------- */
 function renderGoals(){
   const allGoals = state.data.goals;
-  const goals = state.activeAccountFilter ? allGoals.filter(g=>(g.accountId||'main')===state.activeAccountFilter) : allGoals;
+  const filteredGoals = state.activeAccountFilter ? allGoals.filter(g=>(g.accountId||'main')===state.activeAccountFilter) : allGoals;
+  const goals = [...filteredGoals].sort((a,b)=>{
+    const aDone = a.target>0 && a.current>=a.target, bDone = b.target>0 && b.current>=b.target;
+    if(aDone !== bDone) return aDone ? 1 : -1;
+    if(a.deadline && b.deadline) return new Date(a.deadline) - new Date(b.deadline);
+    if(a.deadline) return -1;
+    if(b.deadline) return 1;
+    return 0;
+  });
   const totalSaved = goals.reduce((s,g)=>s+g.current,0);
   const totalTarget = goals.reduce((s,g)=>s+g.target,0);
   return `
@@ -3083,8 +3122,11 @@ function renderGoals(){
               ${done ? `<div class="goal-badge">${icon('spark',11)} Atteint</div>` : ''}
               ${showAccBadge ? `<div style="display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:${goalAcc.color}; margin-bottom:6px;"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:${goalAcc.color};display:inline-block;"></span>${escapeHtml(goalAcc.name)}</div>` : ''}
               <div class="goal-name">${escapeHtml(g.name)}</div>
-              <div class="goal-amt" style="color:${g.color}">${fmt0(g.current)} <span class="target">/ ${fmt0(g.target)}</span></div>
-              <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
+              <div class="row" style="margin-bottom:0; align-items:baseline;">
+                <div class="goal-amt" style="color:${g.color}; margin-bottom:0;">${fmt0(g.current)} <span class="target">/ ${fmt0(g.target)}</span></div>
+                <div class="mono" style="font-size:14px; font-weight:600; color:var(--paperDim);">${pct}%</div>
+              </div>
+              <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
               <div class="row" style="margin-top:10px; margin-bottom:0;">
                 <button data-open-goaltransfer="${g.id}" style="display:flex; align-items:center; gap:6px; color:${transfer?g.color:'var(--paperDim)'}; font-size:11.5px; background:none; border:none; padding:0;">
                   ${icon('repeat',12)} ${transfer ? `${fmt0(transfer.amount)} ${freqLabel(transfer.frequency).toLowerCase()} — virement auto` : 'Configurer un virement automatique'}
@@ -3103,10 +3145,6 @@ function renderGoals(){
                   ${!overdue ? ` · suggéré <span class="mono" style="color:${g.color};">${fmt0(perMonth)}</span>/mois` : ''} · <span style="text-decoration:underline;">modifier</span>
                 </button>`;
               })() : !done ? `<button data-open-goaldeadline="${g.id}" style="display:flex; align-items:center; gap:6px; color:var(--paperDim); font-size:11.5px; background:none; border:none; padding:0; margin-top:8px;">${icon('target',12)} Définir une échéance</button>` : ''}
-              <div class="quick-chips" style="margin-top:12px;">
-                ${[10,50,100].map(v=>`<button class="chip chip-add" data-quick-contribute="${g.id}" data-amt="${v}">+${v}€</button>`).join('')}
-                ${[10,50].map(v=>`<button class="chip chip-sub" data-quick-withdraw="${g.id}" data-amt="${v}">−${v}€</button>`).join('')}
-              </div>
               <div class="goal-form">
                 <input id="goalAmount-${g.id}" type="number" inputmode="decimal" placeholder="Autre montant">
                 <button class="add" data-contribute="${g.id}">Ajouter</button>
@@ -3600,6 +3638,7 @@ function bindEvents(){
     sheet.addEventListener('touchcancel', finish);
   })();
   app.querySelectorAll('[data-filter]').forEach(el=>el.addEventListener('click', ()=> setState({txFilter: el.dataset.filter})));
+  app.querySelectorAll('[data-clear-tx-search]').forEach(el=>el.addEventListener('click', ()=> setState({txQuery:''})));
   app.querySelectorAll('[data-toggle-hide-past]').forEach(el=>el.addEventListener('click', ()=> setState({hidePastTx: !state.hidePastTx})));
   app.querySelectorAll('[data-toggle-budget-detail]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.toggleBudgetDetail;
