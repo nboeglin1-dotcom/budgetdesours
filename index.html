@@ -528,7 +528,6 @@ let state = {
   recurringSearchQuery: '',
   monthPickerOpen: false,
   monthPickerYear: undefined,
-  miniBalanceVisible: false,
   dueSoonBannerDismissedDate: null,
   insightsModalOpen: false,
   habitCalcOpen: false,
@@ -2656,14 +2655,8 @@ function renderDashboard(){
         }).join('')}
       </div>
     `) : ''}
-    <div style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg);">
-      <div class="row" id="miniBalanceBar" style="background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:0 14px; margin-bottom:${state.miniBalanceVisible?'10px':'0px'}; height:${state.miniBalanceVisible?'44px':'0px'}; box-sizing:border-box; overflow:hidden; justify-content:space-between; align-items:center; opacity:${state.miniBalanceVisible?1:0}; pointer-events:${state.miniBalanceVisible?'auto':'none'}; border-width:${state.miniBalanceVisible?'1px':'0px'}; transition:opacity .18s ease, height .18s ease, margin .18s ease;">
-        <span style="font-size:12px; color:var(--paperDim); display:flex; align-items:center; gap:6px;">${bearMascot(bearMoodFromRate(stats.rate),18)} Reste${stats.usingEstimate ? ' · estimé' : ''}</span>
-        <span class="mono" style="font-size:15px; font-weight:700; color:var(--paper);">${fmt0(stats.bal)}</span>
-      </div>
-      <div class="row" style="justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
-        ${monthNav()}
-      </div>
+    <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
+      ${monthNav()}
     </div>
     ${renderGaugeCard(stats)}
     ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'dépassent':'dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
@@ -3538,23 +3531,6 @@ function bindEvents(){
         }
       }, { capture:true });
     }
-  })();
-  (function(){
-    const target = document.getElementById('balanceNum');
-    const bar = document.getElementById('miniBalanceBar');
-    if(!target || !bar) return;
-    if(window.__miniBalanceObserver) window.__miniBalanceObserver.disconnect();
-    window.__miniBalanceObserver = new IntersectionObserver((entries)=>{
-      const targetVisible = entries[0].isIntersecting;
-      const barShouldShow = !targetVisible;
-      state.miniBalanceVisible = barShouldShow;
-      bar.style.opacity = barShouldShow ? '1' : '0';
-      bar.style.pointerEvents = barShouldShow ? 'auto' : 'none';
-      bar.style.height = barShouldShow ? '44px' : '0px';
-      bar.style.marginBottom = barShouldShow ? '10px' : '0px';
-      bar.style.borderWidth = barShouldShow ? '1px' : '0px';
-    }, { threshold:0 });
-    window.__miniBalanceObserver.observe(target);
   })();
   (function(){
     const sheet = app.querySelector('[data-swipe-dismiss]');
@@ -4646,18 +4622,6 @@ function animateBalance(el, target){
   const setVVH = ()=> document.documentElement.style.setProperty('--vvh', window.visualViewport.height+'px');
   window.visualViewport.addEventListener('resize', setVVH);
   setVVH();
-})();
-(function(){
-  const resetMiniBalance = ()=>{
-    if(window.scrollY < 200){
-      state.miniBalanceVisible = false;
-    }
-    if(window.__miniBalanceObserver) window.__miniBalanceObserver.disconnect();
-    window.__miniBalanceObserver = null;
-    rerender();
-  };
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) resetMiniBalance(); });
-  window.addEventListener('pageshow', resetMiniBalance);
 })();
 rerender();
 if(window.__soldeDataWasCorrupted){
