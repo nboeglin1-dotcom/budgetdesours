@@ -2310,7 +2310,7 @@ function computeForecast(){
   if(_forecastCache && _forecastCacheToken === _renderToken) return _forecastCache;
   const today = new Date();
   const months = [];
-  for(let i=2;i>=0;i--){
+  for(let i=3;i>=1;i--){
     let m = today.getMonth()-i, y = today.getFullYear();
     if(m<0){m+=12;y--;}
     months.push({y,m});
