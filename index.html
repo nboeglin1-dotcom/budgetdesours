@@ -77,10 +77,10 @@
   .section-title{font-family:'Fraunces',serif; font-weight:600; font-size:19px; margin:0 0 14px; color:var(--paper) !important;}
   .eyebrow{font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal; text-transform:none; color:var(--paper); margin-bottom:6px;}
   .month-nav{display:flex; align-items:center; gap:6px; width:100%;}
-  .month-nav button{padding:6px; border-radius:8px; color:var(--paperDim); flex-shrink:0;}
+  .month-nav button{padding:10px; border-radius:8px; color:var(--paperDim); flex-shrink:0;}
   .month-nav .label{font-family:'Fraunces',serif; font-size:17px; font-weight:600; flex:1; text-align:center;
     color:#000000 !important; background:#F2EDDE; padding:7px 12px; border-radius:9px;}
-  .today-btn{font-size:11px; font-weight:600; color:var(--gold); background:rgba(212,169,79,.14); border:1px solid rgba(212,169,79,.35); padding:6px 10px; border-radius:99px; margin-left:2px; white-space:nowrap;}
+  .today-btn{font-size:11px; font-weight:600; color:var(--gold); background:rgba(212,169,79,.14); border:1px solid rgba(212,169,79,.35); padding:6px 10px; border-radius:99px; margin-left:10px; white-space:nowrap;}
   .btn-primary{background:var(--gold); color:var(--ink); font-weight:600; padding:10px 16px; border-radius:12px; font-size:14px; display:inline-flex; align-items:center; gap:6px;}
   .btn-ghost{color:var(--paperDim); padding:8px 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface);}
   .btn-ghost:disabled{opacity:.4; pointer-events:none;}
@@ -2911,9 +2911,8 @@ function renderGaugeCard(stats){
   tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
   const hidden = state.data.hiddenBudgetCategories||[];
   const hiddenCount = hidden.length;
-  const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
 
-  const nonRecurringCats = catsForType('expense').filter(c=>!recurringCatIds.has(c.id) && c.id!=='epargne' && c.id!=='virement');
+  const nonRecurringCats = catsForType('expense').filter(c=>c.id!=='epargne' && c.id!=='virement');
   const totalRollover = nonRecurringCats.reduce((s,c)=> s + (state.data.categoryRollover[c.id]||0), 0);
   const globalLimit = nonRecurringCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
   const globalBaseLimit = nonRecurringCats.reduce((s,c)=> s + (state.data.budgets[c.id]||0), 0);
@@ -3567,6 +3566,8 @@ function bindEvents(){
         const t = e.touches[0];
         const dx = t.clientX - active.startX;
         const dy = t.clientY - active.startY;
+        active.lastDy = dy;
+        active.lastDx = dx;
         if(!active.dragging){
           if(Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
           active.dragging = Math.abs(dx) > Math.abs(dy);
@@ -3582,7 +3583,8 @@ function bindEvents(){
       const finish = ()=>{
         if(!active || active.row!==row) return;
         row.style.transition = 'transform .2s ease';
-        const wasTap = !active.dragging;
+        const movedTooMuch = Math.abs(active.lastDx||0) > 10 || Math.abs(active.lastDy||0) > 10;
+        const wasTap = !active.dragging && !movedTooMuch;
         const shouldOpen = active.dragging && active.dx < -REVEAL*0.4;
         row.style.transform = shouldOpen ? `translateX(-${REVEAL}px)` : 'translateX(0px)';
         row.dataset.open = shouldOpen ? '1' : '0';
