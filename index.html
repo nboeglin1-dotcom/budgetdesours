@@ -3002,7 +3002,7 @@ function renderBudgets(){
   const byCat = {};
   tx.filter(t=>t.type==='expense' && !isTxRecurring(t)).forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
   const hidden = state.data.hiddenBudgetCategories||[];
-  const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id)).sort((a,b)=>a.label.localeCompare(b.label,'fr'));
+  const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id) && (byCat[c.id]||0)>0).sort((a,b)=>a.label.localeCompare(b.label,'fr'));
   const hiddenCount = hidden.length;
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
 
@@ -3034,7 +3034,12 @@ function renderBudgets(){
       </div>`;
     })()}
     <div class="budget-stack">
-      ${allExpenseCats.map(cat=>{
+      ${allExpenseCats.length===0 ? `
+        <div class="card" style="padding:30px 20px; text-align:center;">
+          ${bearMascot('sleepy', 52)}
+          <div style="font-size:13.5px; color:var(--paperDim); margin-top:12px;">Aucune dépense ponctuelle ce mois-ci pour l'instant.</div>
+        </div>
+      ` : allExpenseCats.map(cat=>{
         const baseLimit = state.data.budgets[cat.id] || 0;
         const rollover = state.data.categoryRollover[cat.id] || 0;
         const limit = baseLimit + rollover;
