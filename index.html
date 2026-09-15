@@ -719,7 +719,19 @@ recordHealthScoreSnapshot();
 })();
 
 function setState(patch){ Object.assign(state, patch); rerender(); }
-function mutateData(fn){ fn(state.data); saveData(state.data); _forecastCache = null; rerender(); }
+function mutateData(fn){
+  const countBefore = state.data.transactions.length;
+  fn(state.data);
+  const hidden = state.data.hiddenBudgetCategories;
+  if(hidden && hidden.length && state.data.transactions.length > countBefore){
+    const activeCats = new Set(state.data.transactions.filter(t=>t.type==='expense' && !isTxStrictlyRecurring(t)).map(t=>t.category));
+    const stillHidden = hidden.filter(id=>!activeCats.has(id));
+    if(stillHidden.length !== hidden.length) state.data.hiddenBudgetCategories = stillHidden;
+  }
+  saveData(state.data);
+  _forecastCache = null;
+  rerender();
+}
 function showToast(msg){
   state.toast = { msg, undo:null }; rerender();
   clearTimeout(showToast._t);
@@ -2920,7 +2932,7 @@ function renderGaugeCard(stats){
   const hidden = state.data.hiddenBudgetCategories||[];
   const hiddenCount = hidden.length;
 
-  const nonRecurringCats = catsForType('expense').filter(c=>c.id!=='epargne' && c.id!=='virement');
+  const nonRecurringCats = catsForType('expense').filter(c=>c.id!=='epargne' && c.id!=='virement' && !hidden.includes(c.id));
   const totalRollover = nonRecurringCats.reduce((s,c)=> s + (state.data.categoryRollover[c.id]||0), 0);
   const globalLimit = nonRecurringCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
   const globalBaseLimit = nonRecurringCats.reduce((s,c)=> s + (state.data.budgets[c.id]||0), 0);
