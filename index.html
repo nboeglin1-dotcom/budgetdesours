@@ -277,6 +277,9 @@ const INCOME_CATS = [
 ];
 const ALL_CATS = [...EXPENSE_CATS, ...INCOME_CATS];
 
+function isTxRecurring(t){
+  return !!(t.recurringId || (state.data.recurring||[]).some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount));
+}
 function catInfo(id){
   const custom = (state.data.customCategories||[]).find(c=>c.id===id);
   if(custom) return custom;
@@ -2908,7 +2911,7 @@ let budgetEditingId = null;
 function renderGaugeCard(stats){
   const tx = stats.tx || monthTx();
   const byCat = {};
-  tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
+  tx.filter(t=>t.type==='expense' && !isTxRecurring(t)).forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
   const hidden = state.data.hiddenBudgetCategories||[];
   const hiddenCount = hidden.length;
 
