@@ -3000,7 +3000,7 @@ function renderGaugeCard(stats){
 function renderBudgets(){
   const tx = monthTx();
   const byCat = {};
-  tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
+  tx.filter(t=>t.type==='expense' && !isTxRecurring(t)).forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
   const hidden = state.data.hiddenBudgetCategories||[];
   const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id)).sort((a,b)=>a.label.localeCompare(b.label,'fr'));
   const hiddenCount = hidden.length;
