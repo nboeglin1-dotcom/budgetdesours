@@ -440,6 +440,7 @@ function seedData(){
     envelopeCommitted: {},
     bannerCollapsed: false,
     lastNotifiedDate: null,
+    lastMonthlyRecapShown: null,
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
@@ -473,6 +474,7 @@ function loadData(){
       if(parsed.rolloverEnabled===undefined) parsed.rolloverEnabled = true;
       if(!parsed.envelopeCommitted) parsed.envelopeCommitted = {};
       if(parsed.bannerCollapsed===undefined) parsed.bannerCollapsed = false;
+      if(parsed.lastMonthlyRecapShown===undefined) parsed.lastMonthlyRecapShown = null;
       if(parsed.lastNotifiedDate===undefined) parsed.lastNotifiedDate = null;
       (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
       if(!parsed.theme) parsed.theme = 'ledger';
@@ -537,6 +539,10 @@ let state = {
   monthPickerOpen: false,
   monthPickerYear: undefined,
   goalDeadlineModalId: null,
+  whatIfOpen: false,
+  whatIfExpensePct: 0,
+  whatIfExtraSavings: 0,
+  monthlyRecapOpen: false,
   dueSoonBannerDismissedDate: null,
   insightsModalOpen: false,
   habitCalcOpen: false,
@@ -696,6 +702,7 @@ processCategoryRollover();
 processGoalTransfers();
 runAutoBackup();
 recordHealthScoreSnapshot();
+checkMonthlyRecap();
 (function(){
   const jointAccount = (state.data.accounts||[]).find(a=>a.name.toLowerCase().includes('joint'));
   if(jointAccount) state.activeAccountFilter = jointAccount.id;
@@ -1168,6 +1175,53 @@ function bearMoodFromRate(rate){
   return 'worried';
 }
 
+const TRANSFER_CATS_RECAP = new Set(['epargne','epargne_retour','virement','virement_retour']);
+function computeMonthlyRecap(){
+  const today = new Date();
+  let lm = today.getMonth()-1, ly = today.getFullYear();
+  if(lm<0){ lm=11; ly--; }
+  let plm = lm-1, ply = ly;
+  if(plm<0){ plm=11; ply--; }
+  const lastTx = visibleTransactions().filter(t=>sameMonth(t.date,ly,lm));
+  const prevTx = visibleTransactions().filter(t=>sameMonth(t.date,ply,plm));
+  if(lastTx.length===0) return null;
+  const sum = (arr,type)=> arr.filter(t=>t.type===type && !TRANSFER_CATS_RECAP.has(t.category)).reduce((s,t)=>s+t.amount,0);
+  const lastExpense = sum(lastTx,'expense'), prevExpense = sum(prevTx,'expense');
+  const lastIncome = sum(lastTx,'income'), prevIncome = sum(prevTx,'income');
+  const lastSaved = lastIncome - lastExpense, prevSaved = prevIncome - prevExpense;
+  const byCatLast = {}, byCatPrev = {};
+  lastTx.filter(t=>t.type==='expense' && !TRANSFER_CATS_RECAP.has(t.category)).forEach(t=> byCatLast[t.category]=(byCatLast[t.category]||0)+t.amount);
+  prevTx.filter(t=>t.type==='expense' && !TRANSFER_CATS_RECAP.has(t.category)).forEach(t=> byCatPrev[t.category]=(byCatPrev[t.category]||0)+t.amount);
+  let topCat = null, topCatDiff = 0;
+  new Set([...Object.keys(byCatLast), ...Object.keys(byCatPrev)]).forEach(id=>{
+    const diff = (byCatLast[id]||0) - (byCatPrev[id]||0);
+    if(Math.abs(diff) > Math.abs(topCatDiff)){ topCatDiff = diff; topCat = id; }
+  });
+  const expensePctChange = prevExpense>0 ? Math.round((lastExpense-prevExpense)/prevExpense*100) : 0;
+  // Comparer aussi aux mois precedents pour reperer un record
+  let isBestMonth = true;
+  for(let i=2;i<=5;i++){
+    let cm = lm-i, cy = ly;
+    while(cm<0){ cm+=12; cy--; }
+    const cTx = visibleTransactions().filter(t=>sameMonth(t.date,cy,cm));
+    if(cTx.length===0) continue;
+    const cSaved = sum(cTx,'income') - sum(cTx,'expense');
+    if(cSaved >= lastSaved){ isBestMonth = false; break; }
+  }
+  return { ly, lm, ply, plm, lastExpense, prevExpense, lastIncome, prevIncome, lastSaved, prevSaved, topCat, topCatDiff, expensePctChange, isBestMonth };
+}
+function checkMonthlyRecap(){
+  const today = new Date();
+  const key = today.getFullYear()+'-'+today.getMonth();
+  if(state.data.lastMonthlyRecapShown === key) return;
+  if(today.getDate() > 7) return;
+  const recap = computeMonthlyRecap();
+  if(!recap) return;
+  state.monthlyRecapData = recap;
+  state.monthlyRecapOpen = true;
+  mutateData(d=>{ d.lastMonthlyRecapShown = key; });
+}
+
 /* ---------------- helpers ---------------- */
 function visibleTransactions(){
   return state.activeAccountFilter ? state.data.transactions.filter(t=>t.accountId===state.activeAccountFilter) : state.data.transactions;
@@ -1241,6 +1295,8 @@ function renderApp(){
     ${state.insightsModalOpen ? renderInsightsModal() : ''}
     ${state.habitCalcOpen ? renderHabitCalcModal() : ''}
     ${state.goalDeadlineModalId ? renderGoalDeadlineModal() : ''}
+    ${state.whatIfOpen ? renderWhatIfModal() : ''}
+    ${state.monthlyRecapOpen ? renderMonthlyRecapModal() : ''}
     ${state.csvImportOpen ? renderCsvImportModal() : ''}
     ${state.pdfDebugOpen ? renderPdfDebugModal() : ''}
     ${state.editingGoalTransferId ? renderGoalTransferModal() : ''}
@@ -2468,7 +2524,10 @@ function renderForecastCard(f){
     <div class="card">
       <div class="row" style="margin-bottom:14px;">
         <div class="section-title" style="margin:0; font-size:15px;">Prévisionnel</div>
-        <button data-hide-card="showForecast" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <button data-open-whatif="1" style="color:var(--gold); padding:4px; display:flex;" title="Simuler 'Et si...'">${icon('spark',15)}</button>
+          <button data-hide-card="showForecast" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
+        </div>
       </div>
       <div class="scroll-cats">
         ${displayPoints.map(p=>`
@@ -3182,6 +3241,103 @@ function renderGoals(){
     `}
   `;
 }
+function computeWhatIfProjection(expensePct, extraSavings){
+  const f = computeForecast();
+  const pctFactor = 1 + (expensePct/100);
+  const points = [];
+  let lastValue = f.startBalance;
+  f.points.forEach((p,i)=>{
+    // On reconstruit approximativement le revenu/depense de ce mois a partir du deplacement d un point a l autre du prevu,
+    // en appliquant l ajustement uniquement a la portion "depense variable" (approx via reduction du delta mensuel).
+    const baseDelta = p.value - (i===0 ? f.startBalance : f.points[i-1].value);
+    // baseDelta = revenu - depense (recurrent + variable) du mois ; on isole grossierement la part ajustable
+    const adjustedDelta = baseDelta - (f.variableExpense * (pctFactor-1)) - extraSavings;
+    lastValue = lastValue + adjustedDelta;
+    points.push(lastValue);
+  });
+  return points;
+}
+function renderMonthlyRecapModal(){
+  const r = state.monthlyRecapData;
+  if(!r) return '';
+  const monthName = MONTHS[r.lm];
+  const prevMonthName = MONTHS[r.plm];
+  const catLabel = r.topCat ? catInfo(r.topCat).label : null;
+  const spentLess = r.expensePctChange < 0;
+  const savedMore = r.lastSaved > r.prevSaved;
+  const mood = r.isBestMonth && savedMore ? 'happy' : savedMore ? 'content' : spentLess ? 'neutral' : 'worried';
+  let message;
+  if(Math.abs(r.expensePctChange) < 2){
+    message = `Dépenses stables par rapport à ${prevMonthName.toLowerCase()} — pas de grand changement ce mois-ci.`;
+  } else {
+    message = `Tu as dépensé <strong style="color:${spentLess?'var(--sage)':'var(--coral)'};">${Math.abs(r.expensePctChange)}% ${spentLess?'de moins':'de plus'}</strong> qu'en ${prevMonthName.toLowerCase()}${catLabel ? `, principalement sur <strong>${escapeHtml(catLabel)}</strong>` : ''}.`;
+  }
+  return `
+    <div class="modal-overlay" data-close-monthlyrecap="1">
+      <div class="modal-sheet" data-swipe-dismiss="1" onclick="event.stopPropagation()" style="text-align:center;">
+        <div style="width:36px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 16px;"></div>
+        <div style="margin-bottom:10px;">${bearMascot(mood, 64)}</div>
+        <div class="modal-title ledger" style="margin-bottom:4px;">Bilan de ${monthName}</div>
+        <div style="font-size:13.5px; color:var(--paper); line-height:1.6; margin:14px 0 20px; padding:0 6px;">${message}</div>
+        ${r.isBestMonth && savedMore ? `<div style="background:rgba(212,169,79,.14); border:1px solid rgba(212,169,79,.35); border-radius:12px; padding:10px 14px; margin-bottom:20px; font-size:12.5px; color:var(--gold); font-weight:600;">${icon('spark',13)} Ton meilleur mois depuis un moment !</div>` : ''}
+        <div class="row" style="margin-bottom:20px; text-align:left; background:var(--surfaceHi); border-radius:12px; padding:14px 16px;">
+          <div>
+            <div style="font-size:11px; color:var(--paperDim); margin-bottom:2px;">Revenus</div>
+            <div class="mono" style="font-size:15px; font-weight:700; color:var(--sage);">${fmt0(r.lastIncome)}</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:var(--paperDim); margin-bottom:2px; text-align:center;">Dépenses</div>
+            <div class="mono" style="font-size:15px; font-weight:700; color:var(--coral); text-align:center;">${fmt0(r.lastExpense)}</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:var(--paperDim); margin-bottom:2px; text-align:right;">Épargné</div>
+            <div class="mono" style="font-size:15px; font-weight:700; color:${r.lastSaved>=0?'var(--paper)':'var(--coral)'}; text-align:right;">${fmt0(r.lastSaved)}</div>
+          </div>
+        </div>
+        <button data-close-x-monthlyrecap="1" class="btn-primary" style="width:100%; justify-content:center;">Compris, merci l'ours</button>
+      </div>
+    </div>
+  `;
+}
+function renderWhatIfModal(){
+  const f = computeForecast();
+  const pct = state.whatIfExpensePct;
+  const extra = state.whatIfExtraSavings;
+  const sim = computeWhatIfProjection(pct, extra);
+  const marks = [5,11,23];
+  return `
+    <div class="modal-overlay" data-close-whatif="1">
+      <div class="modal-sheet" data-swipe-dismiss="1" onclick="event.stopPropagation()">
+        <div style="width:36px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 12px;"></div>
+        <div class="modal-head"><div class="modal-title ledger">Simuler "Et si..."</div><button data-close-x-whatif="1">${icon('x',18)}</button></div>
+        <div style="font-size:12px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">Explore librement, rien n'est enregistré — ferme la fenêtre pour tout annuler.</div>
+
+        <div class="row" style="margin-bottom:6px;"><label class="field-label" style="margin:0;">Dépenses variables</label><span class="mono" style="font-size:13px; color:${pct<0?'var(--sage)':pct>0?'var(--coral)':'var(--paperDim)'};">${pct>0?'+':''}${pct}%</span></div>
+        <input id="whatIfExpenseSlider" type="range" min="-50" max="50" step="5" value="${pct}" style="width:100%; margin-bottom:18px;">
+
+        <div class="row" style="margin-bottom:6px;"><label class="field-label" style="margin:0;">Épargne supplémentaire / mois</label><span class="mono" style="font-size:13px; color:var(--gold);">+${fmt0(extra)}</span></div>
+        <input id="whatIfSavingsSlider" type="range" min="0" max="1000" step="25" value="${extra}" style="width:100%; margin-bottom:22px;">
+
+        <div style="border-top:1px solid var(--lineSoft); padding-top:16px;">
+          ${marks.map(idx=>{
+            const p = f.points[idx];
+            if(!p) return '';
+            const baseline = p.value;
+            const simulated = sim[idx];
+            const diff = simulated - baseline;
+            return `<div class="row" style="margin-bottom:12px; align-items:center;">
+              <span style="font-size:12.5px; color:var(--paperDim);">${p.label}</span>
+              <div style="text-align:right;">
+                <div class="mono" style="font-size:16px; font-weight:700; color:var(--paper);">${fmt0(simulated)}</div>
+                ${diff !== 0 ? `<div style="font-size:11px; color:${diff>0?'var(--sage)':'var(--coral)'};">${diff>0?'+':''}${fmt0(diff)} vs actuel</div>` : ''}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
 function renderGoalDeadlineModal(){
   const g = state.data.goals.find(g=>g.id===state.goalDeadlineModalId);
   if(!g) return '';
@@ -3655,7 +3811,11 @@ function bindEvents(){
       sheet.style.transition = 'transform .22s ease';
       if(dragging && dy > 110){
         sheet.style.transform = 'translateY(100%)';
-        setTimeout(()=>{ setState({modal:null}); }, 180);
+        setTimeout(()=>{
+          if(state.whatIfOpen) setState({whatIfOpen:false, whatIfExpensePct:0, whatIfExtraSavings:0});
+          else if(state.monthlyRecapOpen) setState({monthlyRecapOpen:false});
+          else setState({modal:null});
+        }, 180);
       } else {
         sheet.style.transform = 'translateY(0)';
       }
@@ -3903,6 +4063,15 @@ function bindEvents(){
   }));
   app.querySelectorAll('[data-close-habitcalc]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.habitCalcOpen=false; rerender(); } }));
   app.querySelectorAll('[data-open-goaldeadline]').forEach(el=>el.addEventListener('click', ()=>{ setState({goalDeadlineModalId: el.dataset.openGoaldeadline}); }));
+  app.querySelectorAll('[data-open-whatif]').forEach(el=>el.addEventListener('click', ()=> setState({whatIfOpen:true})));
+  app.querySelectorAll('[data-close-whatif]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({whatIfOpen:false, whatIfExpensePct:0, whatIfExtraSavings:0}); }));
+  app.querySelectorAll('[data-close-x-whatif]').forEach(el=>el.addEventListener('click', ()=> setState({whatIfOpen:false, whatIfExpensePct:0, whatIfExtraSavings:0})));
+  const whatIfExpenseSlider = app.querySelector('#whatIfExpenseSlider');
+  if(whatIfExpenseSlider) whatIfExpenseSlider.addEventListener('input', ()=> setState({whatIfExpensePct: Number(whatIfExpenseSlider.value)}));
+  const whatIfSavingsSlider = app.querySelector('#whatIfSavingsSlider');
+  if(whatIfSavingsSlider) whatIfSavingsSlider.addEventListener('input', ()=> setState({whatIfExtraSavings: Number(whatIfSavingsSlider.value)}));
+  app.querySelectorAll('[data-close-monthlyrecap]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({monthlyRecapOpen:false}); }));
+  app.querySelectorAll('[data-close-x-monthlyrecap]').forEach(el=>el.addEventListener('click', ()=> setState({monthlyRecapOpen:false})));
   app.querySelectorAll('[data-close-goaldeadline]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({goalDeadlineModalId:null}); }));
   app.querySelectorAll('[data-close-x-goaldeadline]').forEach(el=>el.addEventListener('click', ()=> setState({goalDeadlineModalId:null})));
   app.querySelectorAll('[data-save-goaldeadline]').forEach(el=>el.addEventListener('click', ()=>{
