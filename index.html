@@ -3247,11 +3247,10 @@ function computeWhatIfProjection(expensePct, extraSavings){
   const points = [];
   let lastValue = f.startBalance;
   f.points.forEach((p,i)=>{
-    // On reconstruit approximativement le revenu/depense de ce mois a partir du deplacement d un point a l autre du prevu,
-    // en appliquant l ajustement uniquement a la portion "depense variable" (approx via reduction du delta mensuel).
     const baseDelta = p.value - (i===0 ? f.startBalance : f.points[i-1].value);
-    // baseDelta = revenu - depense (recurrent + variable) du mois ; on isole grossierement la part ajustable
-    const adjustedDelta = baseDelta - (f.variableExpense * (pctFactor-1)) - extraSavings;
+    // On isole uniquement l ajustement des depenses du quotidien ; l epargne supplementaire
+    // est suivie a part (elle ne "disparait" pas, elle s accumule pour toi juste a cote).
+    const adjustedDelta = baseDelta - (f.variableExpense * (pctFactor-1));
     lastValue = lastValue + adjustedDelta;
     points.push(lastValue);
   });
@@ -3304,33 +3303,70 @@ function renderWhatIfModal(){
   const pct = state.whatIfExpensePct;
   const extra = state.whatIfExtraSavings;
   const sim = computeWhatIfProjection(pct, extra);
-  const marks = [5,11,23];
+  const marks = [2,5,11,23];
+  const diff12 = sim[11] - f.points[11].value;
+  const totalBenefit12 = diff12 + extra*12;
+  const mood = totalBenefit12 > 1000 ? 'happy' : totalBenefit12 > 0 ? 'content' : totalBenefit12 === 0 ? 'neutral' : 'worried';
+  const presets = [
+    { label:'Mode tranquille', pct:-10, extra:0, emoji:'😌' },
+    { label:'Mode ambitieux', pct:-25, extra:150, emoji:'💪' },
+    { label:'Mode fusée', pct:-40, extra:400, emoji:'🚀' },
+    { label:'Remise à zéro', pct:0, extra:0, emoji:'↺' },
+  ];
+  let tagline = '';
+  if(totalBenefit12 > 5000) tagline = "Un vrai changement de trajectoire !";
+  else if(totalBenefit12 > 1500) tagline = "Ça commence à se voir joliment.";
+  else if(totalBenefit12 > 200) tagline = "Un petit coup de pouce sympa.";
+  else if(totalBenefit12 < -1500) tagline = "Attention, ça creuse pas mal…";
+  else if(totalBenefit12 < -200) tagline = "Ça grignote un peu ton matelas.";
   return `
     <div class="modal-overlay" data-close-whatif="1">
       <div class="modal-sheet" data-swipe-dismiss="1" onclick="event.stopPropagation()">
         <div style="width:36px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 12px;"></div>
         <div class="modal-head"><div class="modal-title ledger">Simuler "Et si..."</div><button data-close-x-whatif="1">${icon('x',18)}</button></div>
-        <div style="font-size:12px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">Explore librement, rien n'est enregistré — ferme la fenêtre pour tout annuler.</div>
 
-        <div class="row" style="margin-bottom:6px;"><label class="field-label" style="margin:0;">Dépenses variables</label><span class="mono" style="font-size:13px; color:${pct<0?'var(--sage)':pct>0?'var(--coral)':'var(--paperDim)'};">${pct>0?'+':''}${pct}%</span></div>
-        <input id="whatIfExpenseSlider" type="range" min="-50" max="50" step="5" value="${pct}" style="width:100%; margin-bottom:18px;">
+        <div style="text-align:center; margin-bottom:6px;">${bearMascot(mood, 60)}</div>
+        ${tagline ? `<div style="text-align:center; font-size:12.5px; color:var(--paperDim); margin-bottom:16px; font-style:italic;">${tagline}</div>` : `<div style="margin-bottom:16px;"></div>`}
+
+        <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:18px;">
+          ${presets.map(p=>{
+            const active = state.whatIfExpensePct===p.pct && state.whatIfExtraSavings===p.extra;
+            return `<button data-whatif-preset="${p.pct}|${p.extra}" style="flex-shrink:0; display:flex; align-items:center; gap:6px; padding:8px 12px; border-radius:20px; border:1px solid ${active?'var(--gold)':'var(--line)'}; background:${active?'rgba(212,169,79,.14)':'var(--surfaceHi)'}; color:${active?'var(--gold)':'var(--paperDim)'}; font-size:12px; white-space:nowrap;">${p.emoji} ${p.label}</button>`;
+          }).join('')}
+        </div>
+
+        <div class="row" style="margin-bottom:6px;"><label class="field-label" style="margin:0;">Dépenses du quotidien (hors loyer, abonnements...)</label><span class="mono" style="font-size:13px; color:${pct<0?'var(--sage)':pct>0?'var(--coral)':'var(--paperDim)'};">${pct>0?'+':''}${pct}%</span></div>
+        <input id="whatIfExpenseSlider" type="range" min="-50" max="50" step="5" value="${pct}" style="width:100%; margin-bottom:6px; accent-color:var(--gold);">
+        <div style="font-size:10.5px; color:var(--paperDim); margin-bottom:18px;">Base actuelle : ~${fmt0(f.variableExpense)}/mois</div>
 
         <div class="row" style="margin-bottom:6px;"><label class="field-label" style="margin:0;">Épargne supplémentaire / mois</label><span class="mono" style="font-size:13px; color:var(--gold);">+${fmt0(extra)}</span></div>
-        <input id="whatIfSavingsSlider" type="range" min="0" max="1000" step="25" value="${extra}" style="width:100%; margin-bottom:22px;">
+        <input id="whatIfSavingsSlider" type="range" min="0" max="1000" step="25" value="${extra}" style="width:100%; margin-bottom:22px; accent-color:var(--gold);">
 
         <div style="border-top:1px solid var(--lineSoft); padding-top:16px;">
           ${marks.map(idx=>{
             const p = f.points[idx];
             if(!p) return '';
+            const monthsElapsed = idx+1;
             const baseline = p.value;
             const simulated = sim[idx];
             const diff = simulated - baseline;
-            return `<div class="row" style="margin-bottom:12px; align-items:center;">
-              <span style="font-size:12.5px; color:var(--paperDim);">${p.label}</span>
-              <div style="text-align:right;">
-                <div class="mono" style="font-size:16px; font-weight:700; color:var(--paper);">${fmt0(simulated)}</div>
-                ${diff !== 0 ? `<div style="font-size:11px; color:${diff>0?'var(--sage)':'var(--coral)'};">${diff>0?'+':''}${fmt0(diff)} vs actuel</div>` : ''}
+            const savingsBonus = extra * monthsElapsed;
+            const maxAbs = Math.max(Math.abs(baseline), Math.abs(simulated), 1);
+            const baseWidth = Math.max(4, Math.abs(baseline)/maxAbs*100);
+            const simWidth = Math.max(4, Math.abs(simulated)/maxAbs*100);
+            return `<div style="margin-bottom:16px;">
+              <div class="row" style="margin-bottom:5px;">
+                <span style="font-size:12px; color:var(--paperDim); font-weight:600;">${p.label}</span>
+                <div style="text-align:right;">
+                  <span class="mono" style="font-size:15px; font-weight:700; color:var(--paper);">${fmt0(simulated)}</span>
+                  ${diff !== 0 ? `<span style="font-size:11px; color:${diff>0?'var(--sage)':'var(--coral)'}; margin-left:5px;">${diff>0?'+':''}${fmt0(diff)}</span>` : ''}
+                </div>
               </div>
+              <div style="position:relative; height:14px; background:var(--surfaceHi); border-radius:7px; overflow:hidden;">
+                <div style="position:absolute; top:0; left:0; height:100%; width:${baseWidth}%; background:var(--lineSoft); border-radius:7px;"></div>
+                <div style="position:absolute; top:0; left:0; height:100%; width:${simWidth}%; background:${diff>=0?'var(--sage)':'var(--coral)'}; border-radius:7px; transition:width .25s ease;"></div>
+              </div>
+              ${savingsBonus>0 ? `<div style="font-size:10.5px; color:var(--gold); margin-top:4px;">${icon('piggy',11)} + ${fmt0(savingsBonus)} mis de côté en plus sur cette période</div>` : ''}
             </div>`;
           }).join('')}
         </div>
@@ -4070,6 +4106,10 @@ function bindEvents(){
   if(whatIfExpenseSlider) whatIfExpenseSlider.addEventListener('input', ()=> setState({whatIfExpensePct: Number(whatIfExpenseSlider.value)}));
   const whatIfSavingsSlider = app.querySelector('#whatIfSavingsSlider');
   if(whatIfSavingsSlider) whatIfSavingsSlider.addEventListener('input', ()=> setState({whatIfExtraSavings: Number(whatIfSavingsSlider.value)}));
+  app.querySelectorAll('[data-whatif-preset]').forEach(el=>el.addEventListener('click', ()=>{
+    const [pct, extra] = el.dataset.whatifPreset.split('|').map(Number);
+    setState({ whatIfExpensePct: pct, whatIfExtraSavings: extra });
+  }));
   app.querySelectorAll('[data-close-monthlyrecap]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({monthlyRecapOpen:false}); }));
   app.querySelectorAll('[data-close-x-monthlyrecap]').forEach(el=>el.addEventListener('click', ()=> setState({monthlyRecapOpen:false})));
   app.querySelectorAll('[data-close-goaldeadline]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({goalDeadlineModalId:null}); }));
