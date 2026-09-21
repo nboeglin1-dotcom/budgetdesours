@@ -2396,11 +2396,12 @@ function computeForecast(){
   const incomes = [], expenses = [];
   months.forEach(({y,m})=>{
     const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && !TRANSFER_CATS_FC.has(t.category));
+    if(txs.length===0) return; // mois sans aucune donnee : on ne le compte pas, plutot que de diluer la moyenne vers 0
     incomes.push(txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0));
     expenses.push(txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0));
   });
-  const avgIncome = incomes.reduce((a,b)=>a+b,0)/incomes.length;
-  const avgExpense = expenses.reduce((a,b)=>a+b,0)/expenses.length;
+  const avgIncome = incomes.length ? incomes.reduce((a,b)=>a+b,0)/incomes.length : 0;
+  const avgExpense = expenses.length ? expenses.reduce((a,b)=>a+b,0)/expenses.length : 0;
   const hasHistory = incomes.some(v=>v>0) || expenses.some(v=>v>0);
   const netAvg = avgIncome - avgExpense;
 
@@ -2436,7 +2437,7 @@ function computeForecast(){
     lastValue = value;
     points.push({ label: `${MONTHS_SHORT[m]} ${String(y).slice(2)}`, value, y, m });
   }
-  const result = { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory, variableIncome, variableExpense };
+  const result = { points, avgIncome, avgExpense, netAvg, startBalance, hasHistory, variableIncome, variableExpense, monthsWithData: expenses.length };
   _forecastCache = result;
   _forecastCacheToken = _renderToken;
   return result;
@@ -3344,7 +3345,7 @@ function renderWhatIfModal(){
           <span class="mono" style="font-size:13px; font-weight:600; color:${pct<0?'var(--sage)':pct>0?'var(--coral)':'var(--paperDim)'};">${pct===0?'inchangé':`${pct>0?'+':''}${fmt0(f.variableExpense*(pctFactor-1))}/mois (${pct>0?'+':''}${pct}%)`}</span>
         </div>
         <input id="whatIfExpenseSlider" type="range" min="-50" max="50" step="5" value="${pct}" style="width:100%; margin-bottom:6px; accent-color:var(--gold);">
-        ${f.variableExpense < 1 ? `<div style="font-size:10.5px; color:var(--coral); margin-bottom:18px; line-height:1.4;">⚠️ Aucune dépense du quotidien détectée sur tes 3 derniers mois (hors récurrences) — ce curseur n'a donc pas d'effet pour l'instant. Utilise plutôt l'épargne supplémentaire ci-dessous.</div>` : `<div style="font-size:10.5px; color:var(--paperDim); margin-bottom:18px;">Basé sur ta moyenne réelle des 3 derniers mois (~${fmt0(f.variableExpense)}/mois)</div>`}
+        ${f.variableExpense < 1 ? `<div style="font-size:10.5px; color:var(--coral); margin-bottom:18px; line-height:1.4;">⚠️ Aucune dépense du quotidien détectée sur tes derniers mois (hors récurrences) — ce curseur n'a donc pas d'effet pour l'instant. Utilise plutôt l'épargne supplémentaire ci-dessous.</div>` : `<div style="font-size:10.5px; color:var(--paperDim); margin-bottom:18px;">Basé sur ta moyenne réelle sur ${f.monthsWithData} mois (~${fmt0(f.variableExpense)}/mois)</div>`}
 
         <div class="row" style="margin-bottom:6px;"><label class="field-label" style="margin:0;">Épargne supplémentaire / mois</label><span class="mono" style="font-size:13px; color:var(--gold);">+${fmt0(extra)}</span></div>
         <input id="whatIfSavingsSlider" type="range" min="0" max="1000" step="25" value="${extra}" style="width:100%; margin-bottom:22px; accent-color:var(--gold);">
