@@ -4582,9 +4582,19 @@ function bindEvents(){
     const f = computeForecast();
     const s = computeMonthStats();
     const monthTxNow = monthTx();
+    const today = new Date();
+    const monthsDetail = [];
+    for(let i=3;i>=1;i--){
+      let m = today.getMonth()-i, y = today.getFullYear();
+      if(m<0){m+=12;y--;}
+      const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m));
+      const expenseTxs = txs.filter(t=>t.type==='expense');
+      const nonRecurCount = expenseTxs.filter(t=>!isTxStrictlyRecurring(t)).length;
+      monthsDetail.push(`${MONTHS[m]} ${y} : ${txs.length} transaction(s), dont ${expenseTxs.length} dépense(s) (${nonRecurCount} non-récurrente(s))`);
+    }
     const last5 = [...state.data.transactions].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5)
-      .map(t=>`${t.note||t.category} | ${t.type==='income'?'+':'-'}${t.amount} | ${new Date(t.date).toLocaleDateString('fr-FR')}`).join('\n');
-    alert(`Mois affiché : ${MONTHS[state.viewM]} ${state.viewY}\n\nReste : ${fmt2(s.bal)}\nRevenus : ${fmt2(s.income)} (estimé: ${s.useIncomeEstimate})\nDépenses : ${fmt2(s.expense)} (estimé: ${s.useExpenseEstimate})\n\navgIncome (3 mois passés) : ${fmt2(f.avgIncome)}\navgExpense (3 mois passés) : ${fmt2(f.avgExpense)}\nvariableExpense : ${fmt2(f.variableExpense)}\nstartBalance (forecast) : ${fmt2(f.startBalance)}\n\nTransactions du mois affiché : ${monthTxNow.length}\n\n5 dernières transactions (tous mois) :\n${last5}`);
+      .map(t=>`${t.note||t.category} | ${t.type==='income'?'+':'-'}${t.amount} | ${new Date(t.date).toLocaleDateString('fr-FR')} | recId:${t.recurringId?'oui':'non'}`).join('\n');
+    alert(`Mois affiché : ${MONTHS[state.viewM]} ${state.viewY}\n\nReste : ${fmt2(s.bal)}\nDépenses : ${fmt2(s.expense)} (estimé: ${s.useExpenseEstimate})\n\n--- Détail des 3 mois utilisés pour la moyenne ---\n${monthsDetail.join('\n')}\n\nmonthsWithData détectés : ${f.monthsWithData}\navgExpense : ${fmt2(f.avgExpense)}\nvariableExpense : ${fmt2(f.variableExpense)}\n\nTotal transactions dans l'appli : ${state.data.transactions.length}\n\n5 dernières transactions (tous mois) :\n${last5}`);
   }));
   app.querySelectorAll('[data-toggle-rollover-info]').forEach(el=>el.addEventListener('click', ()=>{ setState({rolloverInfoOpen: !state.rolloverInfoOpen}); }));
   app.querySelectorAll('[data-toggle-rollover]').forEach(el=>el.addEventListener('click', ()=>{
