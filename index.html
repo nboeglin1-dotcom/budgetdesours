@@ -3302,6 +3302,7 @@ function renderWhatIfModal(){
   const f = computeForecast();
   const pct = state.whatIfExpensePct;
   const extra = state.whatIfExtraSavings;
+  const pctFactor = 1 + (pct/100);
   const sim = computeWhatIfProjection(pct, extra);
   const marks = [2,5,11,23];
   const diff12 = sim[11] - f.points[11].value;
@@ -3335,9 +3336,15 @@ function renderWhatIfModal(){
           }).join('')}
         </div>
 
-        <div class="row" style="margin-bottom:6px;"><label class="field-label" style="margin:0;">Dépenses du quotidien (hors loyer, abonnements...)</label><span class="mono" style="font-size:13px; color:${pct<0?'var(--sage)':pct>0?'var(--coral)':'var(--paperDim)'};">${pct>0?'+':''}${pct}%</span></div>
+        <div class="row" style="margin-bottom:6px; align-items:baseline;">
+          <label class="field-label" style="margin:0;">Dépenses du quotidien (hors loyer, abonnements...)</label>
+        </div>
+        <div class="row" style="margin-bottom:8px; align-items:baseline;">
+          <span class="mono" style="font-size:20px; font-weight:700; color:var(--paper);">${fmt0(f.variableExpense * pctFactor)}<span style="font-size:12px; font-weight:400; color:var(--paperDim);">/mois</span></span>
+          <span class="mono" style="font-size:13px; font-weight:600; color:${pct<0?'var(--sage)':pct>0?'var(--coral)':'var(--paperDim)'};">${pct===0?'inchangé':`${pct>0?'+':''}${fmt0(f.variableExpense*(pctFactor-1))}/mois (${pct>0?'+':''}${pct}%)`}</span>
+        </div>
         <input id="whatIfExpenseSlider" type="range" min="-50" max="50" step="5" value="${pct}" style="width:100%; margin-bottom:6px; accent-color:var(--gold);">
-        <div style="font-size:10.5px; color:var(--paperDim); margin-bottom:18px;">Base actuelle : ~${fmt0(f.variableExpense)}/mois</div>
+        ${f.variableExpense < 1 ? `<div style="font-size:10.5px; color:var(--coral); margin-bottom:18px; line-height:1.4;">⚠️ Aucune dépense du quotidien détectée sur tes 3 derniers mois (hors récurrences) — ce curseur n'a donc pas d'effet pour l'instant. Utilise plutôt l'épargne supplémentaire ci-dessous.</div>` : `<div style="font-size:10.5px; color:var(--paperDim); margin-bottom:18px;">Basé sur ta moyenne réelle des 3 derniers mois (~${fmt0(f.variableExpense)}/mois)</div>`}
 
         <div class="row" style="margin-bottom:6px;"><label class="field-label" style="margin:0;">Épargne supplémentaire / mois</label><span class="mono" style="font-size:13px; color:var(--gold);">+${fmt0(extra)}</span></div>
         <input id="whatIfSavingsSlider" type="range" min="0" max="1000" step="25" value="${extra}" style="width:100%; margin-bottom:22px; accent-color:var(--gold);">
