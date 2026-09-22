@@ -317,6 +317,48 @@ function occurrencesPerMonth(freq){
   if(freq==='yearly') return 1/12;
   return 1;
 }
+// Renvoie les occurrences d'une regle qui "atterrissent" dans le mois (y,m), en tenant compte
+// des exceptions (rule.exceptions[occKey]) qui peuvent deplacer une echeance vers un autre mois
+// (date modifiee) ou la faire disparaitre (skip). occKey identifie toujours l'emplacement
+// "naturel" (theorique) de l'echeance dans le calendrier de la regle - stable meme si la date
+// affichee change - ce qui permet de retrouver/reinitialiser l'exception plus tard.
+// On explore une fenetre d'un mois avant et apres (y,m) sur le calendrier naturel de la regle :
+// assez large pour couvrir un decalage de date vers le mois precedent ou suivant.
+function ruleOccurrencesForMonth(rule, y, m){
+  let next = new Date(rule.nextDate);
+  let prevNext = null;
+  let guard = 0;
+  while(guard < 800){
+    const natY = next.getFullYear(), natM = next.getMonth();
+    if(natY > y || (natY === y && natM >= m)) break;
+    prevNext = new Date(next);
+    next = addPeriod(next, rule.frequency);
+    guard++;
+  }
+  const candidates = [];
+  if(prevNext){
+    const monthsBefore = (y - prevNext.getFullYear())*12 + (m - prevNext.getMonth());
+    if(monthsBefore <= 1) candidates.push(prevNext);
+  }
+  while(guard < 1700){
+    const natY = next.getFullYear(), natM = next.getMonth();
+    const monthsFromTarget = (natY - y)*12 + (natM - m);
+    if(monthsFromTarget > 1) break;
+    candidates.push(new Date(next));
+    next = addPeriod(next, rule.frequency);
+    guard++;
+  }
+  const results = [];
+  candidates.forEach(occDate=>{
+    const occKey = String(occDate.getTime());
+    const ex = (rule.exceptions||{})[occKey];
+    const effDate = (ex && ex.date) ? new Date(ex.date) : occDate;
+    if(effDate.getFullYear()===y && effDate.getMonth()===m && (!ex || !ex.skip)){
+      results.push({ occDate, occKey, ex, effDate });
+    }
+  });
+  return results;
+}
 function recurringOccurrencesInMonth(y, m){
   let income = 0, expense = 0;
   (state.data.recurring||[]).forEach(rule=>{
@@ -327,104 +369,58 @@ function recurringOccurrencesInMonth(y, m){
     let alreadyRealThisMonth = (state.data.transactions||[]).filter(t=>
       t.recurringId===rule.id && sameMonth(t.date, y, m)
     ).length;
-    let next = new Date(rule.nextDate);
-    let guard = 0;
-    while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
-      next = addPeriod(next, rule.frequency);
-      guard++;
-    }
-    while(next.getFullYear()===y && next.getMonth()===m && guard<900){
-      const occKey = String(next.getTime());
-      const ex = (rule.exceptions||{})[occKey];
+    ruleOccurrencesForMonth(rule, y, m).forEach(({ex})=>{
       if(alreadyRealThisMonth > 0){
         alreadyRealThisMonth--;
-      } else if(!ex || !ex.skip){
+      } else {
         const amt = (ex && ex.amount!=null) ? ex.amount : rule.amount;
         const type = (ex && ex.type) ? ex.type : rule.type;
         if(type==='income') income += amt; else expense += amt;
       }
-      next = addPeriod(next, rule.frequency);
-      guard++;
-    }
+    });
   });
   (state.data.goalTransfers||[]).forEach(rule=>{
-    let next = new Date(rule.nextDate);
-    let guard = 0;
-    while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
-      next = addPeriod(next, rule.frequency);
-      guard++;
-    }
-    while(next.getFullYear()===y && next.getMonth()===m && guard<900){
-      const occKey = String(next.getTime());
-      const ex = (rule.exceptions||{})[occKey];
-      if(!ex || !ex.skip){
-        expense += (ex && ex.amount!=null) ? ex.amount : rule.amount;
-      }
-      next = addPeriod(next, rule.frequency);
-      guard++;
-    }
+    ruleOccurrencesForMonth(rule, y, m).forEach(({ex})=>{
+      expense += (ex && ex.amount!=null) ? ex.amount : rule.amount;
+    });
   });
   return { income, expense };
 }
 function recurringPreviewForMonth(y, m){
   const entries = [];
   (state.data.recurring||[]).forEach(rule=>{
-    let next = new Date(rule.nextDate);
-    let guard = 0;
-    while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
-      next = addPeriod(next, rule.frequency);
-      guard++;
-    }
-    while(next.getFullYear()===y && next.getMonth()===m && guard<900){
-      const occKey = String(next.getTime());
-      const ex = (rule.exceptions||{})[occKey];
-      if(!ex || !ex.skip){
-        entries.push({
-          id:'preview-'+rule.id+'-'+next.getTime(),
-          type: (ex && ex.type) ? ex.type : rule.type,
-          amount: (ex && ex.amount!=null) ? ex.amount : rule.amount,
-          category: (ex && ex.category) ? ex.category : rule.category,
-          note: (ex && ex.note!=null) ? ex.note : rule.note,
-          date: (ex && ex.date) ? ex.date : next.toISOString(),
-          isPending:true,
-          ruleId:rule.id,
-          occKey,
-          edited: !!ex,
-        });
-      }
-      next = addPeriod(next, rule.frequency);
-      guard++;
-    }
+    ruleOccurrencesForMonth(rule, y, m).forEach(({occDate, occKey, ex, effDate})=>{
+      entries.push({
+        id:'preview-'+rule.id+'-'+occDate.getTime(),
+        type: (ex && ex.type) ? ex.type : rule.type,
+        amount: (ex && ex.amount!=null) ? ex.amount : rule.amount,
+        category: (ex && ex.category) ? ex.category : rule.category,
+        note: (ex && ex.note!=null) ? ex.note : rule.note,
+        date: effDate.toISOString(),
+        isPending:true,
+        ruleId:rule.id,
+        occKey,
+        edited: !!ex,
+      });
+    });
   });
   (state.data.goalTransfers||[]).forEach(rule=>{
     const goal = (state.data.goals||[]).find(g=>g.id===rule.goalId);
-    let next = new Date(rule.nextDate);
-    let guard = 0;
-    while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
-      next = addPeriod(next, rule.frequency);
-      guard++;
-    }
-    while(next.getFullYear()===y && next.getMonth()===m && guard<900){
-      const occKey = String(next.getTime());
-      const ex = (rule.exceptions||{})[occKey];
-      if(!ex || !ex.skip){
-        entries.push({
-          id:'preview-goal-'+rule.id+'-'+next.getTime(),
-          type:'expense',
-          amount: (ex && ex.amount!=null) ? ex.amount : rule.amount,
-          category:'epargne',
-          note: (ex && ex.note!=null) ? ex.note : `Virement auto vers "${goal?goal.name:'objectif'}"`,
-          date: (ex && ex.date) ? ex.date : next.toISOString(),
-          isPending:true,
-          ruleId:rule.id,
-          occKey,
-          isGoalTransfer:true,
-          edited: !!ex,
-        });
-      }
-      next = addPeriod(next, rule.frequency);
-      guard++;
-    }
+    ruleOccurrencesForMonth(rule, y, m).forEach(({occDate, occKey, ex, effDate})=>{
+      entries.push({
+        id:'preview-goal-'+rule.id+'-'+occDate.getTime(),
+        type:'expense',
+        amount: (ex && ex.amount!=null) ? ex.amount : rule.amount,
+        category:'epargne',
+        note: (ex && ex.note!=null) ? ex.note : `Virement auto vers "${goal?goal.name:'objectif'}"`,
+        date: effDate.toISOString(),
+        isPending:true,
+        ruleId:rule.id,
+        occKey,
+        isGoalTransfer:true,
+        edited: !!ex,
+      });
+    });
   });
   return entries;
 }
@@ -2517,15 +2513,17 @@ function computeForecast(){
   const variableExpense = variableExpensesByMonth.length ? variableExpensesByMonth.reduce((a,b)=>a+b,0)/variableExpensesByMonth.length : Math.max(0, avgExpense - recurExpensePerMonth);
   const variableIncome = variableIncomesByMonth.length ? variableIncomesByMonth.reduce((a,b)=>a+b,0)/variableIncomesByMonth.length : Math.max(0, avgIncome - recurIncomePerMonth);
 
-  const prevMonthEndFC = new Date(today.getFullYear(), today.getMonth(), 0, 23,59,59,999);
-  const prevBalanceFC = visibleTransactions().filter(t => new Date(t.date) <= prevMonthEndFC).reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
+  // "Reste" = revenus du mois moins depenses du mois (reel + estime), PAS un solde bancaire
+  // cumule depuis le debut de l'historique : on ne rajoute plus le total de toutes les
+  // transactions passees, uniquement le resultat net du mois en cours.
   const curMonthTxFC = visibleTransactions().filter(t=>sameMonth(t.date, today.getFullYear(), today.getMonth()));
-  const realBalanceEffectFC = curMonthTxFC.reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
+  const realIncomeEffectFC = curMonthTxFC.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
+  const realExpenseEffectFC = curMonthTxFC.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
   const recFC = recurringOccurrencesInMonth(today.getFullYear(), today.getMonth());
   const daysInMonthFC = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
   const daysRemainingFC = Math.max(0, daysInMonthFC - today.getDate() + 1);
   const proratedVariableFC = variableExpense * (daysRemainingFC/daysInMonthFC);
-  const startBalance = prevBalanceFC + realBalanceEffectFC + recFC.income - recFC.expense - proratedVariableFC;
+  const startBalance = (realIncomeEffectFC + recFC.income) - (realExpenseEffectFC + recFC.expense + proratedVariableFC);
   const points = [];
   let lastValue = startBalance;
   for(let i=1;i<=24;i++){
@@ -2606,14 +2604,15 @@ function balanceForViewedMonth(f, viewY, viewM){
   const curIdx = monthIndex(today.getFullYear(), today.getMonth());
   const viewIdx = monthIndex(viewY, viewM);
   const diff = viewIdx - curIdx;
-  const monthEnd = new Date(viewY, viewM+1, 0, 23,59,59,999);
-  const realBalance = visibleTransactions()
-    .filter(t => new Date(t.date) <= monthEnd)
-    .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
-  const monthTxNow = visibleTransactions().filter(t=>sameMonth(t.date, viewY, viewM));
-  const hasRealDataThisMonth = monthTxNow.length > 0;
   if(diff === 0) return f.startBalance;
-  if(diff < 0) return realBalance;
+  if(diff < 0){
+    // Mois passe, entierement connu : revenus reels du mois moins depenses reelles du mois
+    // (meme definition que pour le mois en cours/futur - pas un solde bancaire cumule).
+    const monthTx = visibleTransactions().filter(t=>sameMonth(t.date, viewY, viewM));
+    const monthIncome = monthTx.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
+    const monthExpense = monthTx.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
+    return monthIncome - monthExpense;
+  }
   if(diff <= 24) return f.points[diff-1].value;
   return f.startBalance + f.netAvg*diff;
 }
@@ -3090,7 +3089,7 @@ function previewTxRow(t){
         <button data-edit-preview="${rowId}" style="width:56px; background:var(--gold); color:var(--ink); display:flex; align-items:center; justify-content:center;" title="Modifier cette échéance">${icon('pencil',16)}</button>
         <button data-skip-preview="${rowId}" style="width:56px; background:var(--coral); color:var(--ink); display:flex; align-items:center; justify-content:center;" title="Ignorer cette échéance">${icon('trash',16)}</button>
       </div>
-      <div class="txrow swipe-content" data-swipe-row="${rowId}" style="background:var(--surface); opacity:.6; border:1px dashed var(--line); position:relative; touch-action:pan-y;">${content}</div>
+      <div class="txrow swipe-content" data-swipe-row="${rowId}" style="background:var(--surface); border:1px dashed var(--line); position:relative; touch-action:pan-y;"><div style="display:contents; opacity:.6;">${content}</div></div>
     </div>`;
 }
 
