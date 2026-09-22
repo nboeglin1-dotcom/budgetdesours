@@ -2393,12 +2393,14 @@ function computeForecast(){
     months.push({y,m});
   }
   const TRANSFER_CATS_FC = new Set(['epargne','epargne_retour','virement','virement_retour']);
-  const incomes = [], expenses = [];
+  const incomes = [], expenses = [], variableExpensesByMonth = [], variableIncomesByMonth = [];
   months.forEach(({y,m})=>{
     const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && !TRANSFER_CATS_FC.has(t.category));
     if(txs.length===0) return; // mois sans aucune donnee : on ne le compte pas, plutot que de diluer la moyenne vers 0
     incomes.push(txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0));
     expenses.push(txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0));
+    variableExpensesByMonth.push(txs.filter(t=>t.type==='expense' && !isTxStrictlyRecurring(t)).reduce((s,t)=>s+t.amount,0));
+    variableIncomesByMonth.push(txs.filter(t=>t.type==='income' && !isTxStrictlyRecurring(t)).reduce((s,t)=>s+t.amount,0));
   });
   const avgIncome = incomes.length ? incomes.reduce((a,b)=>a+b,0)/incomes.length : 0;
   const avgExpense = expenses.length ? expenses.reduce((a,b)=>a+b,0)/expenses.length : 0;
@@ -2410,8 +2412,11 @@ function computeForecast(){
     const perMonth = rule.amount * occurrencesPerMonth(rule.frequency);
     if(rule.type==='income') recurIncomePerMonth += perMonth; else recurExpensePerMonth += perMonth;
   });
-  const variableIncome = Math.max(0, avgIncome - recurIncomePerMonth);
-  const variableExpense = Math.max(0, avgExpense - recurExpensePerMonth);
+  // Mesure directe de la vraie depense/revenu variable moyen (transactions non-recurrentes reelles),
+  // plus fiable qu'une soustraction avec le taux theorique des recurrences (qui peut ne pas
+  // correspondre exactement aux mois observes si une facture annuelle tombe hors de la fenetre).
+  const variableExpense = variableExpensesByMonth.length ? variableExpensesByMonth.reduce((a,b)=>a+b,0)/variableExpensesByMonth.length : Math.max(0, avgExpense - recurExpensePerMonth);
+  const variableIncome = variableIncomesByMonth.length ? variableIncomesByMonth.reduce((a,b)=>a+b,0)/variableIncomesByMonth.length : Math.max(0, avgIncome - recurIncomePerMonth);
 
   const prevMonthEndFC = new Date(today.getFullYear(), today.getMonth(), 0, 23,59,59,999);
   const prevBalanceFC = visibleTransactions().filter(t => new Date(t.date) <= prevMonthEndFC).reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
@@ -4991,6 +4996,27 @@ rerender();
 if(window.__soldeDataWasCorrupted){
   setTimeout(()=>{ showToast("Anciennes données illisibles — appli réinitialisée (sauvegarde technique conservée)"); }, 600);
 }
+
+// Rafraîchit les calculs (Reste, prévisionnel...) quand l'app redevient active
+// après avoir été mise en arrière-plan, pour éviter un affichage figé sur l'ancienne date.
+(function(){
+  let lastActiveDate = new Date().toDateString();
+  function refreshIfStale(){
+    const nowDate = new Date().toDateString();
+    if(nowDate !== lastActiveDate){
+      lastActiveDate = nowDate;
+      _forecastCache = null;
+      if(!state.modal) rerender();
+    }
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible') refreshIfStale();
+  });
+  window.addEventListener('pageshow', function(e){
+    if(e.persisted) refreshIfStale();
+  });
+  window.addEventListener('focus', refreshIfStale);
+})();
 </script>
 </body>
 </html>
