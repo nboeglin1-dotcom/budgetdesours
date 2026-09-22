@@ -334,10 +334,14 @@ function recurringOccurrencesInMonth(y, m){
       guard++;
     }
     while(next.getFullYear()===y && next.getMonth()===m && guard<900){
+      const occKey = String(next.getTime());
+      const ex = (rule.exceptions||{})[occKey];
       if(alreadyRealThisMonth > 0){
         alreadyRealThisMonth--;
-      } else {
-        if(rule.type==='income') income += rule.amount; else expense += rule.amount;
+      } else if(!ex || !ex.skip){
+        const amt = (ex && ex.amount!=null) ? ex.amount : rule.amount;
+        const type = (ex && ex.type) ? ex.type : rule.type;
+        if(type==='income') income += amt; else expense += amt;
       }
       next = addPeriod(next, rule.frequency);
       guard++;
@@ -351,7 +355,11 @@ function recurringOccurrencesInMonth(y, m){
       guard++;
     }
     while(next.getFullYear()===y && next.getMonth()===m && guard<900){
-      expense += rule.amount;
+      const occKey = String(next.getTime());
+      const ex = (rule.exceptions||{})[occKey];
+      if(!ex || !ex.skip){
+        expense += (ex && ex.amount!=null) ? ex.amount : rule.amount;
+      }
       next = addPeriod(next, rule.frequency);
       guard++;
     }
@@ -368,7 +376,22 @@ function recurringPreviewForMonth(y, m){
       guard++;
     }
     while(next.getFullYear()===y && next.getMonth()===m && guard<900){
-      entries.push({ id:'preview-'+rule.id+'-'+next.getTime(), type:rule.type, amount:rule.amount, category:rule.category, note:rule.note, date:next.toISOString(), isPending:true, ruleId:rule.id });
+      const occKey = String(next.getTime());
+      const ex = (rule.exceptions||{})[occKey];
+      if(!ex || !ex.skip){
+        entries.push({
+          id:'preview-'+rule.id+'-'+next.getTime(),
+          type: (ex && ex.type) ? ex.type : rule.type,
+          amount: (ex && ex.amount!=null) ? ex.amount : rule.amount,
+          category: (ex && ex.category) ? ex.category : rule.category,
+          note: (ex && ex.note!=null) ? ex.note : rule.note,
+          date: next.toISOString(),
+          isPending:true,
+          ruleId:rule.id,
+          occKey,
+          edited: !!ex,
+        });
+      }
       next = addPeriod(next, rule.frequency);
       guard++;
     }
@@ -382,7 +405,23 @@ function recurringPreviewForMonth(y, m){
       guard++;
     }
     while(next.getFullYear()===y && next.getMonth()===m && guard<900){
-      entries.push({ id:'preview-goal-'+rule.id+'-'+next.getTime(), type:'expense', amount:rule.amount, category:'epargne', note:`Virement auto vers "${goal?goal.name:'objectif'}"`, date:next.toISOString(), isPending:true, ruleId:rule.id });
+      const occKey = String(next.getTime());
+      const ex = (rule.exceptions||{})[occKey];
+      if(!ex || !ex.skip){
+        entries.push({
+          id:'preview-goal-'+rule.id+'-'+next.getTime(),
+          type:'expense',
+          amount: (ex && ex.amount!=null) ? ex.amount : rule.amount,
+          category:'epargne',
+          note: (ex && ex.note!=null) ? ex.note : `Virement auto vers "${goal?goal.name:'objectif'}"`,
+          date: next.toISOString(),
+          isPending:true,
+          ruleId:rule.id,
+          occKey,
+          isGoalTransfer:true,
+          edited: !!ex,
+        });
+      }
       next = addPeriod(next, rule.frequency);
       guard++;
     }
@@ -1120,6 +1159,55 @@ function openEditTx(id){
   txFormState = { type:t.type, category:t.category, date:new Date(t.date).toISOString().slice(0,10), recurring:!!linkedRule, frequency:linkedRule?linkedRule.frequency:'monthly', note:t.note||'', amount:t.amount, editingId:t.id, photo:t.photo||null, accountId:t.accountId||'main' };
   state.txAdvancedOpen = true;
   setState({modal:'addTx'});
+}
+function parsePreviewRowId(rowId){
+  // format: pv:<ruleId>:<occKey>:<'g'|'t'>
+  const parts = rowId.split(':');
+  return { ruleId: parts[1], occKey: parts[2], isGoal: parts[3]==='g' };
+}
+function getRecurringRuleById(ruleId, isGoal){
+  return isGoal ? (state.data.goalTransfers||[]).find(r=>r.id===ruleId) : (state.data.recurring||[]).find(r=>r.id===ruleId);
+}
+function getPreviewOccurrence(ruleId, occKey, isGoal){
+  const rule = getRecurringRuleById(ruleId, isGoal);
+  if(!rule) return null;
+  const ex = (rule.exceptions||{})[occKey] || {};
+  let baseNote = rule.note;
+  if(isGoal){
+    const goal = (state.data.goals||[]).find(g=>g.id===rule.goalId);
+    baseNote = `Virement auto vers "${goal?goal.name:'objectif'}"`;
+  }
+  return {
+    type: ex.type ? ex.type : (isGoal ? 'expense' : rule.type),
+    amount: ex.amount!=null ? ex.amount : rule.amount,
+    category: ex.category ? ex.category : (isGoal ? 'epargne' : rule.category),
+    note: ex.note!=null ? ex.note : baseNote,
+    date: Number(occKey),
+  };
+}
+function openEditPreview(rowId){
+  const { ruleId, occKey, isGoal } = parsePreviewRowId(rowId);
+  const occ = getPreviewOccurrence(ruleId, occKey, isGoal);
+  if(!occ) return;
+  txFormState = { type:occ.type, category:occ.category, date:new Date(occ.date).toISOString().slice(0,10), recurring:false, frequency:'monthly', note:occ.note||'', amount:occ.amount, editingId:null, photo:null, accountId:'main', previewException:{ ruleId, occKey, isGoal } };
+  state.txAdvancedOpen = false;
+  state.txDuplicateWarning = false;
+  setState({modal:'addTx'});
+}
+function skipPreviewOccurrence(rowId){
+  const { ruleId, occKey, isGoal } = parsePreviewRowId(rowId);
+  mutateData(d=>{
+    const rule = isGoal ? (d.goalTransfers||[]).find(r=>r.id===ruleId) : (d.recurring||[]).find(r=>r.id===ruleId);
+    if(!rule) return;
+    if(!rule.exceptions) rule.exceptions = {};
+    rule.exceptions[occKey] = { skip:true };
+  });
+  showUndoToast('Échéance ignorée', ()=>{
+    mutateData(d=>{
+      const rule = isGoal ? (d.goalTransfers||[]).find(r=>r.id===ruleId) : (d.recurring||[]).find(r=>r.id===ruleId);
+      if(rule && rule.exceptions) delete rule.exceptions[occKey];
+    });
+  });
 }
 
 /* ---------------- icons ---------------- */
@@ -2986,16 +3074,23 @@ function renderTransactions(){
 }
 function previewTxRow(t){
   const info = catInfo(t.category);
-  return `
-    <div class="txrow" data-preview-tx="${t.ruleId}" style="opacity:.6; border:1px dashed var(--line); border-radius:10px; cursor:pointer;">
-      <div class="tx-left">
-        <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
-        <div style="min-width:0;">
-          <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}<span style="color:var(--gold); font-size:10px; font-weight:600; border:1px solid rgba(212,169,79,.4); border-radius:5px; padding:1px 5px;">PRÉVU</span></div>
-          <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
-        </div>
+  const rowId = 'pv:' + t.ruleId + ':' + t.occKey + ':' + (t.isGoalTransfer ? 'g' : 't');
+  const content = `
+    <div class="tx-left">
+      <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
+      <div style="min-width:0;">
+        <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}<span style="color:var(--gold); font-size:10px; font-weight:600; border:1px solid rgba(212,169,79,.4); border-radius:5px; padding:1px 5px;">PRÉVU</span>${t.edited ? `<span style="color:var(--paperDim); flex-shrink:0; display:flex;" title="Modifiée pour cette échéance">${icon('pencil',11)}</span>` : ''}</div>
+        <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
       </div>
-      <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>
+    </div>
+    <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>`;
+  return `
+    <div class="swipe-wrap" style="position:relative; overflow:hidden; border-radius:10px;">
+      <div class="swipe-actions" style="position:absolute; inset:0; display:flex; align-items:stretch; justify-content:flex-end;">
+        <button data-edit-preview="${rowId}" style="width:56px; background:var(--gold); color:var(--ink); display:flex; align-items:center; justify-content:center;" title="Modifier cette échéance">${icon('pencil',16)}</button>
+        <button data-skip-preview="${rowId}" style="width:56px; background:var(--coral); color:var(--ink); display:flex; align-items:center; justify-content:center;" title="Ignorer cette échéance">${icon('trash',16)}</button>
+      </div>
+      <div class="txrow swipe-content" data-swipe-row="${rowId}" style="background:var(--surface); opacity:.6; border:1px dashed var(--line); position:relative; touch-action:pan-y;">${content}</div>
     </div>`;
 }
 
@@ -3464,12 +3559,14 @@ function renderQuickTxModal(){
 function renderAddTxModal(){
   const cats = catsForType(txFormState.type);
   const isEditing = !!txFormState.editingId;
+  const isPreviewEdit = !!txFormState.previewException;
   const advOpen = state.txAdvancedOpen;
   return `
     <div class="modal-overlay" data-close-modal="1">
       <div class="modal-sheet" data-swipe-dismiss="1" onclick="event.stopPropagation()">
         <div style="width:36px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 12px;"></div>
-        <div class="modal-head"><div class="modal-title ledger">${isEditing ? 'Modifier la transaction' : 'Nouvelle transaction'}</div><button data-close-x-modal="1">${icon('x',18)}</button></div>
+        <div class="modal-head"><div class="modal-title ledger">${isPreviewEdit ? 'Modifier cette échéance' : (isEditing ? 'Modifier la transaction' : 'Nouvelle transaction')}</div><button data-close-x-modal="1">${icon('x',18)}</button></div>
+        ${isPreviewEdit ? `<div style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--paperDim); background:var(--surfaceHi); border-radius:10px; padding:9px 11px; margin-bottom:14px; line-height:1.4;">${icon('repeat',13)}<span>Ce changement ne s'applique qu'à cette échéance PRÉVU — la récurrence et les mois suivants restent inchangés.</span></div>` : ''}
         <div class="type-toggle">
           <button data-tx-type="expense" style="background:${txFormState.type==='expense'?'var(--coral)':'transparent'}; color:${txFormState.type==='expense'?'var(--bg)':'var(--paperDim)'}">Dépense</button>
           <button data-tx-type="income" style="background:${txFormState.type==='income'?'var(--sage)':'transparent'}; color:${txFormState.type==='income'?'var(--bg)':'var(--paperDim)'}">Revenu</button>
@@ -3550,7 +3647,7 @@ function renderAddTxModal(){
               <input id="txPhotoInput" type="file" accept="image/*" capture="environment" style="display:none;">
             `}
           </div>
-          ${(()=>{
+          ${isPreviewEdit ? '' : (()=>{
             const editedTx = isEditing ? state.data.transactions.find(t=>t.id===txFormState.editingId) : null;
             const alreadyRecurring = editedTx && editedTx.recurringId;
             if(alreadyRecurring){
@@ -3571,7 +3668,13 @@ function renderAddTxModal(){
         ${state.txDuplicateWarning ? `
           <div class="alert" style="margin-bottom:12px;">${icon('alert',16)}<div>Une transaction identique (même montant, catégorie et jour) existe déjà. Tape à nouveau pour l'enregistrer quand même.</div></div>
         ` : ''}
-        <button class="submit-btn" data-submit-tx="1">${isEditing ? 'Enregistrer les modifications' : (state.txDuplicateWarning ? 'Enregistrer quand même' : 'Enregistrer')}</button>
+        ${(()=>{
+          if(!isPreviewEdit) return '';
+          const rule = getRecurringRuleById(txFormState.previewException.ruleId, txFormState.previewException.isGoal);
+          const hasOverride = rule && rule.exceptions && rule.exceptions[txFormState.previewException.occKey] && !rule.exceptions[txFormState.previewException.occKey].skip;
+          return hasOverride ? `<button data-reset-preview="1" class="btn-ghost" style="width:100%; justify-content:center; margin-bottom:12px;">${icon('x',13)} Revenir à l'échéance d'origine</button>` : '';
+        })()}
+        <button class="submit-btn" data-submit-tx="1">${isPreviewEdit ? 'Enregistrer cette échéance' : (isEditing ? 'Enregistrer les modifications' : (state.txDuplicateWarning ? 'Enregistrer quand même' : 'Enregistrer'))}</button>
       </div>
     </div>
   `;
@@ -3706,7 +3809,8 @@ function bindEvents(){
     if(source==='tx'){ openEditTx(id); }
     else { state.recurringModalOpen = true; rerender(); }
   }));
-  app.querySelectorAll('[data-preview-tx]').forEach(el=>el.addEventListener('click', ()=>{ state.recurringModalOpen = true; rerender(); }));
+  app.querySelectorAll('[data-edit-preview]').forEach(el=>el.addEventListener('click', ()=>{ openEditPreview(el.dataset.editPreview); }));
+  app.querySelectorAll('[data-skip-preview]').forEach(el=>el.addEventListener('click', ()=>{ skipPreviewOccurrence(el.dataset.skipPreview); }));
   app.querySelectorAll('[data-goto-today]').forEach(el=>el.addEventListener('click', ()=>{
     const today = new Date();
     setState({ viewY: today.getFullYear(), viewM: today.getMonth() });
@@ -3829,7 +3933,10 @@ function bindEvents(){
         const shouldOpen = active.dragging && active.dx < -REVEAL*0.4;
         row.style.transform = shouldOpen ? `translateX(-${REVEAL}px)` : 'translateX(0px)';
         row.dataset.open = shouldOpen ? '1' : '0';
-        if(wasTap && !active.wasOpen){ openEditTx(row.dataset.swipeRow); }
+        if(wasTap && !active.wasOpen){
+          const rid = row.dataset.swipeRow;
+          if(rid.startsWith('pv:')) openEditPreview(rid); else openEditTx(rid);
+        }
         active = null;
       };
       row.addEventListener('touchend', finish);
@@ -3971,6 +4078,18 @@ function bindEvents(){
     const isoDate = new Date(date).toISOString();
     const photo = txFormState.photo || null;
     const accountId = txFormState.accountId || 'main';
+    if(txFormState.previewException){
+      const { ruleId, occKey, isGoal } = txFormState.previewException;
+      mutateData(d=>{
+        const rule = isGoal ? (d.goalTransfers||[]).find(r=>r.id===ruleId) : (d.recurring||[]).find(r=>r.id===ruleId);
+        if(!rule) return;
+        if(!rule.exceptions) rule.exceptions = {};
+        rule.exceptions[occKey] = { type:txFormState.type, amount, category:txFormState.category, note, date:isoDate };
+      });
+      state.modal = null;
+      showToast('Échéance modifiée');
+      return;
+    }
     if(txFormState.editingId){
       const editId = txFormState.editingId;
       mutateData(d=>{
@@ -4035,6 +4154,16 @@ function bindEvents(){
     }catch(e){ showToast("Impossible de charger l'image"); }
   });
   app.querySelectorAll('[data-remove-photo]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.photo = null; rerender(); }));
+  app.querySelectorAll('[data-reset-preview]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!txFormState.previewException) return;
+    const { ruleId, occKey, isGoal } = txFormState.previewException;
+    mutateData(d=>{
+      const rule = isGoal ? (d.goalTransfers||[]).find(r=>r.id===ruleId) : (d.recurring||[]).find(r=>r.id===ruleId);
+      if(rule && rule.exceptions) delete rule.exceptions[occKey];
+    });
+    state.modal = null;
+    showToast('Échéance réinitialisée');
+  }));
 
   app.querySelectorAll('[data-goal-color]').forEach(el=>el.addEventListener('click', ()=>{ goalFormState.color = el.dataset.goalColor; rerender(); }));
   const submitGoal = app.querySelector('[data-submit-goal]');
