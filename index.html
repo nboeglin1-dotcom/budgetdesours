@@ -641,13 +641,17 @@ function processRecurring(){
   (state.data.recurring||[]).forEach(rule=>{
     let next = new Date(rule.nextDate);
     let guard = 0;
-    while(next <= today && guard < 1000){
+    while(guard < 1000){
       // Une echeance PRÉVU peut avoir ete modifiee ou ignoree via une exception (voir
       // recurringPreviewForMonth / openEditPreview) - il faut en tenir compte au moment ou
       // elle "tombe" et devient une vraie transaction, sinon la modification de l'utilisateur
       // est silencieusement perdue et remplacee par les valeurs par defaut de la regle.
+      // On regarde la date EFFECTIVE (celle choisie par l'utilisateur si modifiee) pour decider
+      // si l'echeance est due, pas seulement la date naturelle de la regle.
       const occKey = String(next.getTime());
       const ex = (rule.exceptions||{})[occKey];
+      const effDate = (ex && ex.date) ? new Date(ex.date) : next;
+      if(effDate > today) break;
       if(!ex || !ex.skip){
         state.data.transactions.unshift({
           id: uid(),
@@ -655,7 +659,7 @@ function processRecurring(){
           amount: (ex && ex.amount!=null) ? ex.amount : rule.amount,
           category: (ex && ex.category) ? ex.category : rule.category,
           note: (ex && ex.note!=null) ? ex.note : rule.note,
-          date: (ex && ex.date) ? ex.date : next.toISOString(),
+          date: effDate.toISOString(),
           recurringId: rule.id
         });
       }
@@ -715,13 +719,15 @@ function processGoalTransfers(){
     if(!goal) return;
     let next = new Date(rule.nextDate);
     let guard = 0;
-    while(next <= today && guard < 1000){
+    while(guard < 1000){
       const occKey = String(next.getTime());
       const ex = (rule.exceptions||{})[occKey];
+      const effDate = (ex && ex.date) ? new Date(ex.date) : next;
+      if(effDate > today) break;
       if(!ex || !ex.skip){
         const amt = (ex && ex.amount!=null) ? ex.amount : rule.amount;
         goal.current = Math.max(0, goal.current + amt);
-        state.data.transactions.unshift({ id: uid(), type:'expense', amount: amt, category:'epargne', note: (ex && ex.note!=null) ? ex.note : `Virement auto vers "${goal.name}"`, date: (ex && ex.date) ? ex.date : next.toISOString(), accountId: goal.accountId||'main' });
+        state.data.transactions.unshift({ id: uid(), type:'expense', amount: amt, category:'epargne', note: (ex && ex.note!=null) ? ex.note : `Virement auto vers "${goal.name}"`, date: effDate.toISOString(), accountId: goal.accountId||'main' });
       }
       if(ex){ delete rule.exceptions[occKey]; }
       next = addPeriod(next, rule.frequency);
@@ -2536,17 +2542,16 @@ function computeForecast(){
   const variableExpense = variableExpensesByMonth.length ? variableExpensesByMonth.reduce((a,b)=>a+b,0)/variableExpensesByMonth.length : Math.max(0, avgExpense - recurExpensePerMonth);
   const variableIncome = variableIncomesByMonth.length ? variableIncomesByMonth.reduce((a,b)=>a+b,0)/variableIncomesByMonth.length : Math.max(0, avgIncome - recurIncomePerMonth);
 
-  // "Reste" = revenus du mois moins depenses du mois (reel + estime), PAS un solde bancaire
-  // cumule depuis le debut de l'historique : on ne rajoute plus le total de toutes les
-  // transactions passees, uniquement le resultat net du mois en cours.
-  const curMonthTxFC = visibleTransactions().filter(t=>sameMonth(t.date, today.getFullYear(), today.getMonth()));
-  const realIncomeEffectFC = curMonthTxFC.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
-  const realExpenseEffectFC = curMonthTxFC.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
+  // "Reste" = solde reel actuel (toutes les transactions reelles a ce jour, comme sur le
+  // compte en banque) moins ce qu'il reste concretement a debiter/encaisser ce mois-ci
+  // (les echeances PRÉVU encore a venir). Pas d'estimation statistique de depenses futures
+  // en plus : uniquement du reel + des echeances connues, pour que le chiffre corresponde a
+  // ce que la personne voit vraiment sur son compte.
+  const realBalanceToDate = visibleTransactions()
+    .filter(t => new Date(t.date) <= today)
+    .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   const recFC = recurringOccurrencesInMonth(today.getFullYear(), today.getMonth());
-  const daysInMonthFC = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
-  const daysRemainingFC = Math.max(0, daysInMonthFC - today.getDate() + 1);
-  const proratedVariableFC = variableExpense * (daysRemainingFC/daysInMonthFC);
-  const startBalance = (realIncomeEffectFC + recFC.income) - (realExpenseEffectFC + recFC.expense + proratedVariableFC);
+  const startBalance = realBalanceToDate + recFC.income - recFC.expense;
   const points = [];
   let lastValue = startBalance;
   for(let i=1;i<=24;i++){
@@ -2629,12 +2634,12 @@ function balanceForViewedMonth(f, viewY, viewM){
   const diff = viewIdx - curIdx;
   if(diff === 0) return f.startBalance;
   if(diff < 0){
-    // Mois passe, entierement connu : revenus reels du mois moins depenses reelles du mois
-    // (meme definition que pour le mois en cours/futur - pas un solde bancaire cumule).
-    const monthTx = visibleTransactions().filter(t=>sameMonth(t.date, viewY, viewM));
-    const monthIncome = monthTx.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
-    const monthExpense = monthTx.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
-    return monthIncome - monthExpense;
+    // Mois passe : solde reel tel qu'il etait a la fin de ce mois-la (cumul de toutes les
+    // transactions reelles jusqu'a cette date), comme un vrai solde bancaire.
+    const monthEnd = new Date(viewY, viewM+1, 0, 23,59,59,999);
+    return visibleTransactions()
+      .filter(t => new Date(t.date) <= monthEnd)
+      .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   }
   if(diff <= 24) return f.points[diff-1].value;
   return f.startBalance + f.netAvg*diff;
