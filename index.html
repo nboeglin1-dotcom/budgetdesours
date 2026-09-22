@@ -2572,8 +2572,11 @@ function computeForecast(){
     const realIncomeFC2 = monthTxFC2.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
     const realExpenseFC2 = monthTxFC2.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
     const rec = recurringOccurrencesInMonth(y,m);
-    const monthIncome = realIncomeFC2 + rec.income + variableIncome;
-    const monthExpense = realExpenseFC2 + rec.expense + variableExpense;
+    // Revenus/depenses = entrees et sorties connues (reelles + echeances recurrentes a venir),
+    // point barre - meme methode que pour le mois en cours, sans estimation statistique
+    // en plus qui viendrait gonfler artificiellement les mois futurs.
+    const monthIncome = realIncomeFC2 + rec.income;
+    const monthExpense = realExpenseFC2 + rec.expense;
     const value = lastValue + (monthIncome - monthExpense);
     lastValue = value;
     points.push({ label: `${MONTHS_SHORT[m]} ${String(y).slice(2)}`, value, y, m });
@@ -2736,12 +2739,12 @@ function computeMonthStats(){
     income = realIncome + recurThisMonth.income;
     expense = realExpense + recurThisMonth.expense;
   } else if(isFuture){
-    // Mois futur : combiner toute transaction reelle deja ajoutee manuellement,
-    // les recurrences prevues ce mois-la, et une estimation complete des revenus/depenses variables
-    // (le "Reste" de ces mois-la, dans le previsionnel, est lui aussi une projection statistique -
-    // les deux chiffres restent donc coherents entre eux pour un mois futur).
-    income = realIncome + recurThisMonth.income + f.variableIncome;
-    expense = realExpense + recurThisMonth.expense + f.variableExpense;
+    // Mois futur : entrees et sorties connues, point barre - meme methode que le mois en
+    // cours (reel deja saisi + echeances recurrentes prevues ce mois-la), sans estimation
+    // statistique en plus. Les revenus/depenses etant stables d'un mois sur l'autre, ce
+    // chiffre reste coherent avec celui du mois en cours au lieu de sauter artificiellement.
+    income = realIncome + recurThisMonth.income;
+    expense = realExpense + recurThisMonth.expense;
   } else {
     // Mois passe : uniquement le reel, deja completement connu
     income = realIncome;
