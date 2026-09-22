@@ -1227,6 +1227,8 @@ function skipPreviewOccurrence(rowId){
     if(!rule.exceptions) rule.exceptions = {};
     rule.exceptions[occKey] = { skip:true };
   });
+  processRecurring();
+  processGoalTransfers();
   showUndoToast('Échéance ignorée', ()=>{
     mutateData(d=>{
       const rule = isGoal ? (d.goalTransfers||[]).find(r=>r.id===ruleId) : (d.recurring||[]).find(r=>r.id===ruleId);
@@ -3049,7 +3051,8 @@ function renderTransactions(){
     .filter(t => !state.hidePastTx || new Date(t.date) >= todayStart);
   const previewList = recurringPreviewForMonth(state.viewY, state.viewM)
     .filter(t => state.txFilter==='all' ? true : t.type===state.txFilter)
-    .filter(t => !q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q));
+    .filter(t => !q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q))
+    .filter(t => !state.hidePastTx || new Date(t.date) >= todayStart);
   const pastAndToday = realList.filter(t=> new Date(t.date) <= todayStart.getTime()+86399999).sort((a,b)=> new Date(b.date)-new Date(a.date));
   const upcoming = [...realList.filter(t=> new Date(t.date) > todayStart.getTime()+86399999), ...previewList].sort((a,b)=> new Date(a.date)-new Date(b.date));
   const list = [...pastAndToday, ...upcoming];
@@ -4135,6 +4138,11 @@ function bindEvents(){
         if(!rule.exceptions) rule.exceptions = {};
         rule.exceptions[occKey] = { type:txFormState.type, amount, category:txFormState.category, note, date:isoDate };
       });
+      // Si la nouvelle date choisie est deja passee (ou aujourd'hui), l'echeance doit devenir
+      // une vraie transaction tout de suite plutot que de rester affichee en PRÉVU jusqu'au
+      // prochain rechargement de l'appli (processRecurring ne tourne normalement qu'au demarrage).
+      processRecurring();
+      processGoalTransfers();
       state.modal = null;
       showToast('Échéance modifiée');
       return;
