@@ -642,7 +642,24 @@ function processRecurring(){
     let next = new Date(rule.nextDate);
     let guard = 0;
     while(next <= today && guard < 1000){
-      state.data.transactions.unshift({ id: uid(), type: rule.type, amount: rule.amount, category: rule.category, note: rule.note, date: next.toISOString(), recurringId: rule.id });
+      // Une echeance PRÉVU peut avoir ete modifiee ou ignoree via une exception (voir
+      // recurringPreviewForMonth / openEditPreview) - il faut en tenir compte au moment ou
+      // elle "tombe" et devient une vraie transaction, sinon la modification de l'utilisateur
+      // est silencieusement perdue et remplacee par les valeurs par defaut de la regle.
+      const occKey = String(next.getTime());
+      const ex = (rule.exceptions||{})[occKey];
+      if(!ex || !ex.skip){
+        state.data.transactions.unshift({
+          id: uid(),
+          type: (ex && ex.type) ? ex.type : rule.type,
+          amount: (ex && ex.amount!=null) ? ex.amount : rule.amount,
+          category: (ex && ex.category) ? ex.category : rule.category,
+          note: (ex && ex.note!=null) ? ex.note : rule.note,
+          date: (ex && ex.date) ? ex.date : next.toISOString(),
+          recurringId: rule.id
+        });
+      }
+      if(ex){ delete rule.exceptions[occKey]; }
       next = addPeriod(next, rule.frequency);
       guard++;
       changed = true;
@@ -699,8 +716,14 @@ function processGoalTransfers(){
     let next = new Date(rule.nextDate);
     let guard = 0;
     while(next <= today && guard < 1000){
-      goal.current = Math.max(0, goal.current + rule.amount);
-      state.data.transactions.unshift({ id: uid(), type:'expense', amount: rule.amount, category:'epargne', note:`Virement auto vers "${goal.name}"`, date: next.toISOString(), accountId: goal.accountId||'main' });
+      const occKey = String(next.getTime());
+      const ex = (rule.exceptions||{})[occKey];
+      if(!ex || !ex.skip){
+        const amt = (ex && ex.amount!=null) ? ex.amount : rule.amount;
+        goal.current = Math.max(0, goal.current + amt);
+        state.data.transactions.unshift({ id: uid(), type:'expense', amount: amt, category:'epargne', note: (ex && ex.note!=null) ? ex.note : `Virement auto vers "${goal.name}"`, date: (ex && ex.date) ? ex.date : next.toISOString(), accountId: goal.accountId||'main' });
+      }
+      if(ex){ delete rule.exceptions[occKey]; }
       next = addPeriod(next, rule.frequency);
       guard++;
       changed = true;
@@ -3769,6 +3792,7 @@ function renderRecurringModal(){
         ${allRules.length>6 ? `<div class="search-wrap" style="margin-bottom:14px;">${icon('search',15)}<input placeholder="Rechercher…" value="${escapeHtml(state.recurringSearchQuery||'')}" oninput="setState({recurringSearchQuery:this.value})"></div>` : ''}
         ${rules.length===0 ? `<div class="empty">${q ? 'Aucun résultat' : 'Aucune récurrence active'}</div>` : rules.map(r=>{
           const info = catInfo(r.category);
+          const exKeys = Object.keys(r.exceptions||{}).filter(k=>r.exceptions[k]).sort((a,b)=>Number(a)-Number(b));
           return `
             <div class="txrow">
               <div class="tx-left">
@@ -3780,6 +3804,19 @@ function renderRecurringModal(){
                 <button class="tx-del" data-del-recur="${r.id}">${icon('trash',14)}</button>
               </div>
             </div>
+            ${exKeys.length>0 ? `
+              <div style="padding:0 0 10px 44px;">
+                ${exKeys.map(k=>{
+                  const ex = r.exceptions[k];
+                  const d = new Date(Number(k));
+                  const label = ex.skip ? 'Ignorée' : `Modifiée${ex.amount!=null?` (${fmt2(ex.amount)})`:''}`;
+                  return `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11.5px; color:var(--paperDim); padding:4px 0; border-top:1px dashed var(--line);">
+                    <span>${label} · échéance du ${d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'})}</span>
+                    <button data-restore-exception="${r.id}:${k}" style="color:var(--gold); background:none; border:none; padding:2px 6px; flex-shrink:0;">Rétablir</button>
+                  </div>`;
+                }).join('')}
+              </div>
+            ` : ''}
           `;
         }).join('')}
       </div>
@@ -3810,6 +3847,14 @@ function bindEvents(){
   }));
   app.querySelectorAll('[data-edit-preview]').forEach(el=>el.addEventListener('click', ()=>{ openEditPreview(el.dataset.editPreview); }));
   app.querySelectorAll('[data-skip-preview]').forEach(el=>el.addEventListener('click', ()=>{ skipPreviewOccurrence(el.dataset.skipPreview); }));
+  app.querySelectorAll('[data-restore-exception]').forEach(el=>el.addEventListener('click', ()=>{
+    const [ruleId, occKey] = el.dataset.restoreException.split(':');
+    mutateData(d=>{
+      const rule = (d.recurring||[]).find(r=>r.id===ruleId) || (d.goalTransfers||[]).find(r=>r.id===ruleId);
+      if(rule && rule.exceptions) delete rule.exceptions[occKey];
+    });
+    showToast('Échéance rétablie');
+  }));
   app.querySelectorAll('[data-goto-today]').forEach(el=>el.addEventListener('click', ()=>{
     const today = new Date();
     setState({ viewY: today.getFullYear(), viewM: today.getMonth() });
