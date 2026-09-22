@@ -2545,15 +2545,20 @@ function computeForecast(){
   const variableIncome = variableIncomesByMonth.length ? variableIncomesByMonth.reduce((a,b)=>a+b,0)/variableIncomesByMonth.length : Math.max(0, avgIncome - recurIncomePerMonth);
 
   // "Reste" = solde reel actuel (toutes les transactions reelles a ce jour, comme sur le
-  // compte en banque) moins ce qu'il reste concretement a debiter/encaisser ce mois-ci
-  // (les echeances PRÉVU encore a venir). Pas d'estimation statistique de depenses futures
-  // en plus : uniquement du reel + des echeances connues, pour que le chiffre corresponde a
-  // ce que la personne voit vraiment sur son compte.
+  // compte en banque) moins ce qu'il reste concretement a debiter/encaisser ce mois-ci :
+  // les echeances PRÉVU (recurrentes) encore a venir, ET les transactions ponctuelles deja
+  // saisies mais datees dans le futur (ex: un impot ajoute a l'avance pour le 28 du mois).
+  // Ces dernieres sont reelles (pas une estimation statistique) donc on les inclut aussi,
+  // sinon elles restent invisibles du "Reste" jusqu'a leur date alors qu'elles sont deja
+  // connues et comptees dans "Depenses du mois".
   const realBalanceToDate = visibleTransactions()
     .filter(t => new Date(t.date) <= today)
     .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
+  const futureRealThisMonth = visibleTransactions()
+    .filter(t => new Date(t.date) > today && sameMonth(t.date, today.getFullYear(), today.getMonth()))
+    .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   const recFC = recurringOccurrencesInMonth(today.getFullYear(), today.getMonth());
-  const startBalance = realBalanceToDate + recFC.income - recFC.expense;
+  const startBalance = realBalanceToDate + futureRealThisMonth + recFC.income - recFC.expense;
   const points = [];
   let lastValue = startBalance;
   for(let i=1;i<=24;i++){
