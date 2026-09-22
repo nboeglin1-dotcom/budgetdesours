@@ -39,6 +39,10 @@
   body{padding-bottom:env(safe-area-inset-bottom);}
   .fab-add{position:fixed; right:18px; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:29; width:52px; height:52px; border-radius:50%; background:var(--gold); color:var(--ink); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(0,0,0,.28); transition:transform .12s ease;}
   .fab-add:active{transform:scale(.92);}
+  .fab-voice{position:fixed; left:18px; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:29; width:52px; height:52px; border-radius:50%; background:var(--surfaceHi); border:1px solid var(--line); color:var(--paper); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(0,0,0,.22); transition:transform .12s ease, background .15s ease, color .15s ease;}
+  .fab-voice:active{transform:scale(.92);}
+  .fab-voice.listening{background:var(--coral); color:#fff; border-color:var(--coral); animation:voicePulse 1.1s ease-in-out infinite;}
+  @keyframes voicePulse{0%{box-shadow:0 6px 16px rgba(232,102,77,.3), 0 0 0 0 rgba(232,102,77,.5);} 70%{box-shadow:0 6px 16px rgba(232,102,77,.3), 0 0 0 14px rgba(232,102,77,0);} 100%{box-shadow:0 6px 16px rgba(232,102,77,.3), 0 0 0 0 rgba(232,102,77,0);}}
   .ledger{font-family:'Fraunces',serif;}
   .mono{font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums;}
   button{cursor:pointer; border:none; background:none; color:inherit; font-size:inherit; touch-action:manipulation;}
@@ -303,6 +307,98 @@ function catsForType(type){
 function findCategoryIdByLabel(label, type){
   const found = catsForType(type).find(c => c.label.toLowerCase() === label.toLowerCase());
   return found ? found.id : null;
+}
+/* ---------------- Saisie vocale ---------------- */
+// Objectif : ne jamais enregistrer une transaction sans validation humaine. On transcrit,
+// on essaie d'extraire montant/type/categorie du mieux possible, et on pre-remplit le
+// formulaire habituel (avec la transcription brute en note) pour que l'utilisateur verifie
+// et corrige avant de valider - c'est ca qui garantit "pas d'erreurs", pas une IA parfaite.
+function stripAccents(s){ return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function normalizeVoiceText(s){ return stripAccents((s||'').toLowerCase()).replace(/[^a-z0-9,.\s-]/g,' ').replace(/\s+/g,' ').trim(); }
+
+const FR_UNITS = { 'zero':0,'un':1,'une':1,'deux':2,'trois':3,'quatre':4,'cinq':5,'six':6,'sept':7,'huit':8,'neuf':9,'dix':10,
+  'onze':11,'douze':12,'treize':13,'quatorze':14,'quinze':15,'seize':16,'dix-sept':17,'dix-huit':18,'dix-neuf':19 };
+const FR_TENS = { 'vingt':20,'trente':30,'quarante':40,'cinquante':50,'soixante':60,'quatre-vingt':80,'quatre-vingts':80,'quatre-vingt-dix':90 };
+// Parseur de nombres ecrits en toutes lettres (repli si la reconnaissance vocale n'a pas
+// deja converti "quinze" en "15", ce que Safari fait generalement tout seul en francais).
+function frenchWordsToNumber(text){
+  let t = ' ' + text.replace(/-/g,' ') + ' ';
+  t = t.replace(/\bquatre vingt dix\b/g,'quatrevingtdix').replace(/\bquatre vingts?\b/g,'quatrevingt')
+       .replace(/\bdix sept\b/g,'dixsept').replace(/\bdix huit\b/g,'dixhuit').replace(/\bdix neuf\b/g,'dixneuf');
+  const map = { ...FR_UNITS, 'dixsept':17,'dixhuit':18,'dixneuf':19,'quatrevingt':80,'quatrevingtdix':90,
+    'vingt':20,'trente':30,'quarante':40,'cinquante':50,'soixante':60,'cent':100,'cents':100,'mille':1000 };
+  const words = t.trim().split(/\s+/).filter(w=>w && w!=='et');
+  if(words.length===0 || !words.some(w=>map[w]!=null)) return null;
+  let total = 0, current = 0, matchedAny = false;
+  words.forEach(w=>{
+    if(map[w]==null) return;
+    matchedAny = true;
+    const v = map[w];
+    if(v===100){ current = (current||1)*100; }
+    else if(v===1000){ total += (current||1)*1000; current = 0; }
+    else if(v>=20){ current += v; }
+    else { current += v; }
+  });
+  total += current;
+  return matchedAny ? total : null;
+}
+function extractVoiceAmount(normText){
+  // Priorite au chiffre déjà transcrit ("15 euros", "15,50e", "228") : c'est le cas le plus fiable.
+  const digitMatch = normText.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:euros?|eur|e)?\b/);
+  if(digitMatch) return Math.round(parseFloat(digitMatch[1].replace(',','.'))*100)/100;
+  // Repli : montant dicte en toutes lettres, avec gestion des centimes ("dix euros cinquante").
+  const centMatch = normText.match(/^(.*?)\s*(?:euros?|eur)\s+(.*?)(?:centimes?)?$/);
+  if(centMatch && centMatch[2].trim()){
+    const whole = frenchWordsToNumber(centMatch[1]);
+    const cents = frenchWordsToNumber(centMatch[2]);
+    if(whole!=null && cents!=null) return whole + cents/100;
+  }
+  const whole = frenchWordsToNumber(normText);
+  return whole!=null ? whole : null;
+}
+const VOICE_INCOME_HINTS = ['recu','recois','recue','vire','viree','virement recu','remboursement','salaire','paie','paye','gagne','encaisse','rentree','revenu','retrait','depot recu'];
+const VOICE_EXPENSE_HINTS = ['depense','paye ','achete','achat','facture','retire','sorti'];
+function detectVoiceType(normText){
+  const hasIncome = VOICE_INCOME_HINTS.some(k=>normText.includes(k));
+  const hasExpense = VOICE_EXPENSE_HINTS.some(k=>normText.includes(k));
+  if(hasIncome && !hasExpense) return 'income';
+  return 'expense'; // par defaut : la grande majorite des saisies rapides sont des depenses
+}
+// Synonymes -> libelle de categorie cible (normalise, sans accent). Complete la simple
+// recherche du libelle exact dans la phrase dictee.
+const VOICE_CATEGORY_SYNONYMS = [
+  { label:'alimentation', words:['course','courses','supermarche','boulangerie','boucherie','marche','epicerie'] },
+  { label:'logement', words:['loyer','pret maison','credit immo','charges'] },
+  { label:'transport', words:['essence','carburant','station service','train','metro','bus','peage','parking','navigo'] },
+  { label:'loisirs', words:['resto','restaurant','cinema','sortie','concert'] },
+  { label:'sante', words:['pharmacie','medecin','docteur','dentiste','mutuelle'] },
+  { label:'shopping', words:['vetement','vetements','habits','magasin'] },
+  { label:'abonnements', words:['netflix','spotify','abonnement','forfait','internet','canal'] },
+  { label:'salaire', words:['salaire','paie','paye'] },
+  { label:'freelance', words:['freelance','mission','facture client'] },
+];
+function matchVoiceCategory(normText, type){
+  const cats = catsForType(type);
+  // 1) correspondance directe et la plus longue possible sur le libelle reel de la categorie
+  //    (couvre aussi bien les categories perso de l'utilisateur que les categories de base).
+  const byLabel = [...cats].sort((a,b)=> b.label.length - a.label.length)
+    .find(c => normText.includes(stripAccents(c.label.toLowerCase()).trim()) && c.label.trim().length>2);
+  if(byLabel) return byLabel.id;
+  // 2) synonymes usuels
+  for(const entry of VOICE_CATEGORY_SYNONYMS){
+    if(entry.words.some(w=>normText.includes(w))){
+      const found = cats.find(c=> stripAccents(c.label.toLowerCase())===entry.label);
+      if(found) return found.id;
+    }
+  }
+  return null;
+}
+function parseVoiceTransaction(rawText){
+  const normText = normalizeVoiceText(rawText);
+  const type = detectVoiceType(normText);
+  const amount = extractVoiceAmount(normText);
+  const categoryId = matchVoiceCategory(normText, type);
+  return { type, amount, categoryId, rawText };
 }
 function freqLabel(f){ return {weekly:'Chaque semaine', monthly:'Chaque mois', yearly:'Chaque année'}[f] || f; }
 function addPeriod(date, freq){
@@ -605,6 +701,10 @@ let state = {
   habitDestinationStep: false,
   csvImportOpen: false,
   csvImport: null,
+  voiceListening: false,
+  voiceLastTranscript: null,
+  voiceLowConfidence: false,
+  voiceReviewActive: false,
   pdfDebugOpen: false,
   pdfDebugLines: null,
   habitForm: { label:'', amount:'', frequency:'daily' },
@@ -833,6 +933,70 @@ function showUndoToast(msg, undoFn){
   state.toast = { msg, undo: undoFn }; rerender();
   clearTimeout(showToast._t);
   showToast._t = setTimeout(()=>{ state.toast=null; rerender(); }, 4500);
+}
+
+/* ---------------- Micro / saisie vocale ---------------- */
+function voiceSupported(){
+  return typeof window!=='undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+let _voiceRecognition = null;
+function startVoiceCapture(){
+  if(!voiceSupported()){ showToast("Reconnaissance vocale indisponible sur cet appareil"); return; }
+  if(state.voiceListening){ if(_voiceRecognition){ try{ _voiceRecognition.stop(); }catch(e){} } return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR();
+  _voiceRecognition = rec;
+  rec.lang = 'fr-FR';
+  rec.continuous = false;
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  state.voiceListening = true;
+  rerender();
+  rec.onresult = (evt)=>{
+    const transcript = evt.results && evt.results[0] && evt.results[0][0] ? evt.results[0][0].transcript : '';
+    if(transcript) openVoiceReview(transcript);
+  };
+  rec.onerror = (evt)=>{
+    state.voiceListening = false;
+    const messages = { 'not-allowed':"Accès au micro refusé — autorise-le dans les réglages Safari", 'no-speech':"Je n'ai rien entendu, réessaie", 'network':"Pas de réseau pour la reconnaissance vocale" };
+    showToast(messages[evt.error] || "Erreur de reconnaissance vocale");
+    rerender();
+  };
+  rec.onend = ()=>{
+    state.voiceListening = false;
+    _voiceRecognition = null;
+    rerender();
+  };
+  try{ rec.start(); }
+  catch(e){ state.voiceListening = false; showToast("Impossible de démarrer le micro"); rerender(); }
+}
+// A partir de la transcription, pre-remplit le formulaire habituel d'ajout de transaction
+// et l'ouvre pour verification - RIEN n'est jamais enregistre automatiquement.
+function openVoiceReview(transcript){
+  const parsed = parseVoiceTransaction(transcript);
+  const cats = catsForType(parsed.type);
+  const categoryId = parsed.categoryId || cats[0].id;
+  txFormState = {
+    type: parsed.type,
+    category: categoryId,
+    date: defaultTxDate(),
+    recurring: false,
+    frequency: 'monthly',
+    note: transcript,
+    amount: parsed.amount!=null ? parsed.amount : '',
+    editingId: null,
+    photo: null,
+    accountId: state.activeAccountFilter || txFormState.accountId || 'main',
+  };
+  state.txAdvancedOpen = true; // pour que la transcription (note) soit visible immediatement, a verifier
+  state.txDuplicateWarning = false;
+  state.voiceLowConfidence = (parsed.amount==null || !parsed.categoryId);
+  state.voiceReviewActive = true;
+  state.modal = 'addTx';
+  rerender();
+  if(state.voiceLowConfidence){
+    showToast(parsed.amount==null ? "Montant non détecté — vérifie avant d'ajouter" : "Catégorie non détectée — vérifie avant d'ajouter");
+  }
 }
 
 function parseCSV(text){
@@ -1286,6 +1450,7 @@ const ICONS = {
   backspace: `<path d="M9 6h10a2 2 0 012 2v8a2 2 0 01-2 2H9l-6-6 6-6z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/><path d="M13 10l4 4m0-4l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
   download: `<path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/>`,
   upload: `<path d="M12 21V9m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/>`,
+  mic: `<rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M5 10.5a7 7 0 0014 0" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/><path d="M12 17.5V22M8.5 22h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>`,
   shield: `<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>`,
   chartbar: `<path d="M4 20V10M10 20V4M16 20v-7M4 20h16" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
   bulb: `<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
@@ -1427,6 +1592,9 @@ function renderApp(){
     ${renderTabbar()}
     ${(!state.modal && state.tab!=='dashboard') ? `
       <button data-open="addTx" class="fab-add" aria-label="Ajouter une transaction">${icon('plus',22)}</button>
+    ` : ''}
+    ${(!state.modal && voiceSupported()) ? `
+      <button data-voice-fab="1" class="fab-voice ${state.voiceListening?'listening':''}" aria-label="Ajouter une transaction à la voix">${icon('mic',22)}</button>
     ` : ''}
     ${state.modal==='addTx' ? renderAddTxModal() : ''}
     ${state.modal==='addGoal' ? renderAddGoalModal() : ''}
@@ -3676,6 +3844,7 @@ function renderAddTxModal(){
         <div style="width:36px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 12px;"></div>
         <div class="modal-head"><div class="modal-title ledger">${isPreviewEdit ? 'Modifier cette échéance' : (isEditing ? 'Modifier la transaction' : 'Nouvelle transaction')}</div><button data-close-x-modal="1">${icon('x',18)}</button></div>
         ${isPreviewEdit ? `<div style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:var(--paperDim); background:var(--surfaceHi); border-radius:10px; padding:9px 11px; margin-bottom:14px; line-height:1.4;">${icon('repeat',13)}<span>Ce changement ne s'applique qu'à cette échéance PRÉVU — la récurrence et les mois suivants restent inchangés.</span></div>` : ''}
+        ${state.voiceReviewActive ? `<div style="display:flex; align-items:flex-start; gap:7px; font-size:12px; color:${state.voiceLowConfidence?'var(--coral)':'var(--paperDim)'}; background:var(--surfaceHi); border-radius:10px; padding:9px 11px; margin-bottom:14px; line-height:1.4;">${icon('mic',13)}<span>${state.voiceLowConfidence ? "Dictée : vérifie bien le montant et la catégorie avant d'ajouter — pas tout détecté avec certitude." : "Dictée reconnue — vérifie avant d'ajouter."}</span></div>` : ''}
         <div class="type-toggle">
           <button data-tx-type="expense" style="background:${txFormState.type==='expense'?'var(--coral)':'transparent'}; color:${txFormState.type==='expense'?'var(--bg)':'var(--paperDim)'}">Dépense</button>
           <button data-tx-type="income" style="background:${txFormState.type==='income'?'var(--sage)':'transparent'}; color:${txFormState.type==='income'?'var(--bg)':'var(--paperDim)'}">Revenu</button>
@@ -3960,7 +4129,7 @@ function bindEvents(){
     window.scrollTo(0,0);
   }));
   app.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{
-    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' }; state.txAdvancedOpen = false; state.txDuplicateWarning = false; }
+    if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' }; state.txAdvancedOpen = false; state.txDuplicateWarning = false; state.voiceReviewActive = false; }
     if(el.dataset.open==='addGoal'){ goalFormState = { color: COLORS.sage }; }
     setState({modal: el.dataset.open});
     if(el.dataset.open==='addTx'){
@@ -3973,12 +4142,14 @@ function bindEvents(){
     txFormState = { type, category:(type==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' };
     state.txAdvancedOpen = false;
     state.txDuplicateWarning = false;
+    state.voiceReviewActive = false;
     setState({modal:'addTx'});
     const amtEl = document.getElementById('txAmount');
     if(amtEl) setTimeout(()=> amtEl.focus(), 320);
   }));
-  app.querySelectorAll('[data-close-modal]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ setState({modal:null}); } }));
-  app.querySelectorAll('[data-close-x-modal]').forEach(el=>el.addEventListener('click', ()=>{ setState({modal:null}); }));
+  app.querySelectorAll('[data-close-modal]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.voiceReviewActive = false; setState({modal:null}); } }));
+  app.querySelectorAll('[data-close-x-modal]').forEach(el=>el.addEventListener('click', ()=>{ state.voiceReviewActive = false; setState({modal:null}); }));
+  app.querySelectorAll('[data-voice-fab]').forEach(el=>el.addEventListener('click', ()=>{ startVoiceCapture(); }));
 
   app.querySelectorAll('[data-del-tx]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.delTx;
@@ -4276,6 +4447,7 @@ function bindEvents(){
       }
     });
     state.txDuplicateWarning = false;
+    state.voiceReviewActive = false;
     state.modal = null;
     showToast(txFormState.recurring ? 'Récurrence créée' : (txFormState.type==='income' ? 'Entrée ajoutée' : 'Dépense ajoutée'));
   });
