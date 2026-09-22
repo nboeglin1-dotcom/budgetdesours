@@ -4599,6 +4599,15 @@ function bindEvents(){
     }
     const last5 = [...state.data.transactions].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5)
       .map(t=>`${t.note||t.category} | ${t.type==='income'?'+':'-'}${t.amount} | ${new Date(t.date).toLocaleDateString('fr-FR')} | recId:${t.recurringId?'oui':'non'}`).join('\n');
+    // Solde reel actuel : uniquement les transactions deja datees a aujourd'hui ou avant,
+    // sur TOUT l'historique (aucune projection, aucune recurrence a venir, aucune estimation).
+    const todayEnd = new Date(); todayEnd.setHours(23,59,59,999);
+    const realBalanceToday = visibleTransactions().filter(t=>new Date(t.date) <= todayEnd)
+      .reduce((sum,t)=> sum + (t.type==='income' ? t.amount : -t.amount), 0);
+    const futureDatedThisMonth = monthTxNow.filter(t=>new Date(t.date) > todayEnd);
+    const futureDatedList = futureDatedThisMonth.length ? futureDatedThisMonth
+      .map(t=>`${t.note||t.category} | ${t.type==='income'?'+':'-'}${t.amount} | ${new Date(t.date).toLocaleDateString('fr-FR')}`).join('\n')
+      : '(aucune)';
     // Détail du calcul du mois affiché (réel + récurrences restantes + variable au prorata)
     const viewTxAll = monthTxNow.filter(t=>t.type==='expense' && t.category!=='epargne');
     const realExpenseNow = viewTxAll.reduce((sum,t)=>sum+t.amount,0);
@@ -4608,7 +4617,7 @@ function bindEvents(){
     const proratedVariableNow = f.variableExpense * (daysRemainingNow/daysInMonthNow);
     const allViewTx = [...viewTxAll].sort((a,b)=>new Date(b.date)-new Date(a.date))
       .map(t=>`${t.note||t.category} | -${t.amount} | ${new Date(t.date).toLocaleDateString('fr-FR')} | recId:${t.recurringId?'oui':'non'}`).join('\n');
-    alert(`Mois affiché : ${MONTHS[state.viewM]} ${state.viewY}\n\nReste : ${fmt2(s.bal)}\nDépenses totales calculées : ${fmt2(s.expense)} (estimé: ${s.useExpenseEstimate})\n\n--- Détail du calcul des dépenses de ce mois ---\nDépenses réelles déjà enregistrées : ${fmt2(realExpenseNow)}\n+ Récurrences pas encore passées : ${fmt2(recurNow.expense)}\n+ Variable estimée (${daysRemainingNow}/${daysInMonthNow} jours restants) : ${fmt2(proratedVariableNow)}\n= Total : ${fmt2(realExpenseNow + recurNow.expense + proratedVariableNow)}\n\n--- Toutes les dépenses réelles de ${MONTHS[state.viewM]} (${viewTxAll.length}) ---\n${allViewTx}\n\n--- Détail des 3 mois utilisés pour la moyenne ---\n${monthsDetail.join('\n')}\n\nmonthsWithData détectés : ${f.monthsWithData}\navgExpense : ${fmt2(f.avgExpense)}\nvariableExpense : ${fmt2(f.variableExpense)}\n\nTotal transactions dans l'appli : ${state.data.transactions.length}\n\n5 dernières transactions (tous mois) :\n${last5}`);
+    alert(`--- Comparaison avec ta banque ---\nSolde réel actuel (transactions datées à aujourd'hui ou avant, tout historique confondu) : ${fmt2(realBalanceToday)}\n\nReste affiché (projection fin de mois) : ${fmt2(s.bal)}\nÉcart : ${fmt2(s.bal - realBalanceToday)} (= ce que l'app prévoit encore comme mouvements d'ici la fin du mois)\n\n--- Transactions déjà enregistrées mais datées après aujourd'hui (${futureDatedThisMonth.length}) ---\n${futureDatedList}\n\nMois affiché : ${MONTHS[state.viewM]} ${state.viewY}\n\nReste : ${fmt2(s.bal)}\nDépenses totales calculées : ${fmt2(s.expense)} (estimé: ${s.useExpenseEstimate})\n\n--- Détail du calcul des dépenses de ce mois ---\nDépenses réelles déjà enregistrées : ${fmt2(realExpenseNow)}\n+ Récurrences pas encore passées : ${fmt2(recurNow.expense)}\n+ Variable estimée (${daysRemainingNow}/${daysInMonthNow} jours restants) : ${fmt2(proratedVariableNow)}\n= Total : ${fmt2(realExpenseNow + recurNow.expense + proratedVariableNow)}\n\n--- Toutes les dépenses réelles de ${MONTHS[state.viewM]} (${viewTxAll.length}) ---\n${allViewTx}\n\n--- Détail des 3 mois utilisés pour la moyenne ---\n${monthsDetail.join('\n')}\n\nmonthsWithData détectés : ${f.monthsWithData}\navgExpense : ${fmt2(f.avgExpense)}\nvariableExpense : ${fmt2(f.variableExpense)}\n\nTotal transactions dans l'appli : ${state.data.transactions.length}\n\n5 dernières transactions (tous mois) :\n${last5}`);
   }));
   app.querySelectorAll('[data-toggle-rollover-info]').forEach(el=>el.addEventListener('click', ()=>{ setState({rolloverInfoOpen: !state.rolloverInfoOpen}); }));
   app.querySelectorAll('[data-toggle-rollover]').forEach(el=>el.addEventListener('click', ()=>{
