@@ -2518,7 +2518,11 @@ function computeForecast(){
     if(m<0){m+=12;y--;}
     months.push({y,m});
   }
-  const TRANSFER_CATS_FC = new Set(['epargne','epargne_retour','virement','virement_retour']);
+  // "Ancien Solde" / reprise de solde initial : un mouvement ponctuel fait une seule fois au
+  // demarrage de l'app (ex: solde de reprise, ancien Codevi), pas un revenu/depense qui se
+  // repete. On l'exclut du calcul du variable au meme titre que les virements internes,
+  // sinon il gonfle artificiellement l'estimation des mois futurs.
+  const TRANSFER_CATS_FC = new Set(['epargne','epargne_retour','virement','virement_retour','ln010xel','ygzu4bl8']);
   const incomes = [], expenses = [], variableExpensesByMonth = [], variableIncomesByMonth = [];
   months.forEach(({y,m})=>{
     const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && !TRANSFER_CATS_FC.has(t.category));
