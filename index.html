@@ -320,6 +320,13 @@ function occurrencesPerMonth(freq){
 function recurringOccurrencesInMonth(y, m){
   let income = 0, expense = 0;
   (state.data.recurring||[]).forEach(rule=>{
+    // Si des transactions reelles liees a cette regle existent deja ce mois-ci
+    // (le prelevement bancaire reel est tombe avant que la regle n'ait "rattrape"
+    // sa propre date), on ne les recompte pas comme "a venir" - sinon la meme
+    // depense est comptee deux fois dans le Reste estime.
+    let alreadyRealThisMonth = (state.data.transactions||[]).filter(t=>
+      t.recurringId===rule.id && sameMonth(t.date, y, m)
+    ).length;
     let next = new Date(rule.nextDate);
     let guard = 0;
     while((next.getFullYear() < y || (next.getFullYear()===y && next.getMonth() < m)) && guard < 800){
@@ -327,7 +334,11 @@ function recurringOccurrencesInMonth(y, m){
       guard++;
     }
     while(next.getFullYear()===y && next.getMonth()===m && guard<900){
-      if(rule.type==='income') income += rule.amount; else expense += rule.amount;
+      if(alreadyRealThisMonth > 0){
+        alreadyRealThisMonth--;
+      } else {
+        if(rule.type==='income') income += rule.amount; else expense += rule.amount;
+      }
       next = addPeriod(next, rule.frequency);
       guard++;
     }
