@@ -307,9 +307,19 @@ function findCategoryIdByLabel(label, type){
 function freqLabel(f){ return {weekly:'Chaque semaine', monthly:'Chaque mois', yearly:'Chaque année'}[f] || f; }
 function addPeriod(date, freq){
   const d = new Date(date);
-  if(freq==='weekly') d.setUTCDate(d.getUTCDate()+7);
-  else if(freq==='yearly') d.setUTCFullYear(d.getUTCFullYear()+1);
+  if(freq==='weekly'){
+    d.setUTCDate(d.getUTCDate()+7);
+    return d;
+  }
+  // Mensuel/annuel : on evite le "debordement" classique de setUTCMonth/setUTCFullYear
+  // (ex: 31 janvier + 1 mois -> 3 mars au lieu de fin fevrier) en calant le jour sur le
+  // dernier jour du mois cible quand celui-ci est plus court (29/30/31 -> 28/29/30).
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  if(freq==='yearly') d.setUTCFullYear(d.getUTCFullYear()+1);
   else d.setUTCMonth(d.getUTCMonth()+1);
+  const daysInTargetMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, daysInTargetMonth));
   return d;
 }
 function occurrencesPerMonth(freq){
