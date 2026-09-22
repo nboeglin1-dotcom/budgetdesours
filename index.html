@@ -2721,16 +2721,16 @@ function computeMonthStats(){
   const usingEstimate = useIncomeEstimate || useExpenseEstimate;
   let income, expense;
   if(isCurrentMonth){
-    // Mois en cours : combiner le reel deja enregistre, les recurrences pas encore passees,
-    // et une estimation des depenses variables (courses, etc.) pour les jours restants
-    const daysInMonth = new Date(state.viewY, state.viewM+1, 0).getDate();
-    const daysRemaining = Math.max(0, daysInMonth - today.getDate() + 1);
-    const proratedVariable = f.variableExpense * (daysRemaining/daysInMonth);
+    // Mois en cours : reel deja enregistre + echeances connues pas encore passees.
+    // Pas d'estimation statistique de depenses variables en plus (courses, etc.) - meme
+    // logique que "Reste", pour que les deux chiffres du tableau de bord se recoupent.
     income = realIncome + recurThisMonth.income;
-    expense = realExpense + recurThisMonth.expense + proratedVariable;
+    expense = realExpense + recurThisMonth.expense;
   } else if(isFuture){
     // Mois futur : combiner toute transaction reelle deja ajoutee manuellement,
     // les recurrences prevues ce mois-la, et une estimation complete des revenus/depenses variables
+    // (le "Reste" de ces mois-la, dans le previsionnel, est lui aussi une projection statistique -
+    // les deux chiffres restent donc coherents entre eux pour un mois futur).
     income = realIncome + recurThisMonth.income + f.variableIncome;
     expense = realExpense + recurThisMonth.expense + f.variableExpense;
   } else {
