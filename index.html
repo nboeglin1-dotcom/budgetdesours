@@ -180,6 +180,16 @@
   .chart-bars-pair{display:flex; align-items:flex-end; gap:3px; width:100%; height:110px; justify-content:center;}
   .chart-bar{width:9px; border-radius:3px 3px 0 0; min-height:2px; transition:height .5s cubic-bezier(.22,1,.36,1);}
   .chart-label{font-size:10px; color:var(--paperDim);}
+  .chart-stack{display:flex; flex-direction:column; justify-content:flex-end; width:9px;}
+  .chart-bar-plan{width:9px; border-radius:3px 3px 0 0; border:1.5px dashed var(--c); border-bottom:none; background:repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--c) 35%, transparent) 3px 5px); box-sizing:border-box;}
+  button.chart-col{background:none; border:none; padding:0; font:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .chart-col.is-view .chart-label{color:var(--paper); font-weight:700;}
+  .chart-col .chart-label{border-bottom:2px solid transparent;}
+  .chart-col.is-view .chart-label{border-bottom-color:var(--gold);}
+  .legend .dot-plan{border:1.5px dashed var(--paperDim); background:transparent; box-sizing:border-box;}
+  .trend-summary{margin-top:12px; padding-top:10px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:6px; font-size:12.5px; color:var(--paper);}
+  .trend-summary-title{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--paperDim);}
+  .trend-sub{font-size:10.5px; color:var(--paperDim); font-weight:400;}
   .legend{display:flex; gap:16px; margin-top:10px; font-size:11.5px; color:var(--paperDim);}
   .legend span{display:inline-flex; align-items:center; gap:5px;}
   .legend .dot{width:8px; height:8px; border-radius:50%;}
@@ -465,9 +475,17 @@ function ruleOccurrencesForMonth(rule, y, m){
   });
   return results;
 }
+// Mouvements qui ne sont ni un vrai revenu ni une vraie depense : epargne et virements entre comptes.
+const NOT_INC_EXP_CATS = new Set(['epargne','epargne_retour','virement','virement_retour']);
+function isRealIncExp(t){ return !NOT_INC_EXP_CATS.has(t.category); }
+function ruleMatchesAccountFilter(accountId){
+  return !state.activeAccountFilter || (accountId||'main') === state.activeAccountFilter;
+}
 function recurringOccurrencesInMonth(y, m){
   let income = 0, expense = 0;
   (state.data.recurring||[]).forEach(rule=>{
+    // Filtre de compte : seules les echeances du compte affiche comptent.
+    if(!ruleMatchesAccountFilter(rule.accountId)) return;
     // Si des transactions reelles liees a cette regle existent deja ce mois-ci
     // (le prelevement bancaire reel est tombe avant que la regle n'ait "rattrape"
     // sa propre date), on ne les recompte pas comme "a venir" - sinon la meme
@@ -493,6 +511,8 @@ function recurringOccurrencesInMonth(y, m){
     });
   });
   (state.data.goalTransfers||[]).forEach(rule=>{
+    const goal = (state.data.goals||[]).find(g=>g.id===rule.goalId);
+    if(!ruleMatchesAccountFilter(goal && goal.accountId)) return;
     ruleOccurrencesForMonth(rule, y, m).forEach(({ex})=>{
       expense += (ex && ex.amount!=null) ? ex.amount : rule.amount;
     });
@@ -1571,7 +1591,7 @@ function monthTx(){ return visibleTransactions().filter(t=>sameMonth(t.date, sta
 function moveMonth(delta){
   let m = state.viewM + delta, y = state.viewY;
   if(m<0){m=11;y--;} if(m>11){m=0;y++;}
-  setState({viewY:y, viewM:m});
+  setState({viewY:y, viewM:m, trendSelKey:null});
 }
 function totalBalance(){
   const now = new Date();
@@ -2936,15 +2956,18 @@ function computeMonthStats(){
 
   const f = computeForecast();
   const tx = monthTx();
-  const realIncome = tx.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
-  const realExpense = tx.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
+  const realIncome = tx.filter(t=>t.type==='income' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
+  const realExpense = tx.filter(t=>t.type==='expense' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
+  // Virements entre comptes : sans effet quand tous les comptes sont affiches (ils s'annulent),
+  // mais ils font bouger le solde d'un compte affiche seul -> montres a part.
+  const netTransfers = tx.filter(t=>t.category==='virement_retour').reduce((s,t)=>s+t.amount,0) - tx.filter(t=>t.category==='virement').reduce((s,t)=>s+t.amount,0);
   const savedDeposits = tx.filter(t=>t.type==='expense' && t.category==='epargne').reduce((s,t)=>s+t.amount,0);
   const savedWithdrawals = tx.filter(t=>t.type==='income' && t.category==='epargne_retour').reduce((s,t)=>s+t.amount,0);
   const savedThisMonth = savedDeposits - savedWithdrawals;
   const isCurrentMonth = viewIdx===curIdx;
   const isCurrentOrFuture = isFuture || isCurrentMonth;
-  const hasIncomeTx = tx.some(t=>t.type==='income' && t.category!=='epargne_retour');
-  const hasExpenseTx = tx.some(t=>t.type==='expense' && t.category!=='epargne');
+  const hasIncomeTx = tx.some(t=>t.type==='income' && isRealIncExp(t));
+  const hasExpenseTx = tx.some(t=>t.type==='expense' && isRealIncExp(t));
   const recurThisMonth = recurringOccurrencesInMonth(state.viewY, state.viewM);
   const useIncomeEstimate = isCurrentMonth ? (recurThisMonth.income > 0) : isFuture ? true : (isCurrentOrFuture && !hasIncomeTx);
   const useExpenseEstimate = isCurrentMonth ? true : isFuture ? true : (isCurrentOrFuture && !hasExpenseTx);
@@ -2975,12 +2998,12 @@ function computeMonthStats(){
   let pm = state.viewM - 1, py = state.viewY;
   if(pm<0){ pm = 11; py--; }
   const prevTx = visibleTransactions().filter(t=>sameMonth(t.date, py, pm));
-  const prevIncome = prevTx.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
-  const prevExpense = prevTx.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
+  const prevIncome = prevTx.filter(t=>t.type==='income' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
+  const prevExpense = prevTx.filter(t=>t.type==='expense' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
   const incomeChange = useIncomeEstimate ? null : pctChange(income, prevIncome);
   const expenseChange = useExpenseEstimate ? null : pctChange(expense, prevExpense);
 
-  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth };
+  return { isFuture, f, tx, income, expense, rate, bal, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth, netTransfers };
 }
 
 function renderBalanceContent(stats, showStats){
@@ -3006,7 +3029,7 @@ function renderBalanceContent(stats, showStats){
       </div>
       ${savedThisMonth !== 0 ? `
       <div class="row" style="margin-bottom:0; margin-top:14px;">
-        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Épargne du mois</div><div class="stat-val" style="color:var(--gold)">${savedThisMonth>=0?'+':'−'}${fmt2(Math.abs(savedThisMonth))}</div></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">${savedThisMonth>=0 ? 'Mis de côté ce mois' : "Retiré de l'épargne ce mois"}</div><div class="stat-val" style="color:var(--gold)">${fmt2(Math.abs(savedThisMonth))}</div></div>
       </div>
       ` : ''}
       ${(()=>{
@@ -3043,14 +3066,26 @@ function renderDashboard(){
   const catData = usingEstimate ? computeCategoryForecast(expense, state.viewY, state.viewM) : Object.entries(byCat).map(([id,value])=>({id,value,...catInfo(id)})).sort((a,b)=>b.value-a.value);
   const maxCat = Math.max(1, ...catData.map(c=>c.value));
 
+  // Graphique 12 mois : memes regles que "Revenus / Depenses du mois" (carte du haut) :
+  // compte affiche uniquement, epargne exclue, et pour le mois en cours / a venir
+  // les echeances recurrentes pas encore passees sont ajoutees (partie "prevue", plus claire).
   const trend = [];
+  const trendCurIdx = monthIndex(new Date().getFullYear(), new Date().getMonth());
   for(let i=11;i>=0;i--){
     let m = state.viewM-i, y=state.viewY;
     if(m<0){m+=12;y--;}
-    const txs = state.data.transactions.filter(t=>sameMonth(t.date,y,m));
-    trend.push({ label: MONTHS_SHORT[m], inc: txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0), exp: txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0) });
+    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m));
+    const inc = txs.filter(t=>t.type==='income' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
+    const exp = txs.filter(t=>t.type==='expense' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
+    const plan = monthIndex(y,m) >= trendCurIdx ? recurringOccurrencesInMonth(y,m) : {income:0, expense:0};
+    trend.push({ key: y+'-'+m, label: MONTHS_SHORT[m], name: MONTHS[m]+(y!==new Date().getFullYear()?' '+y:''), isView: i===0, inc, exp, incPlan: plan.income, expPlan: plan.expense });
   }
-  const maxTrend = Math.max(1, ...trend.map(t=>Math.max(t.inc,t.exp)));
+  // On masque les mois vides du debut (avant la premiere donnee), en gardant au moins 3 mois.
+  while(trend.length>3 && trend[0].inc+trend[0].exp+trend[0].incPlan+trend[0].expPlan===0) trend.shift();
+  const maxTrend = Math.max(1, ...trend.map(t=>Math.max(t.inc+t.incPlan, t.exp+t.expPlan)));
+  const trendHasPlan = trend.some(t=>t.incPlan>0 || t.expPlan>0);
+  const trendView = trend.find(t=>t.key===state.trendSelKey) || trend[trend.length-1];
+  trend.forEach(t=>{ t.isSel = t===trendView; });
 
   const over = Object.entries(state.data.budgets)
     .map(([id,limit])=>({id,limit,spent:byCat[id]||0,...catInfo(id)}))
@@ -3132,21 +3167,40 @@ function renderDashboard(){
         <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
         <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
       </div>
-      <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Faites glisser pour voir plus de mois →</div>
+      <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · touchez un mois pour le détail</div>
       <div class="trend-scroll">
         <div class="chart-bars">
           ${trend.map(t=>`
-            <div class="chart-col">
+            <button type="button" data-trend-sel="${t.key}" class="chart-col${t.isSel?' is-view':''}" aria-label="Voir ${t.name}">
               <div class="chart-bars-pair">
-                <div class="chart-bar" style="height:${Math.max(2,t.inc/maxTrend*100)}px; background:var(--sage);"></div>
-                <div class="chart-bar" style="height:${Math.max(2,t.exp/maxTrend*100)}px; background:var(--coral);"></div>
+                <div class="chart-stack">
+                  ${t.incPlan>0 ? `<div class="chart-bar-plan" style="height:${t.incPlan/maxTrend*100}px; --c:var(--sage);"></div>` : ''}
+                  <div class="chart-bar" style="height:${Math.max(2,t.inc/maxTrend*100)}px; background:var(--sage);${t.incPlan>0?' border-radius:0;':''}"></div>
+                </div>
+                <div class="chart-stack">
+                  ${t.expPlan>0 ? `<div class="chart-bar-plan" style="height:${t.expPlan/maxTrend*100}px; --c:var(--coral);"></div>` : ''}
+                  <div class="chart-bar" style="height:${Math.max(2,t.exp/maxTrend*100)}px; background:var(--coral);${t.expPlan>0?' border-radius:0;':''}"></div>
+                </div>
               </div>
               <div class="chart-label">${t.label}</div>
-            </div>
+            </button>
           `).join('')}
         </div>
       </div>
-      <div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span></div>
+      <div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>
+      <div class="trend-summary">
+        <div class="trend-summary-title">${trendView.name}</div>
+        <div class="row" style="margin-bottom:0;">
+          <span>Revenus</span>
+          <span class="mono" style="color:var(--sage);">${fmt0(trendView.inc+trendView.incPlan)}${trendView.incPlan>0 ? ` <span class="trend-sub">dont ${fmt0(trendView.incPlan)} à venir</span>` : ''}</span>
+        </div>
+        <div class="row" style="margin-bottom:0;">
+          <span>Dépenses</span>
+          <span class="mono" style="color:var(--coral);">${fmt0(trendView.exp+trendView.expPlan)}${trendView.expPlan>0 ? ` <span class="trend-sub">dont ${fmt0(trendView.expPlan)} à venir</span>` : ''}</span>
+        </div>
+        ${(()=>{ const d=(trendView.inc+trendView.incPlan)-(trendView.exp+trendView.expPlan); return `<div class="row" style="margin-bottom:0; font-weight:600;"><span>${d>=0?'Gagné en plus':'Dépensé en trop'}</span><span class="mono" style="color:${d>=0?'var(--sage)':'var(--coral)'};">${d>=0?'+':'−'}${fmt0(Math.abs(d))}</span></div>`; })()}
+        ${trendView.isView && state.activeAccountFilter && stats.netTransfers ? `<div class="row" style="margin-bottom:0;"><span style="color:var(--paperDim);">Virements avec tes autres comptes</span><span class="mono" style="color:var(--paperDim);">${stats.netTransfers>0?'+':'−'}${fmt0(Math.abs(stats.netTransfers))}</span></div>` : ''}
+      </div>
     </div>
     ` : ''}
     ${(state.data.accounts||[]).length>1 ? `
@@ -5438,7 +5492,13 @@ function bindEvents(){
     }, {passive:true});
   }
   const trendScroll = app.querySelector('.trend-scroll');
-  if(trendScroll){ trendScroll.scrollLeft = trendScroll.scrollWidth; }
+  if(trendScroll){ trendScroll.scrollLeft = (state.trendScrollLeft!=null) ? state.trendScrollLeft : trendScroll.scrollWidth; state.trendScrollLeft = null; }
+  app.querySelectorAll('[data-trend-sel]').forEach(el=>el.addEventListener('click', ()=>{
+    const ts = app.querySelector('.trend-scroll');
+    state.trendScrollLeft = ts ? ts.scrollLeft : null;
+    const k = el.dataset.trendSel;
+    setState({ trendSelKey: state.trendSelKey===k ? null : k });
+  }));
 
   app.querySelectorAll('.month-nav').forEach(navEl=>{
     if(!navEl.querySelector('[data-move]')) return;
