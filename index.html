@@ -472,8 +472,15 @@ function recurringOccurrencesInMonth(y, m){
     // (le prelevement bancaire reel est tombe avant que la regle n'ait "rattrape"
     // sa propre date), on ne les recompte pas comme "a venir" - sinon la meme
     // depense est comptee deux fois dans le Reste estime.
+    // Seules les transactions liees datees APRES l'echeance precedente (deja generee) peuvent
+    // "remplacer" une echeance a venir ; sinon, pour une regle hebdomadaire, les occurrences deja
+    // passees du mois effacent a tort celles qui restent.
+    const prevNat = new Date(rule.nextDate);
+    if(rule.frequency==='weekly') prevNat.setUTCDate(prevNat.getUTCDate()-7);
+    else if(rule.frequency==='yearly') prevNat.setUTCFullYear(prevNat.getUTCFullYear()-1);
+    else prevNat.setUTCMonth(prevNat.getUTCMonth()-1, Math.min(prevNat.getUTCDate(), 28));
     let alreadyRealThisMonth = (state.data.transactions||[]).filter(t=>
-      t.recurringId===rule.id && sameMonth(t.date, y, m)
+      t.recurringId===rule.id && sameMonth(t.date, y, m) && new Date(t.date) > prevNat
     ).length;
     ruleOccurrencesForMonth(rule, y, m).forEach(({ex})=>{
       if(alreadyRealThisMonth > 0){
@@ -547,6 +554,8 @@ const fmt0 = n => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'
 const fmt2 = n => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(n||0);
 const uid = () => Math.random().toString(36).slice(2,10);
 const sameMonth = (iso,y,m) => { const d=new Date(iso); return d.getFullYear()===y && d.getMonth()===m; };
+// Date AAAA-MM-JJ en heure locale (toISOString() donne la date UTC : la veille entre 0h et 2h a Paris).
+const localYMD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 const STORAGE_KEY = 'solde-budget-data-v1';
 
@@ -635,6 +644,12 @@ function loadData(){
         parsed.pinnedCategories = [essenceCustom ? essenceCustom.id : 'transport', 'loisirs', 'autres_d'];
       }
       if(!parsed.hiddenBudgetCategories) parsed.hiddenBudgetCategories = [];
+      // Regles creees avant l'ajout de accountId : on reprend le compte de leur derniere transaction liee.
+      (parsed.recurring||[]).forEach(r=>{
+        if(r.accountId) return;
+        const linked = (parsed.transactions||[]).filter(t=>t.recurringId===r.id && t.accountId).sort((a,b)=> new Date(b.date)-new Date(a.date))[0];
+        r.accountId = linked ? linked.accountId : 'main';
+      });
       parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
       if(!Array.isArray(parsed.transactions)) parsed.transactions = [];
       if(!parsed.budgets || typeof parsed.budgets !== 'object') parsed.budgets = {};
@@ -713,7 +728,7 @@ let state = {
   activeAccountFilter: null,
   accountFilterModalOpen: false,
   transferModalOpen: false,
-  transferForm: { from:'main', to:'', amount:'', date: new Date().toISOString().slice(0,10) },
+  transferForm: { from:'main', to:'', amount:'', date: localYMD(new Date()) },
   goalTransferForm: { amount: 50, frequency: 'monthly' },
   reviewYear: new Date().getFullYear(),
   reviewPeriod: 'year',
@@ -770,6 +785,7 @@ function processRecurring(){
           category: (ex && ex.category) ? ex.category : rule.category,
           note: (ex && ex.note!=null) ? ex.note : rule.note,
           date: effDate.toISOString(),
+          accountId: rule.accountId || 'main',
           recurringId: rule.id
         });
       }
@@ -791,6 +807,13 @@ function processCategoryRollover(){
     return;
   }
   if(state.data.lastRolloverCheck === curKey) return;
+  if(!state.data.rolloverEnabled){
+    // Report desactive : on avance le repere sans accumuler, sinon la reactivation ferait
+    // apparaitre d'un coup tous les surplus des mois ou le report etait coupe.
+    state.data.lastRolloverCheck = curKey;
+    saveData(state.data);
+    return;
+  }
   const parts = state.data.lastRolloverCheck.split('-').map(Number);
   let y = parts[0], m = parts[1];
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
@@ -898,7 +921,9 @@ checkMonthlyRecap();
     if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const todayKey = new Date().toISOString().slice(0,10);
     if(state.data.lastNotifiedDate === todayKey) return;
-    const dueToday = upcomingRecurring(1).filter(r=>r.daysUntil===0);
+    // processRecurring() a deja transforme les echeances du jour en transactions au demarrage :
+    // upcomingRecurring() ne peut donc plus les voir. On notifie a partir des transactions generees aujourd'hui.
+    const dueToday = (state.data.transactions||[]).filter(t=> t.recurringId && localYMD(new Date(t.date))===localYMD(new Date()));
     if(dueToday.length === 0) return;
     const total = dueToday.reduce((s,r)=> s + (r.type==='expense' ? r.amount : 0), 0);
     const body = dueToday.length===1
@@ -1360,11 +1385,11 @@ function goalWithdraw(id, amt){
 function defaultTxDate(){
   const today = new Date();
   if(state.viewY===today.getFullYear() && state.viewM===today.getMonth()){
-    return today.toISOString().slice(0,10);
+    return localYMD(today);
   }
   const daysInMonth = new Date(state.viewY, state.viewM+1, 0).getDate();
   const day = Math.min(today.getDate(), daysInMonth);
-  return new Date(state.viewY, state.viewM, day).toISOString().slice(0,10);
+  return localYMD(new Date(state.viewY, state.viewM, day));
 }
 function openEditTx(id){
   const t = state.data.transactions.find(t=>t.id===id);
@@ -3792,7 +3817,7 @@ function renderGoalDeadlineModal(){
 }
 
 /* ---------------- Modals ---------------- */
-let txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:new Date().toISOString().slice(0,10), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId:'main' };
+let txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:localYMD(new Date()), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId:'main' };
 let quickTxFormState = { category:'', type:'expense', date:'', amount:'', note:'', photo:null };
 function renderQuickTxModal(){
   const info = catInfo(quickTxFormState.category);
@@ -4414,7 +4439,7 @@ function bindEvents(){
           t.type=txFormState.type; t.amount=amount; t.category=txFormState.category; t.note=note; t.date=isoDate; t.photo=photo; t.accountId=accountId;
           if(txFormState.recurring && !t.recurringId){
             const newRuleId = uid();
-            d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
+            d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
             t.recurringId = newRuleId;
           }
         }
@@ -4440,7 +4465,7 @@ function bindEvents(){
       const newTxId = uid();
       if(txFormState.recurring){
         const newRuleId = uid();
-        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
+        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
         d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId, recurringId:newRuleId });
       } else {
         d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId });
@@ -5113,7 +5138,7 @@ function bindEvents(){
     const accounts = state.data.accounts||[];
     const from = state.activeAccountFilter || accounts[0].id;
     const to = accounts.find(a=>a.id!==from);
-    state.transferForm = { from, to: to?to.id:'', amount:'', date: new Date().toISOString().slice(0,10) };
+    state.transferForm = { from, to: to?to.id:'', amount:'', date: localYMD(new Date()) };
     state.transferModalOpen = true;
     rerender();
   }));
