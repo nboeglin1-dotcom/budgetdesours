@@ -289,7 +289,9 @@ const INCOME_CATS = [
   {id:'virement_retour', label:'Virement entre comptes', color:COLORS.slate, type:'income'},
   {id:'autres_i', label:'Autres', color:COLORS.slate, type:'income'},
 ];
-const ALL_CATS = [...EXPENSE_CATS, ...INCOME_CATS];
+// Categorie technique (non proposee dans les listes) : ecart corrige lors d'un recalage sur le solde bancaire.
+const HIDDEN_CATS = [{id:'ajustement', label:'Ajustement de solde', color:COLORS.slate, type:'expense'}];
+const ALL_CATS = [...EXPENSE_CATS, ...INCOME_CATS, ...HIDDEN_CATS];
 
 function isTxRecurring(t){
   return !!(t.recurringId || (state.data.recurring||[]).some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount));
@@ -476,12 +478,12 @@ function ruleOccurrencesForMonth(rule, y, m){
   return results;
 }
 // Mouvements qui ne sont ni un vrai revenu ni une vraie depense : epargne et virements entre comptes.
-const NOT_INC_EXP_CATS = new Set(['epargne','epargne_retour','virement','virement_retour']);
+const NOT_INC_EXP_CATS = new Set(['epargne','epargne_retour','virement','virement_retour','ajustement']);
 function isRealIncExp(t){ return !NOT_INC_EXP_CATS.has(t.category); }
 function ruleMatchesAccountFilter(accountId){
   return !state.activeAccountFilter || (accountId||'main') === state.activeAccountFilter;
 }
-function recurringOccurrencesInMonth(y, m){
+function recurringOccurrencesInMonth(y, m, collect){
   let income = 0, expense = 0;
   (state.data.recurring||[]).forEach(rule=>{
     // Filtre de compte : seules les echeances du compte affiche comptent.
@@ -500,21 +502,24 @@ function recurringOccurrencesInMonth(y, m){
     let alreadyRealThisMonth = (state.data.transactions||[]).filter(t=>
       t.recurringId===rule.id && sameMonth(t.date, y, m) && new Date(t.date) > prevNat
     ).length;
-    ruleOccurrencesForMonth(rule, y, m).forEach(({ex})=>{
+    ruleOccurrencesForMonth(rule, y, m).forEach(({ex, effDate})=>{
       if(alreadyRealThisMonth > 0){
         alreadyRealThisMonth--;
       } else {
         const amt = (ex && ex.amount!=null) ? ex.amount : rule.amount;
         const type = (ex && ex.type) ? ex.type : rule.type;
         if(type==='income') income += amt; else expense += amt;
+        if(collect) collect.push({ date: effDate, amount: amt, type, label: rule.note || catInfo(rule.category).label });
       }
     });
   });
   (state.data.goalTransfers||[]).forEach(rule=>{
     const goal = (state.data.goals||[]).find(g=>g.id===rule.goalId);
     if(!ruleMatchesAccountFilter(goal && goal.accountId)) return;
-    ruleOccurrencesForMonth(rule, y, m).forEach(({ex})=>{
-      expense += (ex && ex.amount!=null) ? ex.amount : rule.amount;
+    ruleOccurrencesForMonth(rule, y, m).forEach(({ex, effDate})=>{
+      const gAmt = (ex && ex.amount!=null) ? ex.amount : rule.amount;
+      expense += gAmt;
+      if(collect) collect.push({ date: effDate, amount: gAmt, type:'expense', label: goal ? goal.name : 'Épargne' });
     });
   });
   return { income, expense };
@@ -689,11 +694,29 @@ function loadData(){
   saveData(seeded);
   return seeded;
 }
-function saveData(d){
+// Supprime les instantanes automatiques les plus anciens (garde les `keep` plus recents).
+function pruneAutoBackups(keep){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    const keys = [];
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(k && k.startsWith(AUTOBACKUP_PREFIX) && k !== AUTOBACKUP_PREFIX+'last') keys.push(k);
+    }
+    keys.sort();
+    while(keys.length > keep){ localStorage.removeItem(keys.shift()); }
+  }catch(e){}
+}
+function saveData(d){
+  const json = JSON.stringify(d);
+  try{
+    localStorage.setItem(STORAGE_KEY, json);
     return true;
   }catch(e){
+    // Stockage plein : on sacrifie d'abord les instantanes automatiques (jamais les donnees).
+    for(const keep of [3, 1, 0]){
+      pruneAutoBackups(keep);
+      try{ localStorage.setItem(STORAGE_KEY, json); return true; }catch(e3){}
+    }
     if(!window.__soldeStorageWarned){
       window.__soldeStorageWarned = true;
       setTimeout(()=>{ try{ showToast("Stockage plein — exporte une sauvegarde pour libérer de la place"); }catch(e2){} }, 300);
@@ -900,7 +923,16 @@ function runAutoBackup(){
     if(marker === todayKey) return;
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return;
-    localStorage.setItem(AUTOBACKUP_PREFIX + todayKey, raw);
+    // Instantane allege : sans les photos de tickets (lourdes, et gardees dans les donnees
+    // principales), pour ne pas multiplier par 8 la place occupee dans le stockage de Safari.
+    let light = raw;
+    try{
+      const obj = JSON.parse(raw);
+      (obj.transactions||[]).forEach(t=>{ if(t.photo) t.photo = null; });
+      light = JSON.stringify(obj);
+    }catch(eParse){}
+    try{ localStorage.setItem(AUTOBACKUP_PREFIX + todayKey, light); }
+    catch(eQuota){ pruneAutoBackups(2); localStorage.setItem(AUTOBACKUP_PREFIX + todayKey, light); }
     localStorage.setItem(AUTOBACKUP_PREFIX + 'last', todayKey);
     const keys = [];
     for(let i=0;i<localStorage.length;i++){
@@ -929,6 +961,27 @@ applyTheme(state.data.theme);
 processCategoryRollover();
 processGoalTransfers();
 runAutoBackup();
+// Demande a Safari de ne pas effacer les donnees de l'app (accorde automatiquement aux apps
+// installees sur l'ecran d'accueil ; sans effet ailleurs).
+try{
+  if(navigator.storage && navigator.storage.persist){
+    navigator.storage.persisted().then(p=>{ if(!p) return navigator.storage.persist(); }).catch(()=>{});
+  }
+}catch(e){}
+// Service worker (sw.js) : ouverture hors connexion + notifications sur iPhone.
+try{
+  if('serviceWorker' in navigator && location.protocol === 'https:'){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+}catch(e){}
+function showSystemNotification(title, body){
+  const opts = { body, tag: 'solde-echeances' };
+  if('serviceWorker' in navigator && navigator.serviceWorker.controller){
+    return navigator.serviceWorker.ready.then(reg=>reg.showNotification(title, opts));
+  }
+  try{ new Notification(title, opts); }catch(e){}
+  return Promise.resolve();
+}
 recordHealthScoreSnapshot();
 checkMonthlyRecap();
 (function(){
@@ -949,7 +1002,7 @@ checkMonthlyRecap();
     const body = dueToday.length===1
       ? `${dueToday[0].note || catInfo(dueToday[0].category).label} — ${fmt2(dueToday[0].amount)}`
       : `${dueToday.length} échéances aujourd'hui, dont ${fmt2(total)} de dépenses`;
-    new Notification('Solde des Ours', { body, icon: undefined });
+    showSystemNotification('Solde des Ours', body);
     state.data.lastNotifiedDate = todayKey;
     saveData(state.data);
   }catch(e){}
@@ -1536,7 +1589,7 @@ function bearMoodFromRate(rate){
   return 'worried';
 }
 
-const TRANSFER_CATS_RECAP = new Set(['epargne','epargne_retour','virement','virement_retour']);
+const TRANSFER_CATS_RECAP = new Set(['epargne','epargne_retour','virement','virement_retour','ajustement']);
 function computeMonthlyRecap(){
   const today = new Date();
   let lm = today.getMonth()-1, ly = today.getFullYear();
@@ -1569,7 +1622,11 @@ function computeMonthlyRecap(){
     const cSaved = sum(cTx,'income') - sum(cTx,'expense');
     if(cSaved >= lastSaved){ isBestMonth = false; break; }
   }
-  return { ly, lm, ply, plm, lastExpense, prevExpense, lastIncome, prevIncome, lastSaved, prevSaved, topCat, topCatDiff, expensePctChange, isBestMonth };
+  const overBudgets = Object.entries(state.data.budgets||{})
+    .filter(([id,lim])=> lim>0 && (byCatLast[id]||0) > lim)
+    .map(([id,lim])=>({ id, label: catInfo(id).label, over: (byCatLast[id]||0) - lim }))
+    .sort((a,b)=>b.over-a.over);
+  return { ly, lm, ply, plm, lastExpense, prevExpense, lastIncome, prevIncome, lastSaved, prevSaved, topCat, topCatDiff, expensePctChange, isBestMonth, overBudgets };
 }
 function checkMonthlyRecap(){
   const today = new Date();
@@ -1661,6 +1718,7 @@ function renderApp(){
     ${state.goalDeadlineModalId ? renderGoalDeadlineModal() : ''}
     ${state.whatIfOpen ? renderWhatIfModal() : ''}
     ${state.monthlyRecapOpen ? renderMonthlyRecapModal() : ''}
+    ${state.recalOpen ? renderRecalModal() : ''}
     ${state.csvImportOpen ? renderCsvImportModal() : ''}
     ${state.pdfDebugOpen ? renderPdfDebugModal() : ''}
     ${state.editingGoalTransferId ? renderGoalTransferModal() : ''}
@@ -1810,6 +1868,7 @@ function renderBackupModal(){
 
         ${backupSectionHeader('tag', 'Comptes')}
         <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-open-accounts="1">${icon('tag',15)} Gérer mes comptes</button>
+        <button class="btn-ghost" style="width:100%; justify-content:center; display:flex; margin-top:10px;" data-open-recal="1">${icon('repeat',15)} Recaler sur mon solde bancaire</button>
 
         ${backupSectionHeader('bulb', 'Apparence')}
         <div class="field-label" style="margin-bottom:10px;">Thème</div>
@@ -2315,7 +2374,7 @@ function getReviewRange(){
 }
 
 function computeReviewStats(range){
-  const TRANSFER_CATS = new Set(['epargne','epargne_retour','virement','virement_retour']);
+  const TRANSFER_CATS = new Set(['epargne','epargne_retour','virement','virement_retour','ajustement']);
   const txs = visibleTransactions().filter(t=>{
     const d = new Date(t.date);
     return d >= range.start && d <= range.end;
@@ -2591,7 +2650,7 @@ function computeHealthScore(){
   for(let i=0;i<3;i++){
     let m = today.getMonth()-i, y = today.getFullYear();
     if(m<0){ m+=12; y--; }
-    const mtx = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && t.category!=='epargne' && t.category!=='epargne_retour' && t.category!=='virement' && t.category!=='virement_retour');
+    const mtx = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && t.category!=='epargne' && t.category!=='epargne_retour' && t.category!=='virement' && t.category!=='virement_retour' && t.category!=='ajustement');
     const inc = mtx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
     const exp = mtx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
     if(inc>exp && inc>0) positiveMonths++;
@@ -2760,7 +2819,7 @@ function computeForecast(){
   // demarrage de l'app (ex: solde de reprise, ancien Codevi), pas un revenu/depense qui se
   // repete. On l'exclut du calcul du variable au meme titre que les virements internes,
   // sinon il gonfle artificiellement l'estimation des mois futurs.
-  const TRANSFER_CATS_FC = new Set(['epargne','epargne_retour','virement','virement_retour','ln010xel','ygzu4bl8']);
+  const TRANSFER_CATS_FC = new Set(['epargne','epargne_retour','virement','virement_retour','ajustement','ln010xel','ygzu4bl8']);
   const incomes = [], expenses = [], variableExpensesByMonth = [], variableIncomesByMonth = [];
   months.forEach(({y,m})=>{
     const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && !TRANSFER_CATS_FC.has(t.category));
@@ -3018,6 +3077,14 @@ function renderBalanceContent(stats, showStats){
         <div class="balance-num mono" id="balanceNum">${fmt0(bal)}</div>
         ${showStats ? `<button class="btn-primary" data-open="addTx">${icon('plus',14)} Ajouter</button>` : ''}
       </div>
+      ${(()=>{
+        const td = new Date();
+        if(!showStats || state.viewY!==td.getFullYear() || state.viewM!==td.getMonth()) return '';
+        const lastDay = new Date(td.getFullYear(), td.getMonth()+1, 0).getDate();
+        const daysLeft = lastDay - td.getDate() + 1;
+        if(bal <= 0) return `<div style="font-size:12.5px; color:var(--coral); margin-top:4px;">Plus de marge ce mois-ci — ${daysLeft} jour${daysLeft>1?'s':''} avant la fin du mois</div>`;
+        return `<div style="font-size:12.5px; color:var(--paperDim); margin-top:4px;">Soit <strong class="mono" style="color:var(--paper);">${fmt0(Math.floor(bal/daysLeft))}</strong> par jour pendant ${daysLeft} jour${daysLeft>1?'s':''}</div>`;
+      })()}
       ${showStats ? (usingEstimate && !f.hasHistory ? `
         <div style="font-size:12.5px; color:var(--paperDim); margin-top:14px; line-height:1.5;">
           Pas encore assez d'historique (3 derniers mois) pour estimer les revenus et dépenses de ce mois. Le solde ci-dessus reste inchangé par rapport à aujourd'hui.
@@ -3053,6 +3120,45 @@ function renderBalanceContent(stats, showStats){
   `;
 }
 
+function renderExportReminder(){
+  const last = state.data.lastExportDate;
+  const days = last ? Math.floor((Date.now() - new Date(last).getTime()) / 86400000) : null;
+  if(days!==null && days < 7) return '';
+  const snooze = state.data.exportReminderSnooze;
+  if(snooze && localYMD(new Date()) <= snooze) return '';
+  if((state.data.transactions||[]).length < 5) return '';
+  return `
+    <div class="card" style="border:1px solid rgba(212,169,79,.4); background:rgba(212,169,79,.10); padding:12px 14px; margin-bottom:14px;">
+      <div style="font-size:13px; color:var(--paper); line-height:1.45; margin-bottom:10px;">${icon('shield',14)} ${days===null ? "Tu n'as encore jamais sauvegardé tes données hors de l'iPhone." : `Dernière sauvegarde il y a ${days} jours.`} Enregistre-la dans iCloud Drive pour ne rien perdre.</div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn-primary" data-export-backup="1" style="flex:1; justify-content:center; font-size:12.5px;">${icon('download',13)} Sauvegarder</button>
+        <button class="btn-ghost" data-snooze-export="1" style="font-size:12.5px;">Plus tard</button>
+      </div>
+    </div>`;
+}
+// Solde jour par jour jusqu'a la fin du mois en cours : detecte un passage sous 0 avant la fin du mois.
+function computeOverdraftAlert(){
+  const today = new Date();
+  if(state.viewY !== today.getFullYear() || state.viewM !== today.getMonth()) return '';
+  let bal = visibleTransactions().filter(t=>new Date(t.date) <= today).reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
+  const events = [];
+  visibleTransactions().filter(t=>new Date(t.date) > today && sameMonth(t.date, today.getFullYear(), today.getMonth()))
+    .forEach(t=>events.push({ date:new Date(t.date), amount:t.amount, type:t.type, label:t.note || catInfo(t.category).label }));
+  recurringOccurrencesInMonth(today.getFullYear(), today.getMonth(), events);
+  events.sort((a,b)=>a.date-b.date || (a.type==='income'?-1:1));
+  if(bal < 0) return `<strong>Découvert :</strong> ton solde est déjà à ${fmt0(bal)} aujourd'hui.`;
+  let firstNeg = null, min = bal, minDate = null;
+  events.forEach(e=>{
+    if(e.date < today) return;
+    bal += e.type==='income' ? e.amount : -e.amount;
+    if(bal < 0 && !firstNeg) firstNeg = { date:e.date, label:e.label };
+    if(bal < min){ min = bal; minDate = e.date; }
+  });
+  if(!firstNeg) return '';
+  const d = firstNeg.date.toLocaleDateString('fr-FR', { day:'numeric', month:'long' });
+  const back = bal >= 0 ? ` Il repasse à ${fmt0(bal)} en fin de mois.` : '';
+  return `<strong>Attention au découvert :</strong> ton solde passera sous 0 € le ${d} (${escapeHtml(firstNeg.label)}), jusqu'à ${fmt0(min)}.${back}`;
+}
 function renderBalanceCard(stats){
   return `<div class="card ruled">${renderBalanceContent(stats)}</div>`;
 }
@@ -3062,13 +3168,14 @@ function renderDashboard(){
   const { isFuture, f, tx, income, expense, rate, bal, usingEstimate } = stats;
 
   const byCat = {};
-  tx.filter(t=>t.type==='expense').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
+  tx.filter(t=>t.type==='expense' && t.category!=='ajustement').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
   const catData = usingEstimate ? computeCategoryForecast(expense, state.viewY, state.viewM) : Object.entries(byCat).map(([id,value])=>({id,value,...catInfo(id)})).sort((a,b)=>b.value-a.value);
   const maxCat = Math.max(1, ...catData.map(c=>c.value));
 
   // Graphique 12 mois : memes regles que "Revenus / Depenses du mois" (carte du haut) :
   // compte affiche uniquement, epargne exclue, et pour le mois en cours / a venir
   // les echeances recurrentes pas encore passees sont ajoutees (partie "prevue", plus claire).
+  const overdraftAlert = computeOverdraftAlert();
   const trend = [];
   const trendCurIdx = monthIndex(new Date().getFullYear(), new Date().getMonth());
   for(let i=11;i>=0;i--){
@@ -3138,6 +3245,8 @@ function renderDashboard(){
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
       ${monthNav()}
     </div>
+    ${overdraftAlert ? `<div class="alert">${icon('alert',16)}<div>${overdraftAlert}</div></div>` : ''}
+    ${renderExportReminder()}
     ${renderGaugeCard(stats)}
     ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'dépassent':'dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
     ${state.data.dashboardSettings.showBreakdown ? `
@@ -3724,6 +3833,31 @@ function computeWhatIfProjection(expensePct, extraSavings){
   });
   return points;
 }
+function renderRecalModal(){
+  const accounts = (state.data.accounts||[]).length ? state.data.accounts : [{id:'main', name:'Compte principal'}];
+  const accId = state.recalAccountId || state.activeAccountFilter || accounts[0].id;
+  const appBal = accountBalance(accId);
+  const input = state.recalInput || '';
+  const bank = parseFloat(String(input).replace(/\s/g,'').replace(',','.'));
+  const diff = isNaN(bank) ? null : Math.round((bank - appBal)*100)/100;
+  return `
+    <div class="modal-overlay" data-close-recal="1">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-head"><div class="modal-title ledger">Recaler sur ma banque</div><button data-close-x-recal="1">${icon('x',18)}</button></div>
+        <div style="font-size:12.5px; color:var(--paperDim); line-height:1.5; margin-bottom:14px;">Tape le solde affiché aujourd'hui par ta banque. L'app ajoute une ligne « Ajustement de solde » pour l'écart : elle corrige le solde sans compter comme revenu ni dépense.</div>
+        ${accounts.length>1 ? `
+          <div class="field-label">Compte</div>
+          <select id="recalAccount" class="field-input" style="margin-bottom:13px; color:var(--paper);">
+            ${accounts.map(a=>`<option value="${a.id}" ${a.id===accId?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}
+          </select>` : ''}
+        <div class="row" style="margin-bottom:12px; font-size:13px;"><span>Solde dans l'app</span><span class="mono">${fmt2(appBal)}</span></div>
+        <div class="field-label">Solde affiché par ta banque</div>
+        <input id="recalInput" type="text" inputmode="decimal" class="field-input amount" placeholder="ex : 1234,56" value="${escapeHtml(input)}">
+        <div id="recalDiff" style="font-size:13px; margin:12px 0 16px; min-height:18px;">${diff===null ? '' : diff===0 ? `<span style="color:var(--sage);">Tout est juste, rien à corriger.</span>` : `Écart : <strong class="mono" style="color:${diff>0?'var(--sage)':'var(--coral)'};">${diff>0?'+':'−'}${fmt2(Math.abs(diff))}</strong>`}</div>
+        <button class="btn-primary" data-confirm-recal="1" style="width:100%; justify-content:center;" ${diff===null||diff===0?'disabled':''}>Corriger l'écart</button>
+      </div>
+    </div>`;
+}
 function renderMonthlyRecapModal(){
   const r = state.monthlyRecapData;
   if(!r) return '';
@@ -3744,7 +3878,7 @@ function renderMonthlyRecapModal(){
       <div class="modal-sheet" data-swipe-dismiss="1" onclick="event.stopPropagation()" style="text-align:center;">
         <div style="width:36px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 16px;"></div>
         <div style="margin-bottom:10px;">${bearMascot(mood, 64)}</div>
-        <div class="modal-title ledger" style="margin-bottom:4px;">Bilan de ${monthName}</div>
+        <div class="modal-title ledger" style="margin-bottom:4px;">Bilan ${/^[AEIOUÉ]/.test(monthName)?"d'":'de '}${monthName.toLowerCase()}</div>
         <div style="font-size:13.5px; color:var(--paper); line-height:1.6; margin:14px 0 20px; padding:0 6px;">${message}</div>
         ${r.isBestMonth && savedMore ? `<div style="background:rgba(212,169,79,.14); border:1px solid rgba(212,169,79,.35); border-radius:12px; padding:10px 14px; margin-bottom:20px; font-size:12.5px; color:var(--gold); font-weight:600;">${icon('spark',13)} Ton meilleur mois depuis un moment !</div>` : ''}
         <div class="row" style="margin-bottom:20px; text-align:left; background:var(--surfaceHi); border-radius:12px; padding:14px 16px;">
@@ -3761,6 +3895,11 @@ function renderMonthlyRecapModal(){
             <div class="mono" style="font-size:15px; font-weight:700; color:${r.lastSaved>=0?'var(--paper)':'var(--coral)'}; text-align:right;">${fmt0(r.lastSaved)}</div>
           </div>
         </div>
+        ${(r.overBudgets||[]).length ? `
+        <div style="text-align:left; background:rgba(232,102,77,.08); border:1px solid rgba(232,102,77,.3); border-radius:12px; padding:12px 14px; margin-bottom:20px;">
+          <div style="font-size:12px; font-weight:700; color:var(--coral); margin-bottom:6px;">Enveloppes dépassées</div>
+          ${r.overBudgets.map(b=>`<div class="row" style="margin-bottom:0; font-size:12.5px;"><span>${escapeHtml(b.label)}</span><span class="mono" style="color:var(--coral);">+${fmt0(b.over)}</span></div>`).join('')}
+        </div>` : `<div style="font-size:12.5px; color:var(--sage); margin-bottom:20px;">Aucune enveloppe dépassée 👏</div>`}
         <button data-close-x-monthlyrecap="1" class="btn-primary" style="width:100%; justify-content:center;">Compris, merci l'ours</button>
       </div>
     </div>
@@ -4846,6 +4985,10 @@ function bindEvents(){
       if(!raw) throw new Error('introuvable');
       const parsed = JSON.parse(raw);
       if(!Array.isArray(parsed.transactions)) throw new Error('format invalide');
+      // Les instantanes ne contiennent pas les photos : on recupere celles encore presentes.
+      const photos = {};
+      (state.data.transactions||[]).forEach(t=>{ if(t.photo) photos[t.id] = t.photo; });
+      parsed.transactions.forEach(t=>{ if(!t.photo && photos[t.id]) t.photo = photos[t.id]; });
       state.data = parsed;
       saveData(state.data);
       applyTheme(state.data.theme);
@@ -5219,6 +5362,45 @@ function bindEvents(){
     if(ok){ state.transferModalOpen = false; rerender(); }
   });
 
+  app.querySelectorAll('[data-snooze-export]').forEach(el=>el.addEventListener('click', ()=>{
+    const t = new Date(); t.setDate(t.getDate()+2);
+    mutateData(d=>{ d.exportReminderSnooze = localYMD(t); });
+  }));
+  app.querySelectorAll('[data-open-recal]').forEach(el=>el.addEventListener('click', ()=>{
+    setState({ recalOpen:true, recalInput:'', recalAccountId:null, backupModalOpen:false });
+  }));
+  app.querySelectorAll('[data-close-recal]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({recalOpen:false}); }));
+  app.querySelectorAll('[data-close-x-recal]').forEach(el=>el.addEventListener('click', ()=> setState({recalOpen:false})));
+  const recalAccount = app.querySelector('#recalAccount');
+  if(recalAccount) recalAccount.addEventListener('change', ()=> setState({ recalAccountId: recalAccount.value }));
+  const recalInputEl = app.querySelector('#recalInput');
+  if(recalInputEl){
+    recalInputEl.addEventListener('input', ()=>{
+      state.recalInput = recalInputEl.value;
+      const accs = (state.data.accounts||[]).length ? state.data.accounts : [{id:'main'}];
+      const accId = state.recalAccountId || state.activeAccountFilter || accs[0].id;
+      const bank = parseFloat(recalInputEl.value.replace(/\s/g,'').replace(',','.'));
+      const diff = isNaN(bank) ? null : Math.round((bank - accountBalance(accId))*100)/100;
+      const out = app.querySelector('#recalDiff'); const btn = app.querySelector('[data-confirm-recal]');
+      if(out) out.innerHTML = diff===null ? '' : diff===0 ? '<span style="color:var(--sage);">Tout est juste, rien à corriger.</span>' : `Écart : <strong class="mono" style="color:${diff>0?'var(--sage)':'var(--coral)'};">${diff>0?'+':'−'}${fmt2(Math.abs(diff))}</strong>`;
+      if(btn) btn.disabled = (diff===null || diff===0);
+    });
+  }
+  app.querySelectorAll('[data-confirm-recal]').forEach(el=>el.addEventListener('click', ()=>{
+    const accs = (state.data.accounts||[]).length ? state.data.accounts : [{id:'main'}];
+    const accId = state.recalAccountId || state.activeAccountFilter || accs[0].id;
+    const raw = (app.querySelector('#recalInput')||{}).value || state.recalInput || '';
+    const bank = parseFloat(String(raw).replace(/\s/g,'').replace(',','.'));
+    if(isNaN(bank)) return;
+    const diff = Math.round((bank - accountBalance(accId))*100)/100;
+    if(diff===0){ setState({recalOpen:false}); return; }
+    mutateData(d=>{
+      d.transactions.unshift({ id:uid(), type: diff>0?'income':'expense', amount: Math.abs(diff), category:'ajustement', note:'Ajustement de solde (banque)', date: new Date().toISOString(), accountId: accId });
+    });
+    state.recalOpen = false;
+    showToast(`Solde recalé (${diff>0?'+':'−'}${fmt2(Math.abs(diff))})`);
+    rerender();
+  }));
   app.querySelectorAll('[data-open-accounts]').forEach(el=>el.addEventListener('click', ()=>{
     newAccountFormState = { color: COLORS.sage };
     state.editingAccountId = null;
