@@ -52,6 +52,10 @@ async function openApp({ now, data, shareCapture = false }){
       if(json) localStorage.setItem(KEY, json);
       sessionStorage.setItem('__seeded', '1');
     }
+    // Pastille d'icône (App Badging API) : on enregistre les appels.
+    window.__badge = [];
+    navigator.setAppBadge = async (n) => { window.__badge.push(n); };
+    navigator.clearAppBadge = async () => { window.__badge.push(0); };
     if(shareCapture){
       window.__shared = [];
       navigator.canShare = () => true;
