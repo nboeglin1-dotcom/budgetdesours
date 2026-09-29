@@ -413,7 +413,8 @@ function parseVoiceTransaction(rawText){
   return { type, amount, categoryId, rawText };
 }
 function freqLabel(f){ return {weekly:'Chaque semaine', monthly:'Chaque mois', yearly:'Chaque année'}[f] || f; }
-function addPeriod(date, freq){
+// anchorDay : jour d'origine de la regle (ex. 31), pour revenir au 31 apres un mois court.
+function addPeriod(date, freq, anchorDay){
   const d = new Date(date);
   if(freq==='weekly'){
     d.setUTCDate(d.getUTCDate()+7);
@@ -427,7 +428,7 @@ function addPeriod(date, freq){
   if(freq==='yearly') d.setUTCFullYear(d.getUTCFullYear()+1);
   else d.setUTCMonth(d.getUTCMonth()+1);
   const daysInTargetMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 0)).getUTCDate();
-  d.setUTCDate(Math.min(day, daysInTargetMonth));
+  d.setUTCDate(Math.min(anchorDay || day, daysInTargetMonth));
   return d;
 }
 function occurrencesPerMonth(freq){
@@ -450,7 +451,7 @@ function ruleOccurrencesForMonth(rule, y, m){
     const natY = next.getFullYear(), natM = next.getMonth();
     if(natY > y || (natY === y && natM >= m)) break;
     prevNext = new Date(next);
-    next = addPeriod(next, rule.frequency);
+    next = addPeriod(next, rule.frequency, rule.anchorDay);
     guard++;
   }
   const candidates = [];
@@ -463,7 +464,7 @@ function ruleOccurrencesForMonth(rule, y, m){
     const monthsFromTarget = (natY - y)*12 + (natM - m);
     if(monthsFromTarget > 1) break;
     candidates.push(new Date(next));
-    next = addPeriod(next, rule.frequency);
+    next = addPeriod(next, rule.frequency, rule.anchorDay);
     guard++;
   }
   const results = [];
@@ -565,9 +566,24 @@ function recurringPreviewForMonth(y, m){
 function upcomingRecurring(days){
   const now = new Date();
   const cutoff = new Date(now.getTime() + days*86400000);
-  return (state.data.recurring||[])
-    .map(r=>({ ...r, next: new Date(r.nextDate) }))
-    .filter(r=> r.next >= now && r.next <= cutoff)
+  // Premiere echeance reellement a venir : on saute celles ignorees (skip) et on prend en
+  // compte une date/un montant modifies, comme le font processRecurring et les previsions.
+  const out = [];
+  (state.data.recurring||[]).forEach(r=>{
+    let nat = new Date(r.nextDate);
+    for(let guard=0; guard<400 && nat <= cutoff; guard++){
+      const ex = (r.exceptions||{})[String(nat.getTime())];
+      const eff = (ex && ex.date) ? new Date(ex.date) : nat;
+      if(!(ex && ex.skip) && eff >= now && eff <= cutoff){
+        out.push({ ...r, next: eff,
+          amount: (ex && ex.amount!=null) ? ex.amount : r.amount,
+          note: (ex && ex.note!=null) ? ex.note : r.note });
+        return;
+      }
+      nat = addPeriod(nat, r.frequency, r.anchorDay);
+    }
+  });
+  return out
     .sort((a,b)=> a.next - b.next)
     .map(r=>({ ...r, daysUntil: Math.ceil((r.next - now) / 86400000) }));
 }
@@ -633,11 +649,9 @@ function seedData(){
   };
 }
 
-function loadData(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      const parsed = JSON.parse(raw);
+// Complete une sauvegarde (stockage local ou fichier importe) avec les champs ajoutes au fil des versions.
+function normalizeData(parsed){
+      if(!Array.isArray(parsed.transactions)) parsed.transactions = [];
       if(!parsed.customCategories) parsed.customCategories = [];
       if(!parsed.recurring) parsed.recurring = [];
       if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
@@ -676,11 +690,15 @@ function loadData(){
         r.accountId = linked ? linked.accountId : 'main';
       });
       parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
-      if(!Array.isArray(parsed.transactions)) parsed.transactions = [];
       if(!parsed.budgets || typeof parsed.budgets !== 'object') parsed.budgets = {};
       if(!Array.isArray(parsed.goals)) parsed.goals = [];
-      parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
       return parsed;
+}
+function loadData(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      return normalizeData(JSON.parse(raw));
     }
   }catch(e){
     try{
@@ -807,6 +825,7 @@ function processRecurring(){
   const today = new Date();
   let changed = false;
   (state.data.recurring||[]).forEach(rule=>{
+    if(!rule.anchorDay){ rule.anchorDay = new Date(rule.nextDate).getUTCDate(); changed = true; }
     let next = new Date(rule.nextDate);
     let guard = 0;
     while(guard < 1000){
@@ -833,7 +852,7 @@ function processRecurring(){
         });
       }
       if(ex){ delete rule.exceptions[occKey]; }
-      next = addPeriod(next, rule.frequency);
+      next = addPeriod(next, rule.frequency, rule.anchorDay);
       guard++;
       changed = true;
     }
@@ -868,12 +887,17 @@ function processCategoryRollover(){
       const d = new Date(t.date);
       if(d.getFullYear()===y && d.getMonth()===m) byCat[t.category] = (byCat[t.category]||0) + t.amount;
     });
+    // Le « Reste a depenser » deja mis de cote ce mois-la (envelopeCommitted) a quitte les
+    // enveloppes : on le deduit des surplus pour ne pas le reporter une seconde fois.
+    let committedLeft = (state.data.envelopeCommitted||{})[y + '-' + m] || 0;
     catsForType('expense').forEach(cat=>{
       if(recurringCatIds.has(cat.id)) return;
       const limit = state.data.budgets[cat.id] || 0;
       if(limit<=0) return;
       const spent = byCat[cat.id] || 0;
-      const surplus = Math.max(0, limit - spent);
+      let surplus = Math.max(0, limit - spent);
+      const used = Math.min(committedLeft, surplus);
+      committedLeft -= used; surplus -= used;
       if(surplus>0){
         state.data.categoryRollover[cat.id] = Math.round(((state.data.categoryRollover[cat.id]||0) + surplus) * 100) / 100;
       }
@@ -893,6 +917,7 @@ function processGoalTransfers(){
   (state.data.goalTransfers||[]).forEach(rule=>{
     const goal = state.data.goals.find(g=>g.id===rule.goalId);
     if(!goal) return;
+    if(!rule.anchorDay){ rule.anchorDay = new Date(rule.nextDate).getUTCDate(); changed = true; }
     let next = new Date(rule.nextDate);
     let guard = 0;
     while(guard < 1000){
@@ -906,7 +931,7 @@ function processGoalTransfers(){
         state.data.transactions.unshift({ id: uid(), type:'expense', amount: amt, category:'epargne', note: (ex && ex.note!=null) ? ex.note : `Virement auto vers "${goal.name}"`, date: effDate.toISOString(), accountId: goal.accountId||'main', goalId: goal.id });
       }
       if(ex){ delete rule.exceptions[occKey]; }
-      next = addPeriod(next, rule.frequency);
+      next = addPeriod(next, rule.frequency, rule.anchorDay);
       guard++;
       changed = true;
     }
@@ -2866,8 +2891,10 @@ function computeForecast(){
     let m = today.getMonth()+i, y = today.getFullYear();
     while(m>11){ m-=12; y++; }
     const monthTxFC2 = visibleTransactions().filter(t=>sameMonth(t.date,y,m));
-    const realIncomeFC2 = monthTxFC2.filter(t=>t.type==='income' && t.category!=='epargne_retour').reduce((s,t)=>s+t.amount,0);
-    const realExpenseFC2 = monthTxFC2.filter(t=>t.type==='expense' && t.category!=='epargne').reduce((s,t)=>s+t.amount,0);
+    // Comme pour le mois en cours (startBalance) : un depot/retrait d'epargne deja saisi sort/entre
+    // bien sur le compte, il doit donc peser sur le solde prevu.
+    const realIncomeFC2 = monthTxFC2.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+    const realExpenseFC2 = monthTxFC2.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
     const rec = recurringOccurrencesInMonth(y,m);
     // Revenus/depenses = entrees et sorties connues (reelles + echeances recurrentes a venir),
     // point barre - meme methode que pour le mois en cours, sans estimation statistique
@@ -2894,12 +2921,12 @@ function computeCategoryForecast(targetExpense, viewY, viewM){
       let next = new Date(rule.nextDate);
       let guard = 0;
       while((next.getFullYear() < viewY || (next.getFullYear()===viewY && next.getMonth() < viewM)) && guard < 800){
-        next = addPeriod(next, rule.frequency);
+        next = addPeriod(next, rule.frequency, rule.anchorDay);
         guard++;
       }
       while(next.getFullYear()===viewY && next.getMonth()===viewM && guard<900){
         byCategory[rule.category] = (byCategory[rule.category]||0) + rule.amount;
-        next = addPeriod(next, rule.frequency);
+        next = addPeriod(next, rule.frequency, rule.anchorDay);
         guard++;
       }
     });
@@ -3652,7 +3679,7 @@ function renderBudgets(){
         </div>
       ` : allExpenseCats.map(cat=>{
         const baseLimit = state.data.budgets[cat.id] || 0;
-        const rollover = state.data.categoryRollover[cat.id] || 0;
+        const rollover = state.data.rolloverEnabled ? (state.data.categoryRollover[cat.id] || 0) : 0;
         const limit = baseLimit + rollover;
         const spent = byCat[cat.id] || 0;
         const pct = limit>0 ? Math.min(100, Math.round(spent/limit*100)) : 0;
@@ -4632,7 +4659,7 @@ function bindEvents(){
           t.type=txFormState.type; t.amount=amount; t.category=txFormState.category; t.note=note; t.date=isoDate; t.photo=photo; t.accountId=accountId;
           if(txFormState.recurring && !t.recurringId){
             const newRuleId = uid();
-            d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
+            d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString(), anchorDay: new Date(isoDate).getUTCDate() });
             t.recurringId = newRuleId;
           }
         }
@@ -4658,7 +4685,7 @@ function bindEvents(){
       const newTxId = uid();
       if(txFormState.recurring){
         const newRuleId = uid();
-        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString() });
+        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString(), anchorDay: new Date(isoDate).getUTCDate() });
         d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId, recurringId:newRuleId });
       } else {
         d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId });
@@ -4949,7 +4976,7 @@ function bindEvents(){
   app.querySelectorAll('[data-close-backup]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.backupModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen=false; rerender(); }));
   app.querySelectorAll('[data-export-backup]').forEach(el=>el.addEventListener('click', async ()=>{
-    const dateStr = new Date().toISOString().slice(0,10);
+    const dateStr = localYMD(new Date());
     const filename = `solde-sauvegarde-${dateStr}.json`;
     const jsonStr = JSON.stringify(state.data, null, 2);
     const downloadFallback = ()=>{
@@ -5188,6 +5215,10 @@ function bindEvents(){
       try{
         if(!parsed || typeof parsed !== 'object') throw new Error('format invalide');
         if(!Array.isArray(parsed.transactions)) throw new Error('transactions manquantes');
+        // Montants saisis a la main dans le JSON ("12,50") : convertis ; sinon on refuse le fichier
+        // plutot que de concatener des chaines dans tous les soldes.
+        parsed.transactions.forEach(t=>{ if(t && typeof t.amount==='string') t.amount = Number(t.amount.replace(/\s/g,'').replace(',','.')); });
+        if(parsed.transactions.some(t=> !t || !Number.isFinite(t.amount) || isNaN(new Date(t.date)))) throw new Error('transaction invalide');
         if(!parsed.customCategories) parsed.customCategories = [];
         if(!parsed.recurring) parsed.recurring = [];
         if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
@@ -5201,7 +5232,9 @@ function bindEvents(){
         if(!parsed.pinnedCategories) parsed.pinnedCategories = [];
         if(!parsed.hiddenBudgetCategories) parsed.hiddenBudgetCategories = [];
         parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
+        normalizeData(parsed);
         state.data = parsed;
+        _forecastCache = null;
         const ok = saveData(state.data);
         applyTheme(state.data.theme);
         state.backupModalOpen = false;
