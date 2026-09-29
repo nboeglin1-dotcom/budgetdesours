@@ -1012,6 +1012,7 @@ checkMonthlyRecap();
 (function(){
   const jointAccount = (state.data.accounts||[]).find(a=>a.name.toLowerCase().includes('joint'));
   if(jointAccount) state.activeAccountFilter = jointAccount.id;
+  state.defaultAccountFilter = state.activeAccountFilter;
 })();
 (function(){
   try{
@@ -1681,6 +1682,32 @@ function totalBalance(){
 }
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 
+// Pastille sur l'icone (iOS 16.4+, appli sur l'ecran d'accueil, notifications autorisees) :
+// le « Reste » estime du mois en cours, arrondi a l'euro, pour la vue affichee a l'ouverture
+// (meme filtre de compte). Pas de pastille si le reste est <= 0 ou si le code PIN est actif
+// (sinon le montant serait visible sans deverrouiller).
+let _badgeTimer = null, _lastBadge = null;
+function updateAppBadge(){
+  clearTimeout(_badgeTimer);
+  _badgeTimer = setTimeout(()=>{
+    try{
+      if(!('setAppBadge' in navigator)) return;
+      let n = 0;
+      if(!(state.data.security && state.data.security.enabled)){
+        const saved = state.activeAccountFilter;
+        state.activeAccountFilter = state.defaultAccountFilter || null;
+        _forecastCache = null;
+        try{ n = Math.max(0, Math.round(computeForecast().startBalance)); }
+        finally{ state.activeAccountFilter = saved; _forecastCache = null; }
+      }
+      if(n === _lastBadge) return;
+      _lastBadge = n;
+      const p = n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge();
+      if(p && p.catch) p.catch(()=>{});
+    }catch(e){}
+  }, 800);
+}
+
 /* ---------------- render root ---------------- */
 function rerender(){
   const active = document.activeElement;
@@ -1703,6 +1730,7 @@ function rerender(){
     const newSheets = document.querySelectorAll('.modal-sheet');
     if(newSheets.length) newSheets[newSheets.length-1].scrollTop = modalScrollTop;
   }
+  updateAppBadge();
 }
 
 function renderApp(){
