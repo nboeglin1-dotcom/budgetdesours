@@ -459,11 +459,46 @@ test.describe('Sauvegardes', () => {
       assert.ok(keys.includes('solde-autobackup-2026-09-16'), 'clés : ' + keys.join(', '));
     }));
 
-  test('S10 Libellé de catégorie contenant du HTML (fichier importé) : aucun code exécuté', { todo: 'échappement des libellés à faire' }, () =>
+  // Charge HTML : si elle s'exécute, window.__xss est défini.
+  const EVIL = (id) => `"'><img src=x onerror="window.__xss=(window.__xss||[]).concat('${id}')">`;
+  const visitAll = async (page) => {
+    const views = ['dashboard','transactions','budgets','goals'].map(t => `state.tab='${t}'`)
+      .concat(['manageCatOpen','recurringModalOpen','accountsModalOpen','gaugeCatModalOpen','pinCatModalOpen','insightsModalOpen','yearlyReviewOpen','transferModalOpen'].map(k => `state.tab='dashboard'; state.${k}=true`))
+      .concat(["state.modal='addTx'", "openEditTx('t1')", "state.accountsModalOpen=true; state.editingAccountId='main'"]);
+    for(const v of views){
+      await page.evaluate(`state.modal=null; for(const k in state){ if(/Open$/.test(k)) state[k]=false; } state.editingAccountId=null; ${v}; rerender();`);
+      await page.waitForTimeout(80);
+    }
+    await page.evaluate(() => { showToast('Limite ' + catInfo('c1').label); });
+    await page.waitForTimeout(80);
+    return page.evaluate(() => window.__xss);
+  };
+
+  test('S10 Noms, libellés, notes et couleurs contenant du HTML : aucun code exécuté (onglets, modales, messages)', () =>
     withApp({ now: NOW_SEPT, data: baseData({
-      customCategories:[ { id:'c1', type:'expense', label:'<img src=x onerror="window.__xss=1">', color:'#fff' } ],
-      transactions:[ tx({ amount:5, category:'c1', date:D('2026-09-10') }) ] }) }, async ({ page }) => {
-      for(const t of ['dashboard','transactions','budgets','goals']){ await page.evaluate((t) => { state.tab = t; rerender(); }, t); await page.waitForTimeout(200); }
-      assert.equal(await page.evaluate(() => window.__xss), undefined);
+      accounts:[ { id:'main', name:EVIL('compte'), color:'#D4A94F' }, { id:'b', name:'B', color:'#5FB4C4' } ],
+      customCategories:[ { id:'c1', type:'expense', label:EVIL('categorie'), color:'red"><img src=x onerror="window.__xss=[\'couleur\']">' } ],
+      budgets:{ c1:50 }, pinnedCategories:['c1'], gaugeAlwaysShow:['c1'],
+      goals:[ { id:'g1', name:EVIL('objectif'), target:100, current:10, color:'#6FA287', accountId:'main' } ],
+      recurring:[ rule({ id:'r1', category:'c1', note:EVIL('recurrence'), nextDate:D('2026-09-20') }) ],
+      transactions:[ tx({ id:'t1', amount:80, category:'c1', note:EVIL('note'), date:D('2026-09-10') }) ] }) }, async ({ page, errors }) => {
+      assert.equal(await visitAll(page), undefined);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('S11 Couleurs : seules les couleurs #hex sont conservées au chargement', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ customCategories:[ { id:'c1', type:'expense', label:'A', color:'#8B7FD6' }, { id:'c2', type:'expense', label:'B', color:'url(x)' } ] }) }, async ({ page }) => {
+      const cols = await page.evaluate(() => state.data.customCategories.map(c => c.color));
+      assert.equal(cols[0], '#8B7FD6');
+      assert.match(cols[1], /^#[0-9a-fA-F]{3,8}$/);
+    }));
+
+  test('S12 Import : un fichier avec des identifiants anormaux est refusé, données inchangées', () =>
+    withApp({ now: NOW_SEPT, data: realData() }, async ({ page }) => {
+      await page.evaluate(() => { state.backupModalOpen = true; rerender(); });
+      const bad = JSON.stringify(baseData({ transactions:[ tx({ id:'x"><img src=x>', amount:1, category:'loisirs', date:D('2026-09-01') }) ] }));
+      await page.setInputFiles('#backupImportInput', { name:'piege.json', mimeType:'application/json', buffer: Buffer.from(bad) });
+      await page.waitForTimeout(300);
+      assert.equal(await page.evaluate(() => state.data.transactions[0].id), 'reel1');
     }));
 });
