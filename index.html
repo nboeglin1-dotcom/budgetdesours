@@ -694,6 +694,10 @@ function normalizeData(parsed){
       parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
       if(!parsed.budgets || typeof parsed.budgets !== 'object') parsed.budgets = {};
       if(!Array.isArray(parsed.goals)) parsed.goals = [];
+      // Couleurs inserees telles quelles dans le HTML : on n'accepte que #rgb / #rrggbb(aa).
+      const safeColor = (c)=> (typeof c==='string' && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : COLORS.slate;
+      [parsed.customCategories, parsed.goals, parsed.accounts].forEach(list=> (list||[]).forEach(x=>{ if(x) x.color = safeColor(x.color); }));
+      Object.keys(parsed.categoryColorOverrides||{}).forEach(k=>{ parsed.categoryColorOverrides[k] = safeColor(parsed.categoryColorOverrides[k]); });
       return parsed;
 }
 // Dernier instantané automatique lisible (plus récent d'abord), ou null.
@@ -1719,7 +1723,10 @@ function totalBalance(){
   const now = new Date();
   return visibleTransactions().filter(t=> new Date(t.date) <= now).reduce((s,t)=> s + (t.type==='income'? t.amount : -t.amount), 0);
 }
-function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+// Texte saisi ou importe -> HTML sur, y compris dans un attribut (value="...", title="...").
+function escapeHtml(s){
+  return String(s==null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 // Pastille sur l'icone (iOS 16.4+, appli sur l'ecran d'accueil, notifications autorisees) :
 // le « Reste » estime du mois en cours, arrondi a l'euro, pour la vue affichee a l'ouverture
@@ -1817,7 +1824,7 @@ function renderApp(){
     ${state.editingBuiltinColorId ? renderEditBuiltinColorModal() : ''}
     ${state.quickTxOpen ? renderQuickTxModal() : ''}
     ${state.categoryModalOpen ? renderNewCategoryModal() : ''}
-    ${state.toast ? `<div class="toast">${icon('spark',13)} ${state.toast.msg}${state.toast.undo ? `<button data-toast-undo="1" style="color:var(--gold); font-weight:700; margin-left:4px;">Annuler</button>` : ''}</div>` : ''}
+    ${state.toast ? `<div class="toast">${icon('spark',13)} ${escapeHtml(state.toast.msg)}${state.toast.undo ? `<button data-toast-undo="1" style="color:var(--gold); font-weight:700; margin-left:4px;">Annuler</button>` : ''}</div>` : ''}
   `;
 }
 
@@ -2599,7 +2606,7 @@ function renderYearlyReviewModal(){
           <div class="scroll-cats" style="margin-bottom:22px;">
             ${s.catData.length===0 ? `<div class="empty">Aucune dépense</div>` : s.catData.map(c=>`
               <div class="catbar-row">
-                <div class="row" style="margin-bottom:2px;"><span style="font-size:12.5px; display:flex; align-items:center; gap:6px;"><span class="dot" style="background:${c.color}"></span>${c.label}</span><span class="mono" style="font-size:12.5px;">${fmt0(c.value)}</span></div>
+                <div class="row" style="margin-bottom:2px;"><span style="font-size:12.5px; display:flex; align-items:center; gap:6px;"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.label)}</span><span class="mono" style="font-size:12.5px;">${fmt0(c.value)}</span></div>
                 <div class="catbar-track"><div class="catbar-fill" style="width:${Math.round(c.value/maxCat*100)}%; background:${c.color};"></div></div>
               </div>
             `).join('')}
@@ -2871,7 +2878,7 @@ function renderInsightsModal(){
         <div style="margin-bottom:20px;">
           ${health.criteria.map(c=>`
             <div style="margin-bottom:10px;">
-              <div class="row" style="margin-bottom:4px;"><span style="font-size:12px; color:var(--paper);">${c.label}</span><span class="mono" style="font-size:11.5px; color:var(--paperDim);">${c.score}/${c.max}</span></div>
+              <div class="row" style="margin-bottom:4px;"><span style="font-size:12px; color:var(--paper);">${escapeHtml(c.label)}</span><span class="mono" style="font-size:11.5px; color:var(--paperDim);">${c.score}/${c.max}</span></div>
               <div class="catbar-track" style="height:6px;"><div class="catbar-fill" style="width:${Math.round(c.score/c.max*100)}%; background:var(--gold);"></div></div>
               <div style="font-size:10.5px; color:var(--paperDim); margin-top:2px;">${c.detail}</div>
             </div>
@@ -2887,7 +2894,7 @@ function renderInsightsModal(){
               ${icon(ins.icon,15)}
               <span style="font-size:13px; font-weight:600; color:var(--paper);">${escapeHtml(ins.title)}</span>
             </div>
-            <div style="font-size:12.5px; color:var(--paperDim); line-height:1.5;">${ins.text}</div>
+            <div style="font-size:12.5px; color:var(--paperDim); line-height:1.5;">${escapeHtml(ins.text)}</div>
           </div>
         `).join('')}
       </div>
@@ -3342,7 +3349,7 @@ function renderDashboard(){
     ${overdraftAlert ? `<div class="alert">${icon('alert',16)}<div>${overdraftAlert}</div></div>` : ''}
     ${renderExportReminder()}
     ${renderGaugeCard(stats)}
-    ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${over.map(b=>b.label).join(', ')} ${over.length>1?'dépassent':'dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
+    ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${escapeHtml(over.map(b=>b.label).join(', '))} ${over.length>1?'dépassent':'dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
     ${state.data.dashboardSettings.showBreakdown ? `
     <div class="card">
       <div class="row" style="margin-bottom:12px;">
@@ -3354,7 +3361,7 @@ function renderDashboard(){
           ${catData.map(c=>`
             <div class="catbar-row">
               <div class="row" style="margin-bottom:0;">
-                <span style="font-size:12.5px; color:var(--paperDim); display:flex; align-items:center; gap:7px;"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};display:inline-block;"></span>${c.label}</span>
+                <span style="font-size:12.5px; color:var(--paperDim); display:flex; align-items:center; gap:7px;"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};display:inline-block;"></span>${escapeHtml(c.label)}</span>
                 <span class="mono" style="font-size:12.5px;">${fmt0(c.value)}</span>
               </div>
               <div class="catbar-track"><div class="catbar-fill" style="width:${(c.value/maxCat*100).toFixed(1)}%; background:${c.color};"></div></div>
@@ -3445,7 +3452,7 @@ function renderDashboard(){
         return `
           <div style="margin-bottom:14px;">
             <div class="row" style="margin-bottom:6px;">
-              <span style="font-size:13px; display:flex; align-items:center; gap:7px;"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}</span>
+              <span style="font-size:13px; display:flex; align-items:center; gap:7px;"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${escapeHtml(cat.label)}</span>
               <div style="display:flex; align-items:center; gap:6px;">
                 <button data-quick-tx-cat="${catId}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${cat.color};" title="Ajouter une dépense">+</button>
                 <button data-unpin-cat="${catId}" style="color:var(--paperDim); padding:2px;" title="Retirer">${icon('x',13)}</button>
@@ -3506,7 +3513,7 @@ function txRow(t, delBtn){
       ${t.photo ? `<img src="${t.photo}" style="width:32px; height:32px; border-radius:9px; object-fit:cover; flex-shrink:0;">` : `<div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>`}
       <div style="min-width:0;">
         <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}${isRecurringTx ? `<span style="color:var(--gold); flex-shrink:0; display:flex;" title="Transaction récurrente">${icon('repeat',12)}</span>` : ''}</div>
-        <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
+        <div class="tx-meta">${escapeHtml(info.label)} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
       </div>
     </div>
     <div style="display:flex; align-items:center; gap:6px;">
@@ -3597,7 +3604,7 @@ function previewTxRow(t){
       <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
       <div style="min-width:0;">
         <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}<span style="color:var(--gold); font-size:10px; font-weight:600; border:1px solid rgba(212,169,79,.4); border-radius:5px; padding:1px 5px;">PRÉVU</span>${t.edited ? `<span style="color:var(--paperDim); flex-shrink:0; display:flex;" title="Modifiée pour cette échéance">${icon('pencil',11)}</span>` : ''}</div>
-        <div class="tx-meta">${info.label} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
+        <div class="tx-meta">${escapeHtml(info.label)} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
       </div>
     </div>
     <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>`;
@@ -3662,7 +3669,7 @@ function renderGaugeCard(stats){
             <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
               <span style="font-size:12.5px; color:var(--paper); display:flex; align-items:center; gap:6px; min-width:0;">
                 <span style="width:8px;height:8px;border-radius:50%;background:${s.color};display:inline-block; flex-shrink:0;"></span>
-                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${s.label}</span>
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(s.label)}</span>
               </span>
               <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                 <span class="mono" style="font-size:12px; color:var(--paperDim);">${fmt0(s.value)}</span>
@@ -3760,7 +3767,7 @@ function renderBudgets(){
           <div class="card" style="margin-bottom:0; position:relative;">
             <div class="budget-head">
               <button data-toggle-budget-detail="${cat.id}" class="budget-cat" style="background:none; border:none; padding:0; cursor:pointer;">
-                <span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${cat.label}
+                <span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${escapeHtml(cat.label)}
                 ${isRecurring ? `<span title="Liée à une récurrence" style="color:var(--paperDim); display:flex;">${icon('repeat',12)}</span>` : ''}
                 ${catTx.length>0 ? `<span style="color:var(--paperDim); display:flex; transform:rotate(${expanded?90:0}deg); transition:transform .15s;">${icon('chevronR',12)}</span>` : ''}
               </button>
@@ -4174,14 +4181,14 @@ function renderAddTxModal(){
               const active = txFormState.category===c.id;
               return `<button data-tx-cat-quick="${c.id}" style="flex-shrink:0; display:flex; align-items:center; gap:6px; padding:8px 12px; border-radius:20px; border:1px solid ${active?c.color:'var(--line)'}; background:${active?c.color+'22':'var(--surfaceHi)'}; white-space:nowrap;">
                 <span class="dot" style="width:8px; height:8px; border-radius:50%; background:${c.color}; display:inline-block;"></span>
-                <span style="font-size:12.5px; color:${active?c.color:'var(--paperDim)'};">${c.label}</span>
+                <span style="font-size:12.5px; color:${active?c.color:'var(--paperDim)'};">${escapeHtml(c.label)}</span>
               </button>`;
             }).join('')}
           </div>`;
         })()}
         <div class="select-wrap" style="margin-bottom:13px;">
           <select id="txCategorySelect" class="field-input" style="margin-bottom:0; appearance:none; -webkit-appearance:none;">
-            ${[...cats].sort((a,b)=>a.label.localeCompare(b.label,'fr')).map(c=>`<option value="${c.id}" ${txFormState.category===c.id?'selected':''}>${c.label}</option>`).join('')}
+            ${[...cats].sort((a,b)=>a.label.localeCompare(b.label,'fr')).map(c=>`<option value="${c.id}" ${txFormState.category===c.id?'selected':''}>${escapeHtml(c.label)}</option>`).join('')}
             <option value="__new__">+ Nouvelle catégorie…</option>
           </select>
           <span class="select-chevron">${icon('chevronR',13)}</span>
@@ -5282,6 +5289,17 @@ function bindEvents(){
         // plutot que de concatener des chaines dans tous les soldes.
         parsed.transactions.forEach(t=>{ if(t && typeof t.amount==='string') t.amount = Number(t.amount.replace(/\s/g,'').replace(',','.')); });
         if(parsed.transactions.some(t=> !t || !Number.isFinite(t.amount) || isNaN(new Date(t.date)))) throw new Error('transaction invalide');
+        // Identifiants recopies dans des attributs HTML : on refuse un fichier qui en contient d'anormaux.
+        const badId = (v)=> v!=null && v!=='' && !/^[\w-]{1,64}$/.test(String(v));
+        const idFields = [
+          ...parsed.transactions.flatMap(t=>[t.id, t.category, t.accountId, t.goalId, t.recurringId, t.transferId]),
+          ...(parsed.customCategories||[]).map(c=>c && c.id),
+          ...(parsed.goals||[]).flatMap(g=>[g && g.id, g && g.accountId]),
+          ...(parsed.accounts||[]).map(a=>a && a.id),
+          ...(parsed.recurring||[]).flatMap(r=>[r && r.id, r && r.category, r && r.accountId]),
+          ...Object.keys(parsed.budgets||{}),
+        ];
+        if(idFields.some(badId)) throw new Error('identifiant invalide');
         state.backupModalOpen = false;
         replaceDataWithUndo(normalizeData(parsed), 'Sauvegarde restaurée');
       }catch(err){
