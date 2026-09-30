@@ -599,6 +599,8 @@ const sameMonth = (iso,y,m) => { const d=new Date(iso); return d.getFullYear()==
 const localYMD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 const STORAGE_KEY = 'solde-budget-data-v1';
+const AUTOBACKUP_PREFIX = 'solde-autobackup-';
+const AUTOBACKUP_DAYS = 7;
 
 function seedData(){
   const now = new Date(); const y=now.getFullYear(), m=now.getMonth();
@@ -677,7 +679,7 @@ function normalizeData(parsed){
       if(parsed.lastMonthlyRecapShown===undefined) parsed.lastMonthlyRecapShown = null;
       if(parsed.lastNotifiedDate===undefined) parsed.lastNotifiedDate = null;
       (parsed.goals||[]).forEach(g=>{ if(!g.accountId) g.accountId = (parsed.accounts && parsed.accounts[0] ? parsed.accounts[0].id : 'main'); });
-      if(!parsed.theme) parsed.theme = 'ledger';
+      if(!parsed.theme || !THEMES[parsed.theme]) parsed.theme = 'ledger';
       if(!parsed.pinnedCategories){
         const essenceCustom = (parsed.customCategories||[]).find(c=>c.type==='expense' && c.label.toLowerCase()==='essence');
         parsed.pinnedCategories = [essenceCustom ? essenceCustom.id : 'transport', 'loisirs', 'autres_d'];
@@ -694,6 +696,16 @@ function normalizeData(parsed){
       if(!Array.isArray(parsed.goals)) parsed.goals = [];
       return parsed;
 }
+// Dernier instantané automatique lisible (plus récent d'abord), ou null.
+function latestReadableAutoBackup(){
+  for(const dateStr of listAutoBackups()){
+    try{
+      const parsed = JSON.parse(localStorage.getItem(AUTOBACKUP_PREFIX + dateStr));
+      if(parsed && Array.isArray(parsed.transactions)) return { dateStr, data: normalizeData(parsed) };
+    }catch(e){}
+  }
+  return null;
+}
 function loadData(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -706,6 +718,14 @@ function loadData(){
       if(raw) localStorage.setItem(STORAGE_KEY + '-corrupted-backup', raw);
     }catch(e2){}
     window.__soldeDataWasCorrupted = true;
+  }
+  // Donnees principales absentes ou illisibles : on repart du dernier instantane plutot que des
+  // donnees d'exemple (qui ecraseraient ensuite l'instantane du jour).
+  const snap = latestReadableAutoBackup();
+  if(snap){
+    window.__soldeRecoveredFrom = snap.dateStr;
+    saveData(snap.data);
+    return snap.data;
   }
   const seeded = seedData();
   seeded.transactions.forEach(t=>{ t.accountId = 'main'; });
@@ -939,11 +959,9 @@ function processGoalTransfers(){
   });
   if(changed) saveData(state.data);
 }
-const AUTOBACKUP_PREFIX = 'solde-autobackup-';
-const AUTOBACKUP_DAYS = 7;
 function runAutoBackup(){
   try{
-    const todayKey = new Date().toISOString().slice(0,10);
+    const todayKey = localYMD(new Date());
     const marker = localStorage.getItem(AUTOBACKUP_PREFIX + 'last');
     if(marker === todayKey) return;
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1057,6 +1075,27 @@ function showUndoToast(msg, undoFn){
   state.toast = { msg, undo: undoFn }; rerender();
   clearTimeout(showToast._t);
   showToast._t = setTimeout(()=>{ state.toast=null; rerender(); }, 4500);
+}
+// Remplace toutes les donnees (restauration) ou applique une suppression, en proposant « Annuler » :
+// l'etat precedent est garde en memoire tant que le message est affiche.
+function replaceDataWithUndo(newData, msg){
+  const before = state.data;
+  state.data = newData;
+  _forecastCache = null;
+  const ok = saveData(state.data);
+  applyTheme(state.data.theme);
+  showUndoToast(ok ? msg : msg + ' (stockage plein, non enregistré)', ()=>{
+    state.data = before;
+    _forecastCache = null;
+    saveData(state.data);
+    applyTheme(state.data.theme);
+    showToast('Annulé');
+  });
+}
+function mutateWithUndo(msg, fn){
+  const copy = JSON.parse(JSON.stringify(state.data));
+  fn(copy);
+  replaceDataWithUndo(copy, msg);
 }
 
 /* ---------------- Micro / saisie vocale ---------------- */
@@ -4613,7 +4652,7 @@ function bindEvents(){
   app.querySelectorAll('[data-quick-withdraw]').forEach(el=>el.addEventListener('click', ()=>{
     goalWithdraw(el.dataset.quickWithdraw, Number(el.dataset.amt));
   }));
-  app.querySelectorAll('[data-del-goal]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.goals = d.goals.filter(g=>g.id!==el.dataset.delGoal); }); }));
+  app.querySelectorAll('[data-del-goal]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Objectif supprimé', d=>{ d.goals = d.goals.filter(g=>g.id!==el.dataset.delGoal); }); }));
 
   app.querySelectorAll('[data-tx-type]').forEach(el=>el.addEventListener('click', ()=>{
     txFormState.type = el.dataset.txType;
@@ -4800,12 +4839,12 @@ function bindEvents(){
   app.querySelectorAll('[data-open-managecat]').forEach(el=>el.addEventListener('click', ()=>{ state.manageCatOpen = true; rerender(); }));
   app.querySelectorAll('[data-close-managecat]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.manageCatOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-managecat]').forEach(el=>el.addEventListener('click', ()=>{ state.manageCatOpen=false; rerender(); }));
-  app.querySelectorAll('[data-del-cat]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.customCategories = d.customCategories.filter(c=>c.id!==el.dataset.delCat); }); }));
+  app.querySelectorAll('[data-del-cat]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Catégorie supprimée', d=>{ d.customCategories = d.customCategories.filter(c=>c.id!==el.dataset.delCat); }); }));
 
   app.querySelectorAll('[data-open-recurmodal]').forEach(el=>el.addEventListener('click', ()=>{ state.recurringModalOpen = true; rerender(); }));
   app.querySelectorAll('[data-close-recurmodal]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.recurringModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-recurmodal]').forEach(el=>el.addEventListener('click', ()=>{ state.recurringModalOpen=false; rerender(); }));
-  app.querySelectorAll('[data-del-recur]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.recurring = d.recurring.filter(r=>r.id!==el.dataset.delRecur); }); }));
+  app.querySelectorAll('[data-del-recur]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Récurrence supprimée', d=>{ d.recurring = d.recurring.filter(r=>r.id!==el.dataset.delRecur); }); }));
 
   app.querySelectorAll('[data-toast-undo]').forEach(el=>el.addEventListener('click', ()=>{
     const undo = state.toast && state.toast.undo;
@@ -5044,12 +5083,8 @@ function bindEvents(){
       const photos = {};
       (state.data.transactions||[]).forEach(t=>{ if(t.photo) photos[t.id] = t.photo; });
       parsed.transactions.forEach(t=>{ if(!t.photo && photos[t.id]) t.photo = photos[t.id]; });
-      state.data = parsed;
-      saveData(state.data);
-      applyTheme(state.data.theme);
       state.backupModalOpen = false;
-      showToast(`Instantané du ${new Date(dateStr+'T12:00:00').toLocaleDateString('fr-FR')} restauré`);
-      rerender();
+      replaceDataWithUndo(normalizeData(parsed), `Instantané du ${new Date(dateStr+'T12:00:00').toLocaleDateString('fr-FR')} restauré`);
     }catch(e){ showToast('Impossible de restaurer cet instantané'); }
   }));
 
@@ -5247,27 +5282,8 @@ function bindEvents(){
         // plutot que de concatener des chaines dans tous les soldes.
         parsed.transactions.forEach(t=>{ if(t && typeof t.amount==='string') t.amount = Number(t.amount.replace(/\s/g,'').replace(',','.')); });
         if(parsed.transactions.some(t=> !t || !Number.isFinite(t.amount) || isNaN(new Date(t.date)))) throw new Error('transaction invalide');
-        if(!parsed.customCategories) parsed.customCategories = [];
-        if(!parsed.recurring) parsed.recurring = [];
-        if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
-        if(!parsed.goals) parsed.goals = [];
-        if(!parsed.budgets || typeof parsed.budgets !== 'object') parsed.budgets = {};
-        if(!parsed.accounts || !parsed.accounts.length) parsed.accounts = [{ id:'main', name:'Compte principal', color: COLORS.gold }];
-        if(!parsed.dashboardSettings) parsed.dashboardSettings = { showBreakdown:true, showTrend:true, showEnvelopesGauge:true, showForecast:true, showPinnedEnvelopes:true };
-        if(!parsed.gaugeAlwaysShow) parsed.gaugeAlwaysShow = ['autres_d'];
-        if(!parsed.categoryColorOverrides) parsed.categoryColorOverrides = {};
-        if(!parsed.theme || !THEMES[parsed.theme]) parsed.theme = 'ledger';
-        if(!parsed.pinnedCategories) parsed.pinnedCategories = [];
-        if(!parsed.hiddenBudgetCategories) parsed.hiddenBudgetCategories = [];
-        parsed.transactions.forEach(t=>{ if(!t.accountId) t.accountId = 'main'; });
-        normalizeData(parsed);
-        state.data = parsed;
-        _forecastCache = null;
-        const ok = saveData(state.data);
-        applyTheme(state.data.theme);
         state.backupModalOpen = false;
-        showToast(ok ? 'Sauvegarde restaurée' : 'Restaurée en mémoire (stockage plein, non enregistrée)');
-        rerender();
+        replaceDataWithUndo(normalizeData(parsed), 'Sauvegarde restaurée');
       }catch(err){
         showToast('Ce fichier ne correspond pas au format attendu');
       }
@@ -5503,13 +5519,12 @@ function bindEvents(){
   app.querySelectorAll('[data-del-account]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.delAccount;
     if((state.data.accounts||[]).length<=1) return;
-    mutateData(d=>{
+    state.editingAccountId = null;
+    mutateWithUndo('Compte supprimé, transactions transférées', d=>{
       d.accounts = d.accounts.filter(a=>a.id!==id);
       const fallback = d.accounts[0].id;
       d.transactions.forEach(t=>{ if(t.accountId===id) t.accountId = fallback; });
     });
-    state.editingAccountId = null;
-    showToast('Compte supprimé, transactions transférées');
   }));
 
   app.querySelectorAll('[data-quick-tx-cat]').forEach(el=>el.addEventListener('click', ()=>{
@@ -5787,7 +5802,9 @@ function animateBalance(el, target){
   setVVH();
 })();
 rerender();
-if(window.__soldeDataWasCorrupted){
+if(window.__soldeRecoveredFrom){
+  setTimeout(()=>{ showToast(`Données introuvables ou illisibles — instantané du ${new Date(window.__soldeRecoveredFrom+'T12:00:00').toLocaleDateString('fr-FR')} rechargé`); }, 600);
+} else if(window.__soldeDataWasCorrupted){
   setTimeout(()=>{ showToast("Anciennes données illisibles — appli réinitialisée (sauvegarde technique conservée)"); }, 600);
 }
 
