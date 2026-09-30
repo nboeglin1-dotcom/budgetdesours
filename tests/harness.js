@@ -31,7 +31,9 @@ function baseData(extra = {}){
 }
 
 // now : chaîne ISO avec décalage (ex. '2026-09-15T10:00:00+02:00')
-async function openApp({ now, data, shareCapture = false }){
+// storage : autres clés localStorage à injecter (ex. instantanés { 'solde-autobackup-2026-09-14': '{...}' }).
+// raw : contenu brut de la clé principale (pour simuler des données illisibles).
+async function openApp({ now, data, shareCapture = false, storage = null, raw = null }){
   const b = await getBrowser();
   const context = await b.newContext({ timezoneId:'Europe/Paris', locale:'fr-FR' });
   const page = await context.newPage();
@@ -46,10 +48,11 @@ async function openApp({ now, data, shareCapture = false }){
     return route.fulfill({ status:200, contentType:'text/plain', body:'' });
   });
   await page.clock.setFixedTime(new Date(now));
-  await page.addInitScript(({ KEY, json, shareCapture }) => {
+  await page.addInitScript(({ KEY, json, shareCapture, storage }) => {
     if(!sessionStorage.getItem('__seeded')){
       localStorage.clear();
       if(json) localStorage.setItem(KEY, json);
+      if(storage) for(const k in storage) localStorage.setItem(k, storage[k]);
       sessionStorage.setItem('__seeded', '1');
     }
     // Pastille d'icône (App Badging API) : on enregistre les appels.
@@ -61,7 +64,7 @@ async function openApp({ now, data, shareCapture = false }){
       navigator.canShare = () => true;
       navigator.share = async ({ files }) => { for(const f of files) window.__shared.push({ name:f.name, text: await f.text() }); };
     }
-  }, { KEY, json: data ? JSON.stringify(data) : null, shareCapture });
+  }, { KEY, json: raw !== null ? raw : (data ? JSON.stringify(data) : null), shareCapture, storage });
   await page.goto(ORIGIN + '/index.html');
   await page.waitForFunction(() => document.getElementById('app') && document.getElementById('app').innerHTML.length > 0);
   return { page, context, errors, close: () => context.close() };

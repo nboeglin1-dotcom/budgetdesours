@@ -1,5 +1,5 @@
 // Tests automatiques Solde des Ours — node:test + Playwright (Chromium préinstallé).
-// Lancement : NODE_PATH=$(npm root -g) node --test tests/
+// Lancement : NODE_PATH=$(npm root -g) node --test "tests/*.test.js"
 // Toutes les données sont fictives.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -331,5 +331,139 @@ test.describe('Pastille', () => {
       await lastBadge(page);
       await page.evaluate(() => { state.activeAccountFilter = 'b'; rerender(); });
       assert.equal(await lastBadge(page), 1350);
+    }));
+});
+
+/* ============ 6. Sauvegardes et protection contre la perte de données ============ */
+test.describe('Sauvegardes', () => {
+  const SNAP = 'solde-autobackup-';
+  const realData = () => baseData({
+    transactions:[ tx({ id:'reel1', amount:42, category:'loisirs', date:D('2026-09-12'), note:'Donnée réelle' }) ],
+    goals:[ { id:'g1', name:'Objectif test', target:1000, current:250, color:'#6FA287', accountId:'main' } ],
+    customCategories:[ { id:'c1', type:'expense', label:'Catégorie test', color:'#8B7FD6' } ],
+    recurring:[ rule({ id:'r1', nextDate:D('2026-09-25') }) ],
+    accounts:[ { id:'main', name:'Compte test', color:'#D4A94F' }, { id:'b', name:'Compte B', color:'#5FB4C4' } ],
+    rolloverEnabled:false, lastRolloverCheck:'2026-8',
+  });
+  const click = (page, sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
+  const stored = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('solde-budget-data-v1')));
+
+  test('S1 Suppression d’un objectif : « Annuler » le rétablit avec son montant épargné', () =>
+    withApp({ now: NOW_SEPT, data: realData() }, async ({ page, errors }) => {
+      await page.evaluate(() => { state.tab = 'goals'; rerender(); });
+      await click(page, '[data-del-goal="g1"]');
+      assert.equal((await stored(page)).goals.length, 0);
+      await click(page, '[data-toast-undo]');
+      const g = (await stored(page)).goals;
+      assert.equal(g.length, 1);
+      assert.equal(g[0].current, 250);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('S2 Suppression d’une catégorie, d’une récurrence ou d’un compte : « Annuler » disponible', async () => {
+    const cases = [
+      { open: () => { state.manageCatOpen = true; rerender(); }, sel:'[data-del-cat="c1"]', check: d => d.customCategories.length === 1 },
+      { open: () => { state.recurringModalOpen = true; rerender(); }, sel:'[data-del-recur="r1"]', check: d => d.recurring.length === 1 },
+      { open: () => { state.accountsModalOpen = true; state.editingAccountId = 'b'; rerender(); }, sel:'[data-del-account="b"]',
+        check: d => d.accounts.length === 2 },
+    ];
+    for(const c of cases){
+      await withApp({ now: NOW_SEPT, data: realData() }, async ({ page, errors }) => {
+        await page.evaluate(c.open);
+        const present = await page.evaluate((s) => !!document.querySelector(s), c.sel);
+        assert.ok(present, 'bouton introuvable : ' + c.sel);
+        await click(page, c.sel);
+        assert.ok(!c.check(await stored(page)), 'suppression non effectuée : ' + c.sel);
+        await click(page, '[data-toast-undo]');
+        assert.ok(c.check(await stored(page)), 'annulation sans effet : ' + c.sel);
+        assert.deepEqual(errors, []);
+      });
+    }
+  });
+
+  test('S3 Restauration d’un fichier : « Annuler » revient aux données d’avant', () =>
+    withApp({ now: NOW_SEPT, data: realData() }, async ({ page, errors }) => {
+      await page.evaluate(() => { state.backupModalOpen = true; rerender(); });
+      const other = JSON.stringify(baseData({ transactions:[ tx({ id:'vieux', amount:1, category:'loisirs', date:D('2026-01-01') }) ] }));
+      await page.setInputFiles('#backupImportInput', { name:'vieux.json', mimeType:'application/json', buffer: Buffer.from(other) });
+      await page.waitForFunction(() => state.data.transactions[0] && state.data.transactions[0].id === 'vieux');
+      await click(page, '[data-toast-undo]');
+      assert.equal((await stored(page)).transactions[0].id, 'reel1');
+      assert.equal(await page.evaluate(() => state.data.transactions[0].id), 'reel1');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('S4 Restauration d’un instantané ancien (champs récents absents) : complété, sans erreur, annulable', () =>
+    withApp({ now: NOW_SEPT, data: realData(),
+      storage: { [SNAP + '2026-09-10']: JSON.stringify({ transactions:[ tx({ id:'snap', amount:5, category:'loisirs', date:D('2026-09-09') }) ], budgets:{} }) } },
+    async ({ page, errors }) => {
+      await page.evaluate(() => { state.backupModalOpen = true; rerender(); });
+      await click(page, '[data-restore-autobackup="2026-09-10"]');
+      const d = await page.evaluate(() => state.data);
+      assert.equal(d.transactions[0].id, 'snap');
+      assert.ok(d.envelopeCommitted && d.dashboardSettings && Array.isArray(d.accounts) && d.accounts.length, 'données non normalisées');
+      for(const t of ['dashboard','transactions','budgets','goals']) await page.evaluate((t) => { state.tab = t; rerender(); }, t);
+      assert.deepEqual(errors, []);
+      await page.evaluate(() => { state.tab = 'dashboard'; rerender(); });
+      await click(page, '[data-toast-undo]');
+      assert.equal((await stored(page)).transactions[0].id, 'reel1');
+    }));
+
+  test('S5 Données principales illisibles : le dernier instantané est rechargé (pas les données d’exemple)', () =>
+    withApp({ now: NOW_SEPT, raw: '{"transactions":[{"id":', storage: {
+      [SNAP + '2026-09-13']: JSON.stringify(baseData({ transactions:[ tx({ id:'avant', amount:1, category:'loisirs', date:D('2026-09-01') }) ] })),
+      [SNAP + '2026-09-14']: JSON.stringify(realData()),
+      [SNAP + 'last']: '2026-09-14',
+    } }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({
+        ids: state.data.transactions.map(t => t.id),
+        stored: JSON.parse(localStorage.getItem('solde-budget-data-v1')).transactions.map(t => t.id),
+        technique: !!localStorage.getItem('solde-budget-data-v1-corrupted-backup'),
+      }));
+      assert.deepEqual(r.ids, ['reel1']);
+      assert.deepEqual(r.stored, ['reel1']);
+      assert.ok(r.technique, 'copie technique des données illisibles absente');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('S6 Clé principale absente mais instantanés présents : instantané rechargé', () =>
+    withApp({ now: NOW_SEPT, data: null, storage: { [SNAP + '2026-09-14']: JSON.stringify(realData()) } }, async ({ page }) => {
+      assert.deepEqual(await page.evaluate(() => state.data.transactions.map(t => t.id)), ['reel1']);
+    }));
+
+  test('S7 Premier lancement (aucune donnée, aucun instantané) : données d’exemple comme avant', () =>
+    withApp({ now: NOW_SEPT, data: null }, async ({ page, errors }) => {
+      assert.ok(await page.evaluate(() => state.data.transactions.length) > 0);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('S8 Import d’un fichier minimal : mêmes valeurs par défaut qu’au chargement (normalizeData seule source)', async () => {
+    const minimal = { transactions:[ tx({ id:'m', amount:3, category:'loisirs', date:D('2026-09-02') }) ] };
+    let viaLoad, viaImport;
+    await withApp({ now: NOW_SEPT, data: minimal }, async ({ page }) => {
+      viaLoad = await page.evaluate(() => ({ p: state.data.pinnedCategories, g: state.data.gaugeAlwaysShow, d: state.data.dashboardSettings, th: state.data.theme }));
+    });
+    await withApp({ now: NOW_SEPT, data: realData() }, async ({ page }) => {
+      await page.evaluate(() => { state.backupModalOpen = true; rerender(); });
+      await page.setInputFiles('#backupImportInput', { name:'min.json', mimeType:'application/json', buffer: Buffer.from(JSON.stringify(Object.assign({ theme:'inconnu' }, minimal))) });
+      await page.waitForFunction(() => state.data.transactions[0].id === 'm');
+      viaImport = await page.evaluate(() => ({ p: state.data.pinnedCategories, g: state.data.gaugeAlwaysShow, d: state.data.dashboardSettings, th: state.data.theme }));
+    });
+    assert.deepEqual(viaImport, viaLoad);
+    assert.equal(viaImport.th, 'ledger');
+  });
+
+  test('S9 Instantané du jour daté en heure de Paris (ouverture à 0h30)', () =>
+    withApp({ now:'2026-09-16T00:30:00+02:00', data: realData() }, async ({ page }) => {
+      const keys = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('solde-autobackup-')));
+      assert.ok(keys.includes('solde-autobackup-2026-09-16'), 'clés : ' + keys.join(', '));
+    }));
+
+  test('S10 Libellé de catégorie contenant du HTML (fichier importé) : aucun code exécuté', { todo: 'échappement des libellés à faire' }, () =>
+    withApp({ now: NOW_SEPT, data: baseData({
+      customCategories:[ { id:'c1', type:'expense', label:'<img src=x onerror="window.__xss=1">', color:'#fff' } ],
+      transactions:[ tx({ amount:5, category:'c1', date:D('2026-09-10') }) ] }) }, async ({ page }) => {
+      for(const t of ['dashboard','transactions','budgets','goals']){ await page.evaluate((t) => { state.tab = t; rerender(); }, t); await page.waitForTimeout(200); }
+      assert.equal(await page.evaluate(() => window.__xss), undefined);
     }));
 });
