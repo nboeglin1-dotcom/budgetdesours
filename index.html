@@ -65,11 +65,6 @@
   .tabbar button.active{color:var(--gold);}
   .tabbar svg{width:20px; height:20px;}
   .tabbar span{font-size:10px; font-weight:500;}
-  .quick-add{position:fixed; right:16px; bottom:calc(74px + env(safe-area-inset-bottom)); z-index:40; display:flex; flex-direction:column; gap:10px;}
-  .quick-add button{width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    font-size:26px; font-weight:600; line-height:1; box-shadow:0 8px 20px rgba(0,0,0,.4);}
-  .quick-add .qa-income{background:var(--sage); color:var(--ink);}
-  .quick-add .qa-expense{background:var(--coral); color:var(--ink);}
   .page{padding:18px;}
   .row{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:18px; margin-bottom:14px;}
@@ -219,7 +214,7 @@ window.addEventListener('error', function(e){
           var blob = new Blob([raw], { type:'application/json' });
           var url = URL.createObjectURL(blob);
           var a = document.createElement('a');
-          a.href = url; a.download = 'solde-secours-' + new Date().toISOString().slice(0,10) + '.json';
+          a.href = url; var nd = new Date(); a.download = 'solde-secours-' + nd.getFullYear() + '-' + String(nd.getMonth()+1).padStart(2,'0') + '-' + String(nd.getDate()).padStart(2,'0') + '.json';
           document.body.appendChild(a); a.click(); document.body.removeChild(a);
           URL.revokeObjectURL(url);
         }catch(err2){}
@@ -713,7 +708,6 @@ let state = {
   pinSetupFirst: '',
   pinConfirm: '',
   triedBiometricAuto: false,
-  recentExpanded: false,
   txAdvancedOpen: false,
   txDuplicateWarning: false,
   toast: null,
@@ -919,7 +913,7 @@ try{ checkMonthlyRecap(); }catch(e){ console.error('Récapitulatif mensuel :', e
   try{
     if(!state.data.notificationsEnabled) return;
     if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    const todayKey = new Date().toISOString().slice(0,10);
+    const todayKey = localYMD(new Date());
     if(state.data.lastNotifiedDate === todayKey) return;
     // processRecurring() a deja transforme les echeances du jour en transactions au demarrage :
     // upcomingRecurring() ne peut donc plus les voir. On notifie a partir des transactions generees aujourd'hui.
@@ -1240,7 +1234,7 @@ function openEditTx(id){
   const t = state.data.transactions.find(t=>t.id===id);
   if(!t) return;
   const linkedRule = t.recurringId ? (state.data.recurring||[]).find(r=>r.id===t.recurringId) : null;
-  txFormState = { type:t.type, category:t.category, date:new Date(t.date).toISOString().slice(0,10), recurring:!!linkedRule, frequency:linkedRule?linkedRule.frequency:'monthly', note:t.note||'', amount:t.amount, editingId:t.id, photo:t.photo||null, accountId:t.accountId||'main' };
+  txFormState = { type:t.type, category:t.category, date:localYMD(new Date(t.date)), recurring:!!linkedRule, frequency:linkedRule?linkedRule.frequency:'monthly', note:t.note||'', amount:t.amount, editingId:t.id, photo:t.photo||null, accountId:t.accountId||'main' };
   state.txAdvancedOpen = true;
   setState({modal:'addTx'});
 }
@@ -1273,7 +1267,7 @@ function openEditPreview(rowId){
   const { ruleId, occKey, isGoal } = parsePreviewRowId(rowId);
   const occ = getPreviewOccurrence(ruleId, occKey, isGoal);
   if(!occ) return;
-  txFormState = { type:occ.type, category:occ.category, date:new Date(occ.date).toISOString().slice(0,10), recurring:false, frequency:'monthly', note:occ.note||'', amount:occ.amount, editingId:null, photo:null, accountId:'main', previewException:{ ruleId, occKey, isGoal } };
+  txFormState = { type:occ.type, category:occ.category, date:localYMD(new Date(occ.date)), recurring:false, frequency:'monthly', note:occ.note||'', amount:occ.amount, editingId:null, photo:null, accountId:'main', previewException:{ ruleId, occKey, isGoal } };
   state.txAdvancedOpen = false;
   state.txDuplicateWarning = false;
   setState({modal:'addTx'});
@@ -2507,7 +2501,7 @@ function renderDashboard(){
   const dueSoon = combined
     .sort((a,b)=> new Date(a.date||a.next) - new Date(b.date||b.next))
     .filter(item=>{
-      const dateKey = new Date(item.date||item.next).toISOString().slice(0,10);
+      const dateKey = localYMD(new Date(item.date||item.next));
       const key = item.category+'|'+item.amount+'|'+dateKey;
       if(seen.has(key)) return false;
       seen.add(key);
@@ -3196,7 +3190,7 @@ function renderGoalDeadlineModal(){
         <div class="modal-head"><div class="modal-title ledger">Échéance — ${escapeHtml(g.name)}</div><button data-close-x-goaldeadline="1">${icon('x',18)}</button></div>
         <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">Il te reste ${fmt0(remaining)} à épargner. Choisis une date et l'appli calculera le rythme mensuel nécessaire.</div>
         <label class="field-label">Date cible</label>
-        <input id="goalDeadlineInput" type="date" class="field-input mono" value="${g.deadline ? new Date(g.deadline).toISOString().slice(0,10) : ''}">
+        <input id="goalDeadlineInput" type="date" class="field-input mono" value="${g.deadline ? localYMD(new Date(g.deadline)) : ''}">
         <div id="goalDeadlinePreview" style="font-size:12.5px; color:var(--paperDim); margin:10px 0 16px; min-height:18px;"></div>
         <div class="row" style="gap:10px; margin-bottom:0;">
           ${g.deadline ? `<button data-remove-goaldeadline="${g.id}" class="btn-ghost" style="flex:1; justify-content:center; color:var(--coral);">Retirer l'échéance</button>` : ''}
@@ -3292,7 +3286,7 @@ function renderAddTxModal(){
         <label class="field-label">Date</label>
         <input id="txDate" type="date" class="field-input mono" value="${txFormState.date}">
         ${(()=>{
-          const fmtISO = (d)=> d.toISOString().slice(0,10);
+          const fmtISO = localYMD;
           const today = new Date(); today.setHours(0,0,0,0);
           const yesterday = new Date(today); yesterday.setDate(yesterday.getDate()-1);
           const beforeYesterday = new Date(today); beforeYesterday.setDate(beforeYesterday.getDate()-2);
@@ -3530,7 +3524,6 @@ function bindEvents(){
     const today = new Date();
     setState({ viewY: today.getFullYear(), viewM: today.getMonth() });
   }));
-  app.querySelectorAll('[data-toggle-recent]').forEach(el=>el.addEventListener('click', ()=>{ state.recentExpanded = !state.recentExpanded; rerender(); }));
   app.querySelectorAll('[data-open-monthpicker]').forEach(el=>el.addEventListener('click', ()=>{ setState({ monthPickerOpen:true, monthPickerYear: state.viewY }); }));
   app.querySelectorAll('[data-close-monthpicker]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({monthPickerOpen:false}); }));
   app.querySelectorAll('[data-close-x-monthpicker]').forEach(el=>el.addEventListener('click', ()=> setState({monthPickerOpen:false})));
@@ -3552,15 +3545,7 @@ function bindEvents(){
       if(amtEl) setTimeout(()=> amtEl.focus(), 320);
     }
   }));
-  app.querySelectorAll('[data-quick-add]').forEach(el=>el.addEventListener('click', ()=>{
-    const type = el.dataset.quickAdd;
-    txFormState = { type, category:(type==='expense'?EXPENSE_CATS:INCOME_CATS)[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' };
-    state.txAdvancedOpen = false;
-    state.txDuplicateWarning = false;
-    setState({modal:'addTx'});
-    const amtEl = document.getElementById('txAmount');
-    if(amtEl) setTimeout(()=> amtEl.focus(), 320);
-  }));
+
   app.querySelectorAll('[data-close-modal]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ setState({modal:null}); } }));
   app.querySelectorAll('[data-close-x-modal]').forEach(el=>el.addEventListener('click', ()=>{ setState({modal:null}); }));
 
@@ -3722,17 +3707,6 @@ function bindEvents(){
     budgetEditingId = null;
     mutateData(d=>{ d.budgets[id] = val; });
   }));
-  app.querySelectorAll('[data-budget-adjust]').forEach(el=>el.addEventListener('click', ()=>{
-    const id = el.dataset.budgetAdjust;
-    const delta = Number(el.dataset.amt);
-    let newLimit = 0;
-    mutateData(d=>{
-      const current = d.budgets[id] || 0;
-      newLimit = Math.max(0, current + delta);
-      d.budgets[id] = newLimit;
-    });
-    showToast(`Limite ${catInfo(id).label} : ${fmt0(newLimit)}`);
-  }));
 
   app.querySelectorAll('[data-contribute]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.contribute;
@@ -3745,12 +3719,6 @@ function bindEvents(){
     const input = document.getElementById('goalAmount-'+id);
     const amt = Number(input.value);
     if(amt>0) goalWithdraw(id, amt);
-  }));
-  app.querySelectorAll('[data-quick-contribute]').forEach(el=>el.addEventListener('click', ()=>{
-    goalContribute(el.dataset.quickContribute, Number(el.dataset.amt));
-  }));
-  app.querySelectorAll('[data-quick-withdraw]').forEach(el=>el.addEventListener('click', ()=>{
-    goalWithdraw(el.dataset.quickWithdraw, Number(el.dataset.amt));
   }));
   app.querySelectorAll('[data-del-goal]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Objectif supprimé', d=>{ d.goals = d.goals.filter(g=>g.id!==el.dataset.delGoal); }); }));
 
@@ -3896,10 +3864,6 @@ function bindEvents(){
     showToast('Objectif créé');
   });
 
-  app.querySelectorAll('[data-open-newcat]').forEach(el=>el.addEventListener('click', ()=>{
-    newCatFormState = { color: COLORS.slate, type: txFormState.type, label:'', editingId:null };
-    state.categoryModalOpen = true; rerender();
-  }));
   app.querySelectorAll('[data-open-newcat-standalone]').forEach(el=>el.addEventListener('click', ()=>{
     newCatFormState = { color: COLORS.slate, type: 'expense', label:'', editingId:null };
     state.categoryModalOpen = true; rerender();
@@ -4515,15 +4479,6 @@ function bindEvents(){
     mutateData(d=>{ if(!d.hiddenBudgetCategories.includes(id)) d.hiddenBudgetCategories.push(id); });
     showToast('Catégorie masquée');
   }));
-  app.querySelectorAll('[data-hide-all-cats]').forEach(el=>el.addEventListener('click', ()=>{
-    const allIds = catsForType('expense').map(c=>c.id);
-    mutateData(d=>{ d.hiddenBudgetCategories = allIds; });
-    showToast('Toutes les catégories masquées');
-  }));
-  app.querySelectorAll('[data-show-all-cats]').forEach(el=>el.addEventListener('click', ()=>{
-    mutateData(d=>{ d.hiddenBudgetCategories = []; });
-    showToast('Toutes les catégories affichées');
-  }));
   app.querySelectorAll('[data-open-hiddencat]').forEach(el=>el.addEventListener('click', ()=>{ state.hiddenCatModalOpen = true; rerender(); }));
   app.querySelectorAll('[data-close-hiddencat]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.hiddenCatModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-hiddencat]').forEach(el=>el.addEventListener('click', ()=>{ state.hiddenCatModalOpen=false; rerender(); }));
@@ -4651,7 +4606,6 @@ function bindEvents(){
 
   const balEl = document.getElementById('balanceNum');
   if(balEl){
-    const today0 = new Date();
     const f0 = computeForecast();
     const target0 = balanceForViewedMonth(f0, state.viewY, state.viewM);
     animateBalance(balEl, target0);
