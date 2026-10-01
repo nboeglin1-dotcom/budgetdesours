@@ -768,6 +768,11 @@ function saveData(d){
 }
 
 /* ---------------- state ---------------- */
+// Declarees ici (et non pres de computeForecast) : le code de demarrage ci-dessous
+// (recapitulatif mensuel, score) s'en sert avant que le reste du script soit lu.
+let _renderToken = 0;
+let _forecastCache = null;
+let _forecastCacheToken = -1;
 const now = new Date();
 let state = {
   data: loadData(),
@@ -1030,7 +1035,7 @@ function showSystemNotification(title, body){
   return Promise.resolve();
 }
 recordHealthScoreSnapshot();
-checkMonthlyRecap();
+try{ checkMonthlyRecap(); }catch(e){ console.error('Récapitulatif mensuel :', e); }
 (function(){
   const jointAccount = (state.data.accounts||[]).find(a=>a.name.toLowerCase().includes('joint'));
   if(jointAccount) state.activeAccountFilter = jointAccount.id;
@@ -1658,7 +1663,6 @@ function bearMoodFromRate(rate){
   return 'worried';
 }
 
-const TRANSFER_CATS_RECAP = new Set(['epargne','epargne_retour','virement','virement_retour','ajustement']);
 function computeMonthlyRecap(){
   const today = new Date();
   let lm = today.getMonth()-1, ly = today.getFullYear();
@@ -1668,13 +1672,13 @@ function computeMonthlyRecap(){
   const lastTx = visibleTransactions().filter(t=>sameMonth(t.date,ly,lm));
   const prevTx = visibleTransactions().filter(t=>sameMonth(t.date,ply,plm));
   if(lastTx.length===0) return null;
-  const sum = (arr,type)=> arr.filter(t=>t.type===type && !TRANSFER_CATS_RECAP.has(t.category)).reduce((s,t)=>s+t.amount,0);
+  const sum = (arr,type)=> arr.filter(t=>t.type===type && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
   const lastExpense = sum(lastTx,'expense'), prevExpense = sum(prevTx,'expense');
   const lastIncome = sum(lastTx,'income'), prevIncome = sum(prevTx,'income');
   const lastSaved = lastIncome - lastExpense, prevSaved = prevIncome - prevExpense;
   const byCatLast = {}, byCatPrev = {};
-  lastTx.filter(t=>t.type==='expense' && !TRANSFER_CATS_RECAP.has(t.category)).forEach(t=> byCatLast[t.category]=(byCatLast[t.category]||0)+t.amount);
-  prevTx.filter(t=>t.type==='expense' && !TRANSFER_CATS_RECAP.has(t.category)).forEach(t=> byCatPrev[t.category]=(byCatPrev[t.category]||0)+t.amount);
+  lastTx.filter(t=>t.type==='expense' && isRealIncExp(t)).forEach(t=> byCatLast[t.category]=(byCatLast[t.category]||0)+t.amount);
+  prevTx.filter(t=>t.type==='expense' && isRealIncExp(t)).forEach(t=> byCatPrev[t.category]=(byCatPrev[t.category]||0)+t.amount);
   let topCat = null, topCatDiff = 0;
   new Set([...Object.keys(byCatLast), ...Object.keys(byCatPrev)]).forEach(id=>{
     const diff = (byCatLast[id]||0) - (byCatPrev[id]||0);
@@ -2902,9 +2906,6 @@ function renderInsightsModal(){
   `;
 }
 
-let _renderToken = 0;
-let _forecastCache = null;
-let _forecastCacheToken = -1;
 function computeForecast(){
   if(_forecastCache && _forecastCacheToken === _renderToken) return _forecastCache;
   const today = new Date();
