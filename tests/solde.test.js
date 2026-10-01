@@ -277,7 +277,7 @@ test.describe('Export / import', () => {
       await doImport(page, 'texte.json', JSON.stringify(Object.assign(exportData(), { transactions:[
         { id:'a', type:'income', amount:'100', category:'salaire', date:D('2026-09-01'), accountId:'main' },
       ]})));
-      const b = await page.evaluate(() => totalBalance());
+      const b = await page.evaluate(() => visibleTransactions().reduce((s,t)=> s + (t.type==='income'? t.amount : -t.amount), 0)); // solde (totalBalance retirée avec le score)
       assert.ok(typeof b === 'number' && b === 100 || b === 0, 'solde obtenu : ' + JSON.stringify(b));
     }));
 
@@ -463,7 +463,7 @@ test.describe('Sauvegardes', () => {
   const EVIL = (id) => `"'><img src=x onerror="window.__xss=(window.__xss||[]).concat('${id}')">`;
   const visitAll = async (page) => {
     const views = ['dashboard','transactions','budgets','goals'].map(t => `state.tab='${t}'`)
-      .concat(['manageCatOpen','recurringModalOpen','accountsModalOpen','gaugeCatModalOpen','pinCatModalOpen','insightsModalOpen','yearlyReviewOpen','transferModalOpen'].map(k => `state.tab='dashboard'; state.${k}=true`))
+      .concat(['manageCatOpen','recurringModalOpen','accountsModalOpen','gaugeCatModalOpen','pinCatModalOpen','transferModalOpen','backupModalOpen'].map(k => `state.tab='dashboard'; state.${k}=true`))
       .concat(["state.modal='addTx'", "openEditTx('t1')", "state.accountsModalOpen=true; state.editingAccountId='main'"]);
     for(const v of views){
       await page.evaluate(`state.modal=null; for(const k in state){ if(/Open$/.test(k)) state[k]=false; } state.editingAccountId=null; ${v}; rerender();`);
@@ -530,14 +530,6 @@ test.describe('Démarrage', () => {
       assert.equal(r.lastExpense, 300);
     }));
 
-  test('D3 Le score du mois est enregistré au démarrage (historique)', () =>
-    withApp({ now: '2026-10-08T08:00:00+02:00', data: withLastMonth() }, async ({ page, errors }) => {
-      assert.deepEqual(errors, []);
-      const hist = await page.evaluate(() => JSON.parse(localStorage.getItem('solde-budget-data-v1')).healthScoreHistory);
-      assert.equal(hist.length, 1);
-      assert.equal(hist[0].monthKey, '2026-9');
-    }));
-
   test('D4 Chaque jour du 1er au 8 : aucun écran « Un problème est survenu »', async () => {
     for(let d = 1; d <= 8; d++){
       await withApp({ now: `2026-10-0${d}T07:30:00+02:00`, data: withLastMonth() }, async ({ page, errors }) => {
@@ -548,59 +540,55 @@ test.describe('Démarrage', () => {
   });
 });
 
-/* ============ 8. Import de relevé PDF (pdf.js chargé à la demande) ============ */
-test.describe('Import PDF', () => {
-  // Faux pdf.js : une page, deux lignes de relevé. Aucun accès réseau réel.
-  const FAKE_PDFJS = `window.pdfjsLib = { GlobalWorkerOptions:{}, getDocument: () => ({ promise: Promise.resolve({ numPages:1,
-    getPage: async () => ({ getTextContent: async () => ({ items: [
-      { str:'05/09/2026 CARREFOUR MARKET -42,50', transform:[0,0,0,0,0,700] },
-      { str:'08/09/2026 VIREMENT RECU SALAIRE +1 800,00', transform:[0,0,0,0,0,680] } ] }) }) }) }) };`;
-
-  test('P1 Démarrage : pdf.js n’est pas chargé ; il l’est au choix d’un PDF et le relevé est proposé à l’import', (t) =>
+/* ============ 8. Version allégée (fonctions secondaires retirées le 01/10/2026) ============ */
+test.describe('Version allégée', () => {
+  test('V1 Saisie vocale, import PDF, habitudes, score, « Et si… » et bilan : plus aucune trace dans l’appli', () =>
     withApp({ now: NOW_SEPT, data: baseData() }, async ({ page, errors }) => {
-      const requested = [];
-      await page.route('**/cdnjs.cloudflare.com/**', route => { requested.push(route.request().url()); route.fulfill({ status:200, contentType:'application/javascript', body: FAKE_PDFJS }); });
-      const atStart = await page.evaluate(() => !!window.pdfjsLib || !!document.querySelector('script[src*="pdf.min.js"]'));
-      if(atStart){ t.skip('version avec pdf.js chargé au démarrage'); return; }
-      await page.evaluate(() => { state.backupModalOpen = true; rerender(); });
-      await page.setInputFiles('#pdfImportInput', { name:'releve.pdf', mimeType:'application/pdf', buffer: Buffer.from('%PDF-1.4 factice') });
-      await page.waitForFunction(() => state.csvImport && state.csvImport.isPdf, null, { timeout: 5000 });
-      const rows = await page.evaluate(() => state.csvImport.rows);
-      assert.equal(requested.filter(u => u.includes('pdf.min.js')).length, 1);
-      assert.equal(rows.length, 2);
-      assert.equal(rows[0][2], '-42,50');
-      assert.deepEqual(errors, []);
-    }));
-});
-
-/* ============ 9. Fonctions secondaires (filet avant simplification) ============ */
-test.describe('Fonctions secondaires', () => {
-  const data = () => baseData({ transactions: [
-    tx({ id:'s1', type:'income', amount:2000, category:'salaire', date:D('2026-08-01') }),
-    tx({ id:'s2', amount:300, category:'courses', date:D('2026-08-10') }),
-    tx({ id:'s3', amount:80, category:'epargne', date:D('2026-08-12') }),
-    tx({ id:'s4', type:'income', amount:50, category:'virement_retour', date:D('2026-08-13') }),
-  ] });
-
-  test('Q1 Bilan, score, « Et si… », habitudes, récapitulatif : s’ouvrent sans erreur', () =>
-    withApp({ now: NOW_SEPT, data: data() }, async ({ page, errors }) => {
-      for(const flag of ['yearlyReviewOpen','insightsModalOpen','whatIfOpen','habitCalcOpen']){
-        await page.evaluate((f) => { state[f] = true; rerender(); }, flag);
-        await page.evaluate((f) => { state[f] = false; rerender(); }, flag);
-      }
-      await page.evaluate(() => { state.monthlyRecapData = computeMonthlyRecap(); state.monthlyRecapOpen = true; rerender(); });
-      assert.deepEqual(errors, []);
-    }));
-
-  test('Q2 Bilan et score : épargne et virements exclus (même règle que isRealIncExp)', () =>
-    withApp({ now: NOW_SEPT, data: data() }, async ({ page }) => {
-      const r = await page.evaluate(() => {
-        const st = computeReviewStats({ start:new Date(2026,7,1), end:new Date(2026,7,31,23,59,59) });
-        return { inc: st.income, exp: st.expense, saved: st.netSavedToGoals, crit: computeHealthScore().criteria.find(c=>c.label==='Régularité').detail };
+      const r = await page.evaluate(async () => {
+        const html = [];
+        for(const t of ['dashboard','transactions','budgets','goals']){ state.tab = t; rerender(); html.push(document.body.innerHTML); }
+        state.tab = 'dashboard'; state.backupModalOpen = true; rerender(); html.push(document.body.innerHTML);
+        const all = html.join('');
+        return {
+          traces: ['data-voice-fab','pdfImportInput','data-open-habitcalc','data-open-insights','data-open-whatif','data-open-yearly'].filter(k => all.includes(k)),
+          fonctions: ['startVoiceCapture','extractPdfLines','renderHabitCalcModal','computeHealthScore','renderWhatIfModal','computeReviewStats'].filter(f => typeof window[f] === 'function'),
+          cdn: !!document.querySelector('script[src*="cdnjs"]'),
+          csv: !!document.getElementById('csvImportInput'),
+        };
       });
-      assert.equal(r.inc, 2000);
-      assert.equal(r.exp, 300);
-      assert.equal(r.saved, 80);
-      assert.match(r.crit, /^1\/3/);
+      assert.deepEqual(r.traces, []);
+      assert.deepEqual(r.fonctions, []);
+      assert.equal(r.cdn, false);
+      assert.equal(r.csv, true, 'l’import CSV reste disponible');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('V2 Anciennes données (historique du score, état des écrans retirés) : chargées sans erreur et conservées', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ healthScoreHistory:[ { monthKey:'2026-7', score:70 } ],
+      transactions:[ tx({ id:'t1', amount:20, category:'courses', date:D('2026-09-03') }) ] }) }, async ({ page, errors }) => {
+      assert.deepEqual(errors, []);
+      const r = await page.evaluate(() => ({ n: state.data.transactions.length, hist: state.data.healthScoreHistory }));
+      assert.equal(r.n, 1);
+      assert.equal(r.hist.length, 1);
+    }));
+
+  test('V3 Import CSV toujours fonctionnel (aperçu puis import)', () =>
+    withApp({ now: NOW_SEPT, data: baseData() }, async ({ page, errors }) => {
+      await page.evaluate(() => { state.backupModalOpen = true; rerender(); });
+      const csv = 'Date;Libellé;Montant\n05/09/2026;Boulangerie;-4,20\n08/09/2026;Remboursement;15,00\n';
+      await page.setInputFiles('#csvImportInput', { name:'releve.csv', mimeType:'text/csv', buffer: Buffer.from(csv) });
+      await page.waitForFunction(() => state.csvImport && state.csvImport.rows.length === 2, null, { timeout: 5000 });
+      await page.click('[data-confirm-csv-import]');
+      await page.waitForTimeout(200);
+      const txs = await page.evaluate(() => state.data.transactions.map(t => [t.type, t.amount]).sort());
+      assert.deepEqual(txs, [['expense', 4.2], ['income', 15]]);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('V4 Glisser pour fermer le récapitulatif mensuel fonctionne toujours', () =>
+    withApp({ now: NOW_SEPT, data: baseData() }, async ({ page, errors }) => {
+      await page.evaluate(() => { state.monthlyRecapData = { ly:2026, lm:7, ply:2026, plm:6, lastExpense:0, prevExpense:0, lastIncome:0, prevIncome:0, lastSaved:0, prevSaved:0, topCat:null, topCatDiff:0, expensePctChange:null, isBestMonth:false, overBudgets:[] }; state.monthlyRecapOpen = true; rerender(); });
+      assert.equal(await page.evaluate(() => !!document.querySelector('.modal-sheet')), true);
+      assert.deepEqual(errors, []);
     }));
 });
