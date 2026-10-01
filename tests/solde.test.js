@@ -502,3 +502,105 @@ test.describe('Sauvegardes', () => {
       assert.equal(await page.evaluate(() => state.data.transactions[0].id), 'reel1');
     }));
 });
+
+/* ============ 7. Démarrage (nuit du 01/10/2026) ============ */
+test.describe('Démarrage', () => {
+  const withLastMonth = (extra = {}) => baseData(Object.assign({
+    lastMonthlyRecapShown: '2026-8', // récapitulatif de septembre déjà vu : celui d'octobre reste à afficher
+    transactions: [
+      tx({ id:'s1', type:'income', amount:2000, category:'salaire', date:D('2026-09-01') }),
+      tx({ id:'s2', amount:300, category:'courses', date:D('2026-09-10') }),
+      tx({ id:'s3', amount:80, category:'epargne', date:D('2026-09-12') }),
+      tx({ id:'a1', amount:100, category:'courses', date:D('2026-08-10') }),
+    ] }, extra));
+
+  test('D1 1er du mois avec un mois précédent rempli : l’appli démarre et affiche le récapitulatif', () =>
+    withApp({ now: '2026-10-01T08:00:00+02:00', data: withLastMonth() }, async ({ page, errors }) => {
+      assert.deepEqual(errors, []);
+      const r = await page.evaluate(() => ({ crash: !!document.getElementById('app').dataset.crashHandled, recap: state.monthlyRecapOpen, key: state.data.lastMonthlyRecapShown }));
+      assert.equal(r.crash, false);
+      assert.equal(r.recap, true);
+      assert.equal(r.key, '2026-9');
+    }));
+
+  test('D2 Récapitulatif : virements et épargne exclus des revenus/dépenses (même liste que le tableau de bord)', () =>
+    withApp({ now: '2026-10-03T08:00:00+02:00', data: withLastMonth() }, async ({ page }) => {
+      const r = await page.evaluate(() => state.monthlyRecapData);
+      assert.equal(r.lastIncome, 2000);
+      assert.equal(r.lastExpense, 300);
+    }));
+
+  test('D3 Le score du mois est enregistré au démarrage (historique)', () =>
+    withApp({ now: '2026-10-08T08:00:00+02:00', data: withLastMonth() }, async ({ page, errors }) => {
+      assert.deepEqual(errors, []);
+      const hist = await page.evaluate(() => JSON.parse(localStorage.getItem('solde-budget-data-v1')).healthScoreHistory);
+      assert.equal(hist.length, 1);
+      assert.equal(hist[0].monthKey, '2026-9');
+    }));
+
+  test('D4 Chaque jour du 1er au 8 : aucun écran « Un problème est survenu »', async () => {
+    for(let d = 1; d <= 8; d++){
+      await withApp({ now: `2026-10-0${d}T07:30:00+02:00`, data: withLastMonth() }, async ({ page, errors }) => {
+        assert.deepEqual(errors, [], `jour ${d}`);
+        assert.equal(await page.evaluate(() => !!document.getElementById('app').dataset.crashHandled), false, `jour ${d}`);
+      });
+    }
+  });
+});
+
+/* ============ 8. Import de relevé PDF (pdf.js chargé à la demande) ============ */
+test.describe('Import PDF', () => {
+  // Faux pdf.js : une page, deux lignes de relevé. Aucun accès réseau réel.
+  const FAKE_PDFJS = `window.pdfjsLib = { GlobalWorkerOptions:{}, getDocument: () => ({ promise: Promise.resolve({ numPages:1,
+    getPage: async () => ({ getTextContent: async () => ({ items: [
+      { str:'05/09/2026 CARREFOUR MARKET -42,50', transform:[0,0,0,0,0,700] },
+      { str:'08/09/2026 VIREMENT RECU SALAIRE +1 800,00', transform:[0,0,0,0,0,680] } ] }) }) }) }) };`;
+
+  test('P1 Démarrage : pdf.js n’est pas chargé ; il l’est au choix d’un PDF et le relevé est proposé à l’import', (t) =>
+    withApp({ now: NOW_SEPT, data: baseData() }, async ({ page, errors }) => {
+      const requested = [];
+      await page.route('**/cdnjs.cloudflare.com/**', route => { requested.push(route.request().url()); route.fulfill({ status:200, contentType:'application/javascript', body: FAKE_PDFJS }); });
+      const atStart = await page.evaluate(() => !!window.pdfjsLib || !!document.querySelector('script[src*="pdf.min.js"]'));
+      if(atStart){ t.skip('version avec pdf.js chargé au démarrage'); return; }
+      await page.evaluate(() => { state.backupModalOpen = true; rerender(); });
+      await page.setInputFiles('#pdfImportInput', { name:'releve.pdf', mimeType:'application/pdf', buffer: Buffer.from('%PDF-1.4 factice') });
+      await page.waitForFunction(() => state.csvImport && state.csvImport.isPdf, null, { timeout: 5000 });
+      const rows = await page.evaluate(() => state.csvImport.rows);
+      assert.equal(requested.filter(u => u.includes('pdf.min.js')).length, 1);
+      assert.equal(rows.length, 2);
+      assert.equal(rows[0][2], '-42,50');
+      assert.deepEqual(errors, []);
+    }));
+});
+
+/* ============ 9. Fonctions secondaires (filet avant simplification) ============ */
+test.describe('Fonctions secondaires', () => {
+  const data = () => baseData({ transactions: [
+    tx({ id:'s1', type:'income', amount:2000, category:'salaire', date:D('2026-08-01') }),
+    tx({ id:'s2', amount:300, category:'courses', date:D('2026-08-10') }),
+    tx({ id:'s3', amount:80, category:'epargne', date:D('2026-08-12') }),
+    tx({ id:'s4', type:'income', amount:50, category:'virement_retour', date:D('2026-08-13') }),
+  ] });
+
+  test('Q1 Bilan, score, « Et si… », habitudes, récapitulatif : s’ouvrent sans erreur', () =>
+    withApp({ now: NOW_SEPT, data: data() }, async ({ page, errors }) => {
+      for(const flag of ['yearlyReviewOpen','insightsModalOpen','whatIfOpen','habitCalcOpen']){
+        await page.evaluate((f) => { state[f] = true; rerender(); }, flag);
+        await page.evaluate((f) => { state[f] = false; rerender(); }, flag);
+      }
+      await page.evaluate(() => { state.monthlyRecapData = computeMonthlyRecap(); state.monthlyRecapOpen = true; rerender(); });
+      assert.deepEqual(errors, []);
+    }));
+
+  test('Q2 Bilan et score : épargne et virements exclus (même règle que isRealIncExp)', () =>
+    withApp({ now: NOW_SEPT, data: data() }, async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const st = computeReviewStats({ start:new Date(2026,7,1), end:new Date(2026,7,31,23,59,59) });
+        return { inc: st.income, exp: st.expense, saved: st.netSavedToGoals, crit: computeHealthScore().criteria.find(c=>c.label==='Régularité').detail };
+      });
+      assert.equal(r.inc, 2000);
+      assert.equal(r.exp, 300);
+      assert.equal(r.saved, 80);
+      assert.match(r.crit, /^1\/3/);
+    }));
+});
