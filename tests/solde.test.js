@@ -592,3 +592,61 @@ test.describe('Version allégée', () => {
       assert.deepEqual(errors, []);
     }));
 });
+
+/* ============ 9. Simplification (jeudi 01/10/2026) ============ */
+test.describe('Modification d’une transaction', () => {
+  test('M1 Dépôt sur objectif fait à 0h30 le 1er : le modifier sans rien changer le laisse au 1er (pas de glissement au mois précédent)', () =>
+    withApp({ now: '2026-10-01T00:30:00+02:00', data: baseData({ goals: [{ id:'g1', name:'Objectif test', target:1000, current:0, accountId:'main' }] }) }, async ({ page, errors }) => {
+      const r = await page.evaluate(async () => {
+        goalContribute('g1', 50);
+        const t = state.data.transactions.find(t=>t.goalId==='g1');
+        const before = localYMD(new Date(t.date));
+        openEditTx(t.id);
+        const formDate = txFormState.date;
+        document.querySelector('[data-submit-tx]').click();
+        const after = state.data.transactions.find(x=>x.id===t.id);
+        return { before, formDate, after: localYMD(new Date(after.date)), current: state.data.goals[0].current };
+      });
+      assert.deepEqual(errors, []);
+      assert.equal(r.before, '2026-10-01');
+      assert.equal(r.formDate, '2026-10-01');
+      assert.equal(r.after, '2026-10-01');
+      assert.equal(r.current, 50);
+    }));
+  test('M2 Transaction saisie au formulaire (minuit UTC) : la date proposée en modification est inchangée', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ transactions: [tx({ id:'t1', amount:12, category:'courses', date:D('2026-09-10') })] }) }, async ({ page }) => {
+      const r = await page.evaluate(() => { openEditTx('t1'); const f = txFormState.date; document.querySelector('[data-submit-tx]').click(); return { f, d: state.data.transactions.find(t=>t.id==='t1').date }; });
+      assert.equal(r.f, '2026-09-10');
+      assert.equal(r.d, '2026-09-10T00:00:00.000Z');
+    }));
+});
+
+test.describe('Code mort retiré', () => {
+  test('C1 Gestionnaires orphelins retirés, appli toujours fonctionnelle sur chaque onglet', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ transactions: [tx({ id:'t1', amount:12, category:'courses', date:D('2026-09-10') })], goals:[{ id:'g1', name:'Objectif', target:100, current:10, accountId:'main' }] }) }, async ({ page, errors }) => {
+      for(const tab of ['dashboard','transactions','budgets','goals']){
+        await page.evaluate((t) => setState({ tab: t }), tab);
+      }
+      assert.deepEqual(errors, []);
+      const src = await page.evaluate(() => document.documentElement.outerHTML);
+      for(const a of ['data-budget-adjust','data-quick-contribute','data-quick-withdraw','data-hide-all-cats','data-show-all-cats','data-toggle-recent'])
+        assert.ok(!src.includes('[' + a + ']'), a);
+    }));
+});
+
+/* ============ 10. Dates en heure locale (validé par Nicolas le 01/10/2026) ============ */
+test.describe('Dates locales', () => {
+  test('L1 Boutons rapides de date : « Aujourd’hui » = date du jour (heure de Paris)', () =>
+    withApp({ now: NOW_SEPT, data: baseData() }, async ({ page }) => {
+      const r = await page.evaluate(() => { state.modal='addTx'; rerender();
+        const o = {}; document.querySelectorAll('[data-tx-date-quick]').forEach(b=>{ o[b.textContent.trim()] = b.dataset.txDateQuick; }); return o; });
+      assert.equal(r["Aujourd'hui"], '2026-09-15');
+      assert.equal(r['Hier'], '2026-09-14');
+      assert.equal(r['Demain'], '2026-09-16');
+    }));
+  test('L2 Échéance à venir modifiée depuis la liste : date proposée = jour de l’échéance (heure de Paris)', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ recurring: [rule({ nextDate: new Date('2026-09-19T22:30:00.000Z').toISOString(), anchorDay: 20 })] }) }, async ({ page }) => {
+      const r = await page.evaluate(() => { const occ = new Date('2026-09-19T22:30:00.000Z').getTime(); openEditPreview('pv:r1:' + occ + ':t'); return txFormState.date; }).catch(e => 'ERR ' + e.message);
+      assert.equal(r, '2026-09-20');
+    }));
+});
