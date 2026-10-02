@@ -1418,30 +1418,14 @@ function escapeHtml(s){
   return String(s==null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// Pastille sur l'icone (iOS 16.4+, appli sur l'ecran d'accueil, notifications autorisees) :
-// le « Reste » estime du mois en cours, arrondi a l'euro, pour la vue affichee a l'ouverture
-// (meme filtre de compte). Pas de pastille si le reste est <= 0 ou si le code PIN est actif
-// (sinon le montant serait visible sans deverrouiller).
-let _badgeTimer = null, _lastBadge = null;
-function updateAppBadge(){
-  clearTimeout(_badgeTimer);
-  _badgeTimer = setTimeout(()=>{
-    try{
-      if(!('setAppBadge' in navigator)) return;
-      let n = 0;
-      if(!(state.data.security && state.data.security.enabled)){
-        const saved = state.activeAccountFilter;
-        state.activeAccountFilter = state.defaultAccountFilter || null;
-        _forecastCache = null;
-        try{ n = Math.max(0, Math.round(computeForecast().startBalance)); }
-        finally{ state.activeAccountFilter = saved; _forecastCache = null; }
-      }
-      if(n === _lastBadge) return;
-      _lastBadge = n;
-      const p = n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge();
-      if(p && p.catch) p.catch(()=>{});
-    }catch(e){}
-  }, 800);
+// Pastille sur l'icone retiree le 02/10/2026 (demande de Nicolas). iOS garde la derniere
+// pastille affichee tant qu'on ne l'efface pas : on l'efface donc une fois au demarrage.
+function clearAppBadgeOnce(){
+  try{
+    if(!('clearAppBadge' in navigator)) return;
+    const p = navigator.clearAppBadge();
+    if(p && p.catch) p.catch(()=>{});
+  }catch(e){}
 }
 
 /* ---------------- render root ---------------- */
@@ -1466,7 +1450,6 @@ function rerender(){
     const newSheets = document.querySelectorAll('.modal-sheet');
     if(newSheets.length) newSheets[newSheets.length-1].scrollTop = modalScrollTop;
   }
-  updateAppBadge();
 }
 
 function renderApp(){
@@ -4688,6 +4671,7 @@ function animateBalance(el, target){
   setVVH();
 })();
 rerender();
+clearAppBadgeOnce();
 if(window.__soldeRecoveredFrom){
   setTimeout(()=>{ showToast(`Données introuvables ou illisibles — instantané du ${new Date(window.__soldeRecoveredFrom+'T12:00:00').toLocaleDateString('fr-FR')} rechargé`); }, 600);
 } else if(window.__soldeDataWasCorrupted){
