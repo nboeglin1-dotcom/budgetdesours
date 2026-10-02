@@ -288,49 +288,33 @@ test.describe('Export / import', () => {
     }));
 });
 
-/* ============ 5. Pastille sur l'icône (reste estimé) ============ */
-test.describe('Pastille', () => {
+/* ============ 5. Pastille sur l'icône : retirée le 02/10/2026 ============ */
+test.describe('Pastille retirée', () => {
   const data = (extra = {}) => baseData(Object.assign({
-    recurring:[ rule({ amount:50, nextDate: D('2026-09-20') }) ],
     transactions:[
       tx({ type:'income', amount:2000, category:'salaire', date:D('2026-09-01') }),
       tx({ amount:500, category:'alimentation', date:D('2026-09-03') }),
-      tx({ amount:100, category:'shopping', date:D('2026-09-28') }),
     ],
-    rolloverEnabled:false, lastRolloverCheck:'2026-8',
   }, extra));
-  const lastBadge = async (page) => { await page.waitForTimeout(1200); return page.evaluate(() => window.__badge.slice(-1)[0]); };
 
-  test('B1 Pastille = reste estimé affiché sur le tableau de bord (arrondi)', () =>
+  test('B1 Au démarrage, l’ancienne pastille est effacée et aucune nouvelle n’est posée', () =>
     withApp({ now: NOW_SEPT, data: data() }, async ({ page, errors }) => {
-      assert.equal(await lastBadge(page), 1350);
-      const shown = await page.evaluate(() => document.getElementById('balanceNum').textContent);
-      assert.match(shown.replace(/\s/g,''), /1350/);
+      await page.waitForTimeout(1200);
+      assert.deepEqual(await page.evaluate(() => window.__badge), [0]);
       assert.deepEqual(errors, []);
     }));
 
-  test('B2 Mise à jour après une nouvelle dépense', () =>
+  test('B2 Nouvelle dépense : toujours aucune pastille', () =>
     withApp({ now: NOW_SEPT, data: data() }, async ({ page }) => {
-      await lastBadge(page);
       await page.evaluate(() => mutateData(d => d.transactions.unshift({ id:'n', type:'expense', amount:49.6, category:'loisirs', date:new Date().toISOString(), accountId:'main' })));
-      assert.equal(await lastBadge(page), 1300);
+      await page.waitForTimeout(1200);
+      assert.deepEqual(await page.evaluate(() => window.__badge), [0]);
     }));
 
-  test('B3 Reste négatif : pas de pastille', () =>
-    withApp({ now: NOW_SEPT, data: data({ transactions:[ tx({ amount:300, category:'loisirs', date:D('2026-09-03') }) ] }) }, async ({ page }) => {
-      assert.equal(await lastBadge(page), 0);
-    }));
-
-  test('B4 Code PIN actif : pas de pastille (montant non visible sans déverrouiller)', () =>
-    withApp({ now: NOW_SEPT, data: data({ security:{ enabled:true, pin:'x', useBiometric:false, credentialId:null } }) }, async ({ page }) => {
-      assert.equal(await lastBadge(page), 0);
-    }));
-
-  test('B5 Un autre compte consulté ne change pas la pastille', () =>
-    withApp({ now: NOW_SEPT, data: data({ accounts:[{ id:'main', name:'Compte test', color:'#D4A94F' }, { id:'b', name:'Livret test', color:'#6FA287' }] }) }, async ({ page }) => {
-      await lastBadge(page);
-      await page.evaluate(() => { state.activeAccountFilter = 'b'; rerender(); });
-      assert.equal(await lastBadge(page), 1350);
+  test('B3 Navigateur sans API de pastille : aucune erreur', () =>
+    withApp({ now: NOW_SEPT, data: data() }, async ({ page, errors }) => {
+      await page.evaluate(() => { delete navigator.clearAppBadge; clearAppBadgeOnce(); });
+      assert.deepEqual(errors, []);
     }));
 });
 
