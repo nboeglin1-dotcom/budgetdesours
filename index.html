@@ -52,14 +52,14 @@
   .page{animation:pageIn .22s ease both;}
   @keyframes pageIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
   .scroll-cats, .modal-sheet{-webkit-overflow-scrolling:touch;}
-  .header{position:sticky; top:0; z-index:20; background:var(--bg); backdrop-filter:blur(10px);
+  .header{position:sticky; top:0; z-index:20; background:var(--bg);
     border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 14px) 18px 14px;}
   .brand{display:flex; align-items:center; gap:10px;}
   .brand .mark{width:30px; height:30px; border-radius:8px; background:var(--gold); color:var(--ink);
     display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px;}
   .brand-name{font-size:17px; font-weight:600; line-height:1; color:var(--paper) !important;}
   .brand-sub{font-size:10.5px; color:var(--paperDim); margin-top:2px;}
-  .tabbar{position:fixed; bottom:0; left:0; right:0; z-index:30; background:var(--surface); backdrop-filter:blur(14px);
+  .tabbar{position:fixed; bottom:0; left:0; right:0; z-index:30; background:var(--surface);
     border-top:1px solid var(--line); display:flex; padding:8px 6px calc(env(safe-area-inset-bottom) + 8px);}
   .tabbar button{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; border-radius:12px; color:var(--paperDim);}
   .tabbar button.active{color:var(--gold);}
