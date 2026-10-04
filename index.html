@@ -2360,7 +2360,7 @@ function renderBalanceContent(stats, showStats){
         const lastDay = new Date(td.getFullYear(), td.getMonth()+1, 0).getDate();
         const daysLeft = lastDay - td.getDate() + 1;
         if(bal <= 0) return `<div style="font-size:12.5px; color:var(--coral); margin-top:4px;">Plus de marge ce mois-ci — ${daysLeft} jour${daysLeft>1?'s':''} avant la fin du mois</div>`;
-        return `<div style="font-size:12.5px; color:var(--paperDim); margin-top:4px;">Soit <strong class="mono" style="color:var(--paper);">${fmt0(Math.floor(bal/daysLeft))}</strong> par jour ${daysLeft>1?`pour les ${daysLeft} jours restants`:`pour le dernier jour du mois`}</div>`;
+        return `<div style="font-size:12.5px; color:var(--paperDim); margin-top:4px;">Soit <strong class="mono" style="color:var(--paper);">${fmt0(Math.floor(bal/daysLeft))}</strong> à dépenser par jour d'ici le ${lastDay} ${MONTHS[td.getMonth()].toLowerCase()} ${daysLeft>1?`(${daysLeft} jours, aujourd'hui compris)`:`(dernier jour)`}</div>`;
       })()}
       ${showStats ? (usingEstimate && !f.hasHistory ? `
         <div style="font-size:12.5px; color:var(--paperDim); margin-top:14px; line-height:1.5;">
