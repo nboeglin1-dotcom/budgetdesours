@@ -166,6 +166,28 @@ test.describe('Récurrences', () => {
     }));
 });
 
+test.describe('Rapprochement des récurrences (source unique)', () => {
+  test('R10 isLinkedToRecurring : identifiant, catégorie + montant, montant + note ; sinon non lié', () =>
+    withApp({ now: NOW_SEPT, data: baseData({
+      recurring:[ rule({ id:'r1', note:'Box internet', amount:15, category:'abonnements', nextDate: D('2026-09-20') }) ],
+    })}, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({
+        parId: isLinkedToRecurring({ recurringId:'r1', amount:1, category:'x', note:'' }),
+        idInconnu: isLinkedToRecurring({ recurringId:'zz', amount:1, category:'x', note:'' }),
+        catMontant: isLinkedToRecurring({ amount:15, category:'abonnements', note:'autre' }),
+        montantNote: isLinkedToRecurring({ amount:15, category:'divers', note:' Box internet ' }),
+        montantSeul: isLinkedToRecurring({ amount:15, category:'divers', note:'' }),
+        autreMontant: isLinkedToRecurring({ amount:16, category:'divers', note:'Box internet' }),
+        diagnostic: (() => { let msg = ''; window.alert = (m) => { msg = m; }; state.backupModalOpen = true; rerender();
+          document.querySelector('[data-debug-banner]').click(); return msg; })(),
+      }));
+      assert.deepEqual([r.parId, r.idInconnu, r.catMontant, r.montantNote, r.montantSeul, r.autreMontant],
+        [true, false, true, true, false, false]);
+      assert.ok(r.diagnostic.includes('6 prochains'), 'l’outil de diagnostic fonctionne');
+      assert.deepEqual(errors, []);
+    }));
+});
+
 /* ============ 3. Prévisions ============ */
 test.describe('Prévisions', () => {
   const fcData = (extra = {}) => baseData(Object.assign({

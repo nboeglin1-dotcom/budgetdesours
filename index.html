@@ -375,6 +375,15 @@ function ruleOccurrencesForMonth(rule, y, m){
 // Mouvements qui ne sont ni un vrai revenu ni une vraie depense : epargne et virements entre comptes.
 const NOT_INC_EXP_CATS = new Set(['epargne','epargne_retour','virement','virement_retour','ajustement']);
 function isRealIncExp(t){ return !NOT_INC_EXP_CATS.has(t.category); }
+// Une transaction est « liee » a une recurrence si elle porte son identifiant, ou a meme categorie + meme montant,
+// ou meme montant + meme note (non vide). Source unique pour la banniere des echeances et l'outil de diagnostic.
+function isLinkedToRecurring(t){
+  const rules = state.data.recurring||[];
+  const note = (t.note||'').trim();
+  return (t.recurringId && rules.some(r=>r.id===t.recurringId))
+    || rules.some(r=> r.category===t.category && r.amount===t.amount)
+    || rules.some(r=> r.amount===t.amount && (r.note||'').trim()===note && (r.note||'').trim()!=='');
+}
 function ruleMatchesAccountFilter(accountId){
   return !state.activeAccountFilter || (accountId||'main') === state.activeAccountFilter;
 }
@@ -2476,8 +2485,6 @@ function renderDashboard(){
     .filter(b=>b.limit>0 && b.spent>b.limit);
 
   const now0 = new Date();
-  const rules0 = state.data.recurring||[];
-  const isLinkedToRecurring = (t)=> (t.recurringId && rules0.some(r=>r.id===t.recurringId)) || rules0.some(r=> r.category===t.category && r.amount===t.amount) || rules0.some(r=> r.amount===t.amount && (r.note||'').trim()===(t.note||'').trim() && (r.note||'').trim()!=='');
   const futureRealTx = visibleTransactions()
     .filter(t=> new Date(t.date) > now0 && isLinkedToRecurring(t))
     .map(t=> ({ ...t, daysUntil: Math.ceil((new Date(t.date)-now0)/86400000), source:'tx' }));
@@ -4197,7 +4204,6 @@ function bindEvents(){
   app.querySelectorAll('[data-debug-banner]').forEach(el=>el.addEventListener('click', ()=>{
     const now0 = new Date();
     const rules0 = state.data.recurring||[];
-    const isLinkedToRecurring = (t)=> (t.recurringId && rules0.some(r=>r.id===t.recurringId)) || rules0.some(r=> r.category===t.category && r.amount===t.amount) || rules0.some(r=> r.amount===t.amount && (r.note||'').trim()===(t.note||'').trim() && (r.note||'').trim()!=='');
     const futureRealTx = visibleTransactions()
       .filter(t=> new Date(t.date) > now0 && isLinkedToRecurring(t))
       .map(t=> ({ note:t.note, date:t.date, daysUntil: Math.ceil((new Date(t.date)-now0)/86400000), src:'transaction' }));
