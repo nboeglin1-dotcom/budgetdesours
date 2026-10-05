@@ -233,6 +233,19 @@ test.describe('Prévisions', () => {
       const p = await page.evaluate(() => { _forecastCache=null; return computeForecast().points[0].value; });
       assert.equal(p, 1100, 'realExpenseFC2 exclut la catégorie epargne (mais pas le mois en cours ni les virements auto)');
     }));
+
+  test('F5 Catégories « Ancien Solde » et virements exclus des moyennes de la prévision', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ transactions:[
+      tx({ type:'income', amount:1000, category:'salaire', date:D('2026-08-05') }),
+      tx({ amount:100, category:'courses', date:D('2026-08-10') }),
+      tx({ type:'income', amount:5000, category:'ln010xel', note:'Ancien Solde', date:D('2026-08-01') }),
+      tx({ amount:700, category:'ygzu4bl8', note:'Ancien Solde', date:D('2026-08-02') }),
+      tx({ amount:300, category:'virement', date:D('2026-08-03') }),
+    ]})}, async ({ page, errors }) => {
+      const f = await page.evaluate(() => { _forecastCache=null; const r = computeForecast(); return { i:r.avgIncome, e:r.avgExpense }; });
+      assert.deepEqual(f, { i:1000, e:100 });
+      assert.deepEqual(errors, []);
+    }));
 });
 
 /* ============ 4. Export / import ============ */

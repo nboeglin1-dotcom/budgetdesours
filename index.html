@@ -375,6 +375,10 @@ function ruleOccurrencesForMonth(rule, y, m){
 // Mouvements qui ne sont ni un vrai revenu ni une vraie depense : epargne et virements entre comptes.
 const NOT_INC_EXP_CATS = new Set(['epargne','epargne_retour','virement','virement_retour','ajustement']);
 function isRealIncExp(t){ return !NOT_INC_EXP_CATS.has(t.category); }
+// Prevision : on exclut en plus les deux categories personnalisees « Ancien Solde » (revenu et depense), reprise de solde
+// ponctuelle faite au demarrage de l'app, qui gonflerait sinon l'estimation des mois futurs.
+const ANCIEN_SOLDE_CATS = ['ln010xel','ygzu4bl8'];
+const FORECAST_EXCLUDED_CATS = new Set([...NOT_INC_EXP_CATS, ...ANCIEN_SOLDE_CATS]);
 // Une transaction est « liee » a une recurrence si elle porte son identifiant, ou a meme categorie + meme montant,
 // ou meme montant + meme note (non vide). Source unique pour la banniere des echeances et l'outil de diagnostic.
 function isLinkedToRecurring(t){
@@ -2125,14 +2129,9 @@ function computeForecast(){
     if(m<0){m+=12;y--;}
     months.push({y,m});
   }
-  // "Ancien Solde" / reprise de solde initial : un mouvement ponctuel fait une seule fois au
-  // demarrage de l'app (ex: solde de reprise, ancien Codevi), pas un revenu/depense qui se
-  // repete. On l'exclut du calcul du variable au meme titre que les virements internes,
-  // sinon il gonfle artificiellement l'estimation des mois futurs.
-  const TRANSFER_CATS_FC = new Set(['epargne','epargne_retour','virement','virement_retour','ajustement','ln010xel','ygzu4bl8']);
   const incomes = [], expenses = [], variableExpensesByMonth = [], variableIncomesByMonth = [];
   months.forEach(({y,m})=>{
-    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && !TRANSFER_CATS_FC.has(t.category));
+    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && !FORECAST_EXCLUDED_CATS.has(t.category));
     if(txs.length===0) return; // mois sans aucune donnee : on ne le compte pas, plutot que de diluer la moyenne vers 0
     incomes.push(txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0));
     expenses.push(txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0));
