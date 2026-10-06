@@ -669,3 +669,45 @@ test.describe('Dates locales', () => {
       assert.equal(r, '2026-09-20');
     }));
 });
+
+/* ============ Accueil : « à dépenser par jour » (commits du 02 et 04/10) ============ */
+test.describe('Accueil : reste par jour', () => {
+  const html = (page) => page.evaluate(() => { const s = computeMonthStats(); return { bal: s.bal, html: renderBalanceContent(s, true) }; });
+  const data = (amount) => baseData({ transactions: [tx({ id:'i1', type:'income', amount, category:'salaire', date:D('2026-10-02') })] });
+
+  test('P1 Le 6 octobre : reste ÷ 26 jours (aujourd’hui compris), arrondi à l’entier inférieur', () =>
+    withApp({ now: '2026-10-06T10:00:00+02:00', data: data(2000) }, async ({ page, errors }) => {
+      const r = await html(page);
+      assert.deepEqual(errors, []);
+      assert.equal(r.bal, 2000);
+      assert.match(r.html, /d'ici le 31 octobre \(26 jours, aujourd'hui compris\)/);
+      assert.match(r.html, new RegExp('<strong[^>]*>' + Math.floor(2000 / 26) + '[^<]*</strong>'));
+    }));
+
+  test('P2 Le 31 octobre : « dernier jour », reste entier', () =>
+    withApp({ now: '2026-10-31T10:00:00+01:00', data: data(2000) }, async ({ page }) => {
+      const r = await html(page);
+      assert.match(r.html, /\(dernier jour\)/);
+      assert.doesNotMatch(r.html, /jours, aujourd'hui compris/);
+    }));
+
+  test('P3 Reste nul ou négatif : message « Plus de marge », jours restants au pluriel', () =>
+    withApp({ now: '2026-10-06T10:00:00+02:00', data: baseData({ transactions: [tx({ id:'e1', amount:50, category:'courses', date:D('2026-10-03') })] }) }, async ({ page }) => {
+      const r = await html(page);
+      assert.ok(r.bal < 0);
+      assert.match(r.html, /Plus de marge ce mois-ci — 26 jours avant la fin du mois/);
+      assert.doesNotMatch(r.html, /à dépenser par jour/);
+    }));
+
+  test('P4 Mois affiché ≠ mois en cours : aucune ligne « par jour »', () =>
+    withApp({ now: '2026-10-06T10:00:00+02:00', data: data(2000) }, async ({ page }) => {
+      const h = await page.evaluate(() => { state.viewM = 8; return renderBalanceContent(computeMonthStats(), true); });
+      assert.doesNotMatch(h, /par jour|Plus de marge/);
+    }));
+
+  test('P5 Fin février d’une année non bissextile : 28 jours comptés', () =>
+    withApp({ now: '2027-02-27T10:00:00+01:00', data: baseData({ transactions: [tx({ id:'i1', type:'income', amount:560, category:'salaire', date:D('2027-02-02') })] }) }, async ({ page }) => {
+      const r = await html(page);
+      assert.match(r.html, /d'ici le 28 février \(2 jours, aujourd'hui compris\)/);
+    }));
+});
