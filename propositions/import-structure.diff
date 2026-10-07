@@ -1,0 +1,53 @@
+diff --git a/index.html b/index.html
+index 9649767..28b8388 100644
+--- a/index.html
++++ b/index.html
+@@ -4159,6 +4159,15 @@ function bindEvents(){
+         // plutot que de concatener des chaines dans tous les soldes.
+         parsed.transactions.forEach(t=>{ if(t && typeof t.amount==='string') t.amount = Number(t.amount.replace(/\s/g,'').replace(',','.')); });
+         if(parsed.transactions.some(t=> !t || !Number.isFinite(t.amount) || isNaN(new Date(t.date)))) throw new Error('transaction invalide');
++        // Structure : un fichier modifie a la main (liste a la place d'un objet, element vide...) ferait
++        // planter l'appli a chaque ouverture une fois enregistre ; on le refuse avant d'ecraser quoi que ce soit.
++        const isObj = (v)=> v!==null && typeof v==='object' && !Array.isArray(v);
++        const listKeys = ['customCategories','recurring','accounts','goals','goalTransfers','pinnedCategories','hiddenBudgetCategories','gaugeAlwaysShow'];
++        const objKeys = ['budgets','categoryRollover','envelopeCommitted','categoryColorOverrides','dashboardSettings','security'];
++        if(listKeys.some(k=> parsed[k]!=null && !Array.isArray(parsed[k]))) throw new Error('liste invalide');
++        if(objKeys.some(k=> parsed[k]!=null && !isObj(parsed[k]))) throw new Error('objet invalide');
++        if(['customCategories','recurring','accounts','goals','goalTransfers'].some(k=> (parsed[k]||[]).some(x=> !isObj(x)))) throw new Error('element invalide');
++        if(parsed.transactions.some(t=> t.type!=='income' && t.type!=='expense')) throw new Error('type invalide');
+         // Identifiants recopies dans des attributs HTML : on refuse un fichier qui en contient d'anormaux.
+         const badId = (v)=> v!=null && v!=='' && !/^[\w-]{1,64}$/.test(String(v));
+         const idFields = [
+diff --git a/tests/solde.test.js b/tests/solde.test.js
+index db6f42b..a4e3a8c 100644
+--- a/tests/solde.test.js
++++ b/tests/solde.test.js
+@@ -316,6 +316,28 @@ test.describe('Export / import', () => {
+       assert.ok(typeof b === 'number' && b === 100 || b === 0, 'solde obtenu : ' + JSON.stringify(b));
+     }));
+ 
++  test('X7 Import : fichier à la structure cassée (liste/objet/élément vide/type inconnu) refusé, données inchangées, appli toujours ouvrable', async () => {
++    const cas = {
++      recurringObjet: { recurring:{ a:1 } },
++      objectifVide: { goals:[null] },
++      compteVide: { accounts:[null] },
++      budgetsListe: { budgets:[1,2] },
++      typeInconnu: { transactions:[ tx({ id:'z', amount:5, category:'loisirs', date:D('2026-09-10'), type:'foo' }) ] },
++      reglagesCasses: { dashboardSettings:null, pinnedCategories:'x', hiddenBudgetCategories:5 },
++      reportCasse: { categoryRollover:'x', envelopeCommitted:5, goalTransfers:{} },
++    };
++    for(const [nom, extra] of Object.entries(cas)){
++      await withApp({ now: NOW_SEPT, data: exportData() }, async ({ page, errors }) => {
++        await doImport(page, nom + '.json', JSON.stringify(Object.assign(exportData(), extra)));
++        assert.equal(await page.evaluate(() => state.data.transactions[0].id), 't1', nom + ' : données remplacées');
++        await page.reload();
++        await page.waitForFunction(() => document.getElementById('app').innerHTML.length > 0);
++        assert.ok(!(await page.evaluate(() => document.body.innerText)).includes('Un problème est survenu'), nom + ' : écran d’erreur au rechargement');
++        assert.deepEqual(errors, [], nom);
++      });
++    }
++  });
++
+   test('X6 Nom du fichier exporté = date locale (export à 0h30 heure de Paris)', () =>
+     withApp({ now:'2026-09-16T00:30:00+02:00', data: exportData(), shareCapture:true }, async ({ page }) => {
+       const f = await doExport(page);
