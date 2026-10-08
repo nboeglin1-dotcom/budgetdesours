@@ -70,7 +70,6 @@
   .page{padding:18px;}
   .row{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
   .card{background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:18px; margin-bottom:14px;}
-  .ruled{background-image:repeating-linear-gradient(to bottom, transparent, transparent 27px, rgba(43,59,92,.33) 28px);}
   .section-title{font-family:'Fraunces',serif; font-weight:600; font-size:19px; margin:0 0 14px; color:var(--paper) !important;}
   .eyebrow{font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal; text-transform:none; color:var(--paper); margin-bottom:6px;}
   .month-nav{display:flex; align-items:center; gap:6px; width:100%;}
@@ -88,7 +87,6 @@
   .txrow{display:flex; align-items:center; justify-content:space-between; padding:11px 0; border-bottom:1px solid var(--lineSoft);}
   .txrow:last-child{border-bottom:none;}
   .tx-left{display:flex; align-items:center; gap:11px; min-width:0;}
-  .tx-check{width:20px; height:20px; flex-shrink:0; accent-color:#D4A94F;}
   .swatch{width:32px; height:32px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
   .swatch .dot{width:9px; height:9px; border-radius:50%;}
   .tx-note{font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -103,8 +101,6 @@
   .filter-pills{display:flex; gap:4px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:4px;}
   .filter-pills button{padding:7px 12px; border-radius:8px; font-size:12px; font-weight:500; color:var(--paperDim);}
   .filter-pills button.active{background:var(--surfaceHi); color:var(--paper);}
-  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
-  @media (max-width:420px){.grid2{grid-template-columns:1fr;}}
   .budget-stack{display:flex; flex-direction:column; gap:14px;}
   .budget-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .budget-cat{display:flex; align-items:center; gap:9px; font-size:15.5px; font-weight:600; color:var(--paper) !important;}
@@ -113,18 +109,12 @@
   .budget-limit-edit input{width:62px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:12px;}
   .budget-limit-edit button{background:var(--gold); color:var(--ink); font-size:11px; font-weight:600; padding:5px 9px; border-radius:8px;}
   .budget-foot{display:flex; justify-content:space-between; font-size:12px; color:var(--paperDim);}
-  .budget-fab{position:absolute; bottom:12px; right:12px; width:34px; height:34px; border-radius:50%; color:var(--ink);
-    display:flex; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(0,0,0,.4); font-weight:700;}
   .goal-card{position:relative; overflow:hidden;}
   .goal-badge{position:absolute; top:14px; right:14px; display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:4px 9px; border-radius:99px; background:rgba(212,169,79,.16); color:var(--gold);}
   .goal-name{font-size:16px; font-weight:600; margin-bottom:5px; color:var(--paper) !important;}
   .goal-amt{font-family:'JetBrains Mono',monospace; font-size:29px; font-weight:600; margin-bottom:10px;}
   .goal-amt .target{font-size:15px; font-weight:400; color:var(--paperDim); font-family:'Inter',sans-serif;}
   .goal-form{display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;}
-  .quick-chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;}
-  .chip{font-size:12px; font-weight:600; padding:7px 11px; border-radius:99px; border:1px solid var(--line);}
-  .chip-add{background:rgba(79,191,139,.14); color:var(--mint); border-color:rgba(79,191,139,.4);}
-  .chip-sub{background:rgba(232,102,77,.1); color:var(--coral); border-color:rgba(232,102,77,.35);}
   .quick-add-pastille{width:28px; height:28px; border-radius:50%; color:var(--ink); font-weight:800; font-size:17px; line-height:1; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .goal-form input{flex:1; min-width:70px; background:var(--surfaceHi); border:1px solid var(--line); border-radius:10px; padding:9px 10px; font-size:12px;}
   .goal-form button.add{background:var(--gold); color:var(--ink); font-weight:600; font-size:12px; padding:9px 12px; border-radius:10px;}
