@@ -315,6 +315,21 @@ function addPeriod(date, freq, anchorDay){
   d.setUTCDate(Math.min(anchorDay || day, daysInTargetMonth));
   return d;
 }
+// Inverse d'addPeriod : echeance precedente, avec le meme recalage en fin de mois et le meme anchorDay.
+function subtractPeriod(date, freq, anchorDay){
+  const d = new Date(date);
+  if(freq==='weekly'){
+    d.setUTCDate(d.getUTCDate()-7);
+    return d;
+  }
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  if(freq==='yearly') d.setUTCFullYear(d.getUTCFullYear()-1);
+  else d.setUTCMonth(d.getUTCMonth()-1);
+  const daysInTargetMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(anchorDay || day, daysInTargetMonth));
+  return d;
+}
 function occurrencesPerMonth(freq){
   if(freq==='weekly') return 52/12;
   if(freq==='yearly') return 1/12;
@@ -393,10 +408,7 @@ function recurringOccurrencesInMonth(y, m, collect){
     // Seules les transactions liees datees APRES l'echeance precedente (deja generee) peuvent
     // "remplacer" une echeance a venir ; sinon, pour une regle hebdomadaire, les occurrences deja
     // passees du mois effacent a tort celles qui restent.
-    const prevNat = new Date(rule.nextDate);
-    if(rule.frequency==='weekly') prevNat.setUTCDate(prevNat.getUTCDate()-7);
-    else if(rule.frequency==='yearly') prevNat.setUTCFullYear(prevNat.getUTCFullYear()-1);
-    else prevNat.setUTCMonth(prevNat.getUTCMonth()-1, Math.min(prevNat.getUTCDate(), 28));
+    const prevNat = subtractPeriod(rule.nextDate, rule.frequency, rule.anchorDay);
     let alreadyRealThisMonth = (state.data.transactions||[]).filter(t=>
       t.recurringId===rule.id && sameMonth(t.date, y, m) && new Date(t.date) > prevNat
     ).length;
