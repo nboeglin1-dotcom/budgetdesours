@@ -711,3 +711,87 @@ test.describe('Accueil : reste par jour', () => {
       assert.match(r.html, /d'ici le 28 février \(2 jours, aujourd'hui compris\)/);
     }));
 });
+
+test.describe('Périodes : une seule source de vérité (addPeriod / subtractPeriod)', () => {
+  const NOW_OCT = '2026-10-15T12:00:00+02:00';
+
+  test('T1 subtractPeriod : fins de mois, 29 février, hebdomadaire et annuel', () =>
+    withApp({ now: NOW_OCT, data: baseData() }, async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const s = (d, f, a) => subtractPeriod(d + 'T00:00:00.000Z', f, a).toISOString().slice(0, 10);
+        return [
+          s('2026-10-31', 'monthly', 31), s('2026-03-31', 'monthly', 31), s('2028-03-31', 'monthly', 31),
+          s('2026-03-28', 'monthly', 31), s('2026-12-30', 'monthly', 30), s('2026-10-15', 'monthly', 15),
+          s('2028-02-29', 'yearly', 29), s('2027-02-28', 'yearly', 29), s('2026-11-03', 'weekly'),
+        ];
+      });
+      assert.deepEqual(r, ['2026-09-30', '2026-02-28', '2028-02-29', '2026-02-28', '2026-11-30', '2026-09-15',
+        '2027-02-28', '2026-02-28', '2026-10-27']);
+    }));
+
+  test('T2 subtractPeriod annule exactement addPeriod (jours 1 à 31, mensuel/annuel/hebdo, sur 4 ans)', () =>
+    withApp({ now: NOW_OCT, data: baseData() }, async ({ page }) => {
+      const bad = await page.evaluate(() => {
+        const out = [];
+        for (const f of ['monthly', 'yearly', 'weekly']) for (let a = 1; a <= 31; a++) {
+          let d = new Date(Date.UTC(2026, 0, Math.min(a, 31)));
+          for (let i = 0; i < 48; i++) {
+            const n = addPeriod(d, f, a);
+            const back = subtractPeriod(n, f, a);
+            if (back.getTime() !== d.getTime()) out.push([f, a, d.toISOString(), back.toISOString()]);
+            d = n;
+          }
+        }
+        return out;
+      });
+      assert.deepEqual(bad, []);
+    }));
+
+  test('T3 recurringOccurrencesInMonth n’a plus de calcul de date à la main', () =>
+    withApp({ now: NOW_OCT, data: baseData() }, async ({ page }) => {
+      const src = await page.evaluate(() => recurringOccurrencesInMonth.toString());
+      assert.match(src, /subtractPeriod\(/);
+      assert.doesNotMatch(src, /setUTC(Month|Date|FullYear)/);
+    }));
+
+  test('T4 Règle du 31 : prélèvement réel tombé le 29 → pas compté deux fois dans le mois', () =>
+    withApp({ now: NOW_OCT, data: baseData({
+      rolloverEnabled:false, lastRolloverCheck:'2026-9',
+      recurring: [ rule({ nextDate: D('2026-10-31'), anchorDay: 31 }) ],
+      transactions: [
+        tx({ amount:15, category:'abonnements', date:D('2026-09-30'), recurringId:'r1' }),
+        tx({ amount:15, category:'abonnements', date:D('2026-10-29'), recurringId:'r1' }),
+      ],
+    })}, async ({ page }) => {
+      const r = await page.evaluate(() => [recurringOccurrencesInMonth(2026, 9).expense, recurringOccurrencesInMonth(2026, 10).expense]);
+      assert.deepEqual(r, [0, 15]);
+    }));
+
+  test('T5 Règle hebdomadaire : les occurrences déjà passées du mois n’effacent pas celles à venir', () =>
+    withApp({ now: NOW_OCT, data: baseData({
+      rolloverEnabled:false, lastRolloverCheck:'2026-9',
+      recurring: [ rule({ frequency:'weekly', amount:10, nextDate: D('2026-10-20'), anchorDay: 20 }) ],
+      transactions: [6, 13].map(d => tx({ amount:10, category:'abonnements', date:D('2026-10-' + String(d).padStart(2, '0')), recurringId:'r1' })),
+    })}, async ({ page }) => {
+      // Restent le 20 et le 27 octobre.
+      assert.equal(await page.evaluate(() => recurringOccurrencesInMonth(2026, 9).expense), 20);
+    }));
+
+  test('T6 Virement auto vers un objectif créé à 0h30 le 1er (heure de Paris) : un seul virement par mois sur 12 mois', () =>
+    withApp({ now: '2026-11-01T00:30:00+01:00', data: baseData({
+      rolloverEnabled:false, lastRolloverCheck:'2026-10',
+      goals: [{ id:'g1', name:'Objectif test', target:5000, current:0, accountId:'main' }],
+      goalTransfers: [{ id:'gt1', goalId:'g1', amount:50, frequency:'monthly', nextDate: '2026-10-31T23:30:00.000Z' }],
+    })}, async ({ page, errors }) => {
+      const r = await page.evaluate(() => {
+        const rule = state.data.goalTransfers[0];
+        const counts = [];
+        for (let k = 1; k <= 12; k++) { const d = new Date(2026, 10 + k, 1); counts.push(ruleOccurrencesForMonth(rule, d.getFullYear(), d.getMonth()).length); }
+        const nov = state.data.transactions.filter(t => t.goalId === 'g1' && sameMonth(t.date, 2026, 10)).length;
+        return { nov, counts };
+      });
+      assert.equal(r.nov, 1);
+      assert.deepEqual(r.counts, Array(12).fill(1));
+      assert.deepEqual(errors, []);
+    }));
+});
