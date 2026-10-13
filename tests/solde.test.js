@@ -795,3 +795,62 @@ test.describe('Périodes : une seule source de vérité (addPeriod / subtractPer
       assert.deepEqual(errors, []);
     }));
 });
+
+test.describe('Dates limites : changement d’année, 29 février, prévision sur 24 mois', () => {
+  test('Y1 Report activé : décembre → janvier, le surplus passe l’année', () =>
+    withApp({ now:'2027-01-02T09:00:00+01:00', data: baseData({
+      budgets:{ loisirs:100 }, lastRolloverCheck:'2026-11',
+      transactions:[ tx({ amount:30, category:'loisirs', date:D('2026-12-10') }) ],
+    })}, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({ lim: effectiveLimit('loisirs'), chk: state.data.lastRolloverCheck }));
+      assert.equal(r.lim, 170);
+      assert.equal(r.chk, '2027-0');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('Y2 Report désactivé : décembre → janvier, remise à zéro', () =>
+    withApp({ now:'2027-01-01T00:30:00+01:00', data: baseData({
+      budgets:{ loisirs:100 }, rolloverEnabled:false, lastRolloverCheck:'2026-11',
+      transactions:[ tx({ amount:30, category:'loisirs', date:D('2026-12-10') }) ],
+    })}, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({ lim: effectiveLimit('loisirs'), chk: state.data.lastRolloverCheck }));
+      assert.equal(r.lim, 100);
+      assert.equal(r.chk, '2027-0');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('Y3 Échéance le 29 : 29 février 2028 (bissextile), retour au 29 en mars, 28 février en 2027', () =>
+    withApp({ now:'2028-03-15T10:00:00+01:00', data: baseData({ recurring:[ rule({ nextDate: D('2027-12-29'), anchorDay: 29 }) ] }) }, async ({ page }) => {
+      const r = await page.evaluate(() => ({
+        dates: state.data.transactions.filter(t=>t.recurringId==='r1').map(t=>t.date.slice(0,10)).sort(),
+        next: state.data.recurring[0].nextDate.slice(0,10) }));
+      assert.deepEqual(r.dates, ['2027-12-29','2028-01-29','2028-02-29']);
+      assert.equal(r.next, '2028-03-29');
+    }));
+
+  test('Y4 Échéance le 29 en 2027 (non bissextile) : 28 février puis retour au 29 mars', () =>
+    withApp({ now:'2027-03-15T10:00:00+01:00', data: baseData({ recurring:[ rule({ nextDate: D('2027-01-29'), anchorDay: 29 }) ] }) }, async ({ page }) => {
+      const r = await page.evaluate(() => ({
+        dates: state.data.transactions.filter(t=>t.recurringId==='r1').map(t=>t.date.slice(0,10)).sort(),
+        next: state.data.recurring[0].nextDate.slice(0,10) }));
+      assert.deepEqual(r.dates, ['2027-01-29','2027-02-28']);
+      assert.equal(r.next, '2027-03-29');
+    }));
+
+  test('Y5 Prévision à cheval sur deux années : au moins 12 points, aucune valeur non numérique', () =>
+    withApp({ now:'2026-11-20T10:00:00+01:00', data: baseData({
+      rolloverEnabled:false, lastRolloverCheck:'2026-10',
+      recurring:[ rule({ nextDate: D('2026-12-31'), anchorDay: 31, amount:20 }) ],
+      transactions:[
+        tx({ type:'income', amount:2000, category:'salaire', date:D('2026-10-01') }),
+        tx({ type:'income', amount:2000, category:'salaire', date:D('2026-11-01') }),
+        tx({ amount:300, category:'alimentation', date:D('2026-10-12') }),
+        tx({ amount:300, category:'alimentation', date:D('2026-11-12') }),
+      ],
+    })}, async ({ page, errors }) => {
+      const f = await page.evaluate(() => { _forecastCache=null; const f = computeForecast(); return { n:f.points.length, ok:f.points.every(p => Number.isFinite(p.value)) }; });
+      assert.ok(f.n >= 12, 'au moins 12 points');
+      assert.ok(f.ok);
+      assert.deepEqual(errors, []);
+    }));
+});
