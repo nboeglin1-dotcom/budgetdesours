@@ -854,3 +854,48 @@ test.describe('Dates limites : changement d’année, 29 février, prévision su
       assert.deepEqual(errors, []);
     }));
 });
+
+test.describe('Dates limites : fins de mois, minuit heure de Paris, en-tête', () => {
+  const datesOf = (page) => page.evaluate(() => ({
+    dates: state.data.transactions.filter(t=>t.recurringId==='r1').map(t=>t.date.slice(0,10)).sort(),
+    next: state.data.recurring[0].nextDate.slice(0,10) }));
+
+  test('Y6 Échéance le 31 : 30 novembre, 28 février (2027), retour au 31, sans doublon', () =>
+    withApp({ now:'2027-03-02T10:00:00+01:00', data: baseData({ recurring:[ rule({ nextDate: D('2026-10-31'), anchorDay: 31 }) ] }) }, async ({ page, errors }) => {
+      const r = await datesOf(page);
+      assert.deepEqual(r.dates, ['2026-10-31','2026-11-30','2026-12-31','2027-01-31','2027-02-28']);
+      assert.equal(r.next, '2027-03-31');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('Y7 Démarrage le 1er à 1h05 (heure de Paris) : échéance du 1er générée une seule fois', () =>
+    withApp({ now:'2026-12-01T01:05:00+01:00', data: baseData({ recurring:[ rule({ nextDate: D('2026-11-01') }) ] }) }, async ({ page, errors }) => {
+      const r = await datesOf(page);
+      assert.deepEqual(r.dates, ['2026-11-01','2026-12-01']);
+      assert.equal(r.next, '2027-01-01');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('Y8 Démarrage un 1er avec le mois précédent rempli : chargement sans erreur, remise à zéro des enveloppes', () =>
+    withApp({ now:'2027-02-01T08:00:00+01:00', data: baseData({
+      budgets:{ alimentation:300 }, rolloverEnabled:false, lastRolloverCheck:'2027-0',
+      transactions:[
+        tx({ amount:250, category:'alimentation', date:D('2027-01-12') }),
+        tx({ type:'income', amount:1800, category:'salaire', date:D('2027-01-28') }),
+      ],
+    })}, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({ lim: effectiveLimit('alimentation'), chk: state.data.lastRolloverCheck }));
+      assert.equal(r.lim, 300);
+      assert.equal(r.chk, '2027-1');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('Y9 En-tête : pas de barre d’état « black-translucent » (flou iOS 26), mode plein écran conservé', () =>
+    withApp({ now:NOW_SEPT, data: baseData() }, async ({ page }) => {
+      const m = await page.evaluate(() => ({
+        style: document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]'),
+        capable: document.querySelector('meta[name="apple-mobile-web-app-capable"]')?.content }));
+      assert.equal(m.style, null);
+      assert.equal(m.capable, 'yes');
+    }));
+});
