@@ -898,4 +898,24 @@ test.describe('Dates limites : fins de mois, minuit heure de Paris, en-tête', (
       assert.equal(m.style, null);
       assert.equal(m.capable, 'yes');
     }));
+
+  test('Y10 En-tête : marge anti-flou Liquid Glass réservée à l’app installée iPhone, 0 ailleurs', () =>
+    withApp({ now:NOW_SEPT, data: baseData() }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => {
+        const css = [...document.styleSheets].flatMap(s => { try { return [...s.cssRules]; } catch(e){ return []; } })
+          .map(x => x.cssText).join('\n');
+        const header = document.querySelector('.header');
+        return {
+          clear: getComputedStyle(document.documentElement).getPropertyValue('--top-clear').trim(),
+          backdropH: document.querySelector('.statusbar-backdrop').getBoundingClientRect().height,
+          padTop: header ? getComputedStyle(header).paddingTop : null,
+          hasRule: /display-mode:\s*standalone/.test(css) && /--top-clear:\s*44px/.test(css),
+        };
+      });
+      assert.equal(r.clear, '0px');
+      assert.equal(r.backdropH, 0);
+      assert.equal(r.padTop, '14px');
+      assert.ok(r.hasRule);
+      assert.deepEqual(errors, []);
+    }));
 });
