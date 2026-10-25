@@ -1015,3 +1015,50 @@ test.describe('Jour d’une récurrence', () => {
     }));
 });
 
+test.describe('Solde après enveloppes', () => {
+  const NOW_OCT = '2026-10-25T10:00:00+01:00';
+  const data = (extra={}) => baseData(Object.assign({
+    transactions:[
+      tx({ id:'s', type:'income', amount:3000, category:'salaire', date:D('2026-10-01') }),
+      tx({ id:'c', amount:200, category:'alimentation', date:D('2026-10-10') }),
+      tx({ id:'i', amount:100, category:'impx', date:D('2026-10-28') }),
+    ],
+    customCategories:[ { id:'impx', type:'expense', label:'Impôts test', color:'#8B7FD6' } ],
+    budgets:{ alimentation:500, transport:100, impx:100, epargne:999 },
+    recurring:[ rule({ id:'rv', type:'income', category:'salaire', amount:1000, nextDate:D('2026-11-05'), anchorDay:5 }) ],
+    rolloverEnabled:false, lastRolloverCheck:'2026-9',
+  }, extra));
+
+  test('E1 Mois en cours : Reste moins le reste des enveloppes, dépense connue non comptée deux fois', () =>
+    withApp({ now:NOW_OCT, data: data() }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => { _forecastCache=null; const s = computeMonthStats(); return { bal:s.bal, after:s.balAfterEnv, line: document.querySelector('[data-after-env]')?.textContent || '' }; });
+      assert.equal(r.bal, 2700);
+      assert.equal(r.after, 2300);
+      assert.match(r.line.replace(/\s/g,' '), /Après enveloppes/);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('E2 Enveloppe dépassée : ne retire rien de plus', () =>
+    withApp({ now:NOW_OCT, data: data({ transactions:[
+      tx({ id:'s', type:'income', amount:3000, category:'salaire', date:D('2026-10-01') }),
+      tx({ id:'c', amount:700, category:'alimentation', date:D('2026-10-10') }) ] }) }, async ({ page }) => {
+      const r = await page.evaluate(() => { _forecastCache=null; const s = computeMonthStats(); return { bal:s.bal, after:s.balAfterEnv }; });
+      assert.equal(r.bal, 2300);
+      assert.equal(r.after, 2300 - 100 - 100);
+    }));
+
+  test('E3 Prévisionnel : enveloppes de chaque mois déduites en cumul, valeur brute inchangée', () =>
+    withApp({ now:NOW_OCT, data: data() }, async ({ page }) => {
+      const p = await page.evaluate(() => { _forecastCache=null; const f = computeForecast(); return f.points.slice(0,2); });
+      assert.equal(p[0].value, 3700);
+      assert.equal(p[0].afterEnv, 3700 - 400 - 700);
+      assert.equal(p[1].afterEnv, p[1].value - 400 - 700 - 700);
+    }));
+
+  test('E4 Sans enveloppe : pas de ligne « Après enveloppes »', () =>
+    withApp({ now:NOW_OCT, data: data({ budgets:{} }) }, async ({ page }) => {
+      const n = await page.evaluate(() => document.querySelectorAll('[data-after-env]').length);
+      assert.equal(n, 0);
+    }));
+});
+
