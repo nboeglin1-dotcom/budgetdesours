@@ -984,4 +984,34 @@ test.describe('Jour d’une récurrence', () => {
       const n = await page.evaluate(() => { state.recurringModalOpen = true; rerender(); return document.querySelectorAll('[data-recur-day]').length; });
       assert.equal(n, 0);
     }));
+  const setAmount = (page, id, v) => page.evaluate(({ id, v }) => {
+    state.recurringModalOpen = true; rerender();
+    const el = document.querySelector(`[data-recur-amount="${id}"]`);
+    el.value = v;
+    el.dispatchEvent(new Event('change'));
+  }, { id, v });
+
+  test('J7 Montant modifiable (virgule acceptée), passé et échéances modifiées inchangés, annulable', () =>
+    withApp({ now:NOW_OCT, data: baseData({
+      transactions:[ tx({ id:'t1', amount:1200, category:'salaire', type:'income', date:D('2026-10-05'), recurringId:'r1' }) ],
+      recurring:[ rule({ type:'income', category:'salaire', amount:1200, nextDate:D('2026-11-05'), anchorDay:5,
+        exceptions:{ [String(new Date(D('2026-12-05')).getTime())]: { amount:900 } } }) ] }) }, async ({ page, errors }) => {
+      await setAmount(page, 'r1', '1 050,50');
+      let d = await stored(page);
+      assert.equal(d.recurring[0].amount, 1050.5);
+      assert.equal(d.transactions[0].amount, 1200);
+      assert.equal(Object.values(d.recurring[0].exceptions)[0].amount, 900);
+      await page.evaluate(() => document.querySelector('[data-toast-undo]').click());
+      d = await stored(page);
+      assert.equal(d.recurring[0].amount, 1200);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('J8 Montant invalide refusé', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ amount:65, nextDate:D('2026-11-30'), anchorDay:30 }) ] }) }, async ({ page }) => {
+      await setAmount(page, 'r1', 'abc');
+      await setAmount(page, 'r1', '0');
+      assert.equal((await stored(page)).recurring[0].amount, 65);
+    }));
 });
+
