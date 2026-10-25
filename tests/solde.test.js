@@ -919,3 +919,69 @@ test.describe('Dates limites : fins de mois, minuit heure de Paris, en-tête', (
       assert.deepEqual(errors, []);
     }));
 });
+
+test.describe('Jour d’une récurrence', () => {
+  const NOW_OCT = '2026-10-25T10:00:00+01:00';
+  const stored = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('solde-budget-data-v1')));
+  const setDay = (page, id, day) => page.evaluate(({ id, day }) => {
+    state.recurringModalOpen = true; rerender();
+    const el = document.querySelector(`[data-recur-day="${id}"]`);
+    el.value = String(day);
+    el.dispatchEvent(new Event('change'));
+  }, { id, day });
+
+  test('J1 Décaler du 22 au 30 : prochaine échéance le 30 du même mois, sans transaction en plus', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2026-11-22'), anchorDay:22 }) ] }) }, async ({ page, errors }) => {
+      await setDay(page, 'r1', 30);
+      const d = await stored(page);
+      assert.equal(d.recurring[0].nextDate, D('2026-11-30'));
+      assert.equal(d.recurring[0].anchorDay, 30);
+      assert.equal(d.transactions.length, 0);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('J2 Jour 31 : recalé au 30 en novembre puis 31 en décembre', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2026-11-22'), anchorDay:22 }) ] }) }, async ({ page }) => {
+      await setDay(page, 'r1', 31);
+      const r = (await stored(page)).recurring[0];
+      assert.equal(r.nextDate, D('2026-11-30'));
+      const dec = await page.evaluate((r) => addPeriod(r.nextDate, r.frequency, r.anchorDay).toISOString(), r);
+      assert.equal(dec, D('2026-12-31'));
+    }));
+
+  test('J3 Les échéances modifiées ou ignorées suivent le nouveau jour', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2026-11-22'), anchorDay:22, exceptions:{
+      [String(new Date(D('2026-11-22')).getTime())]: { amount:18 },
+      [String(new Date(D('2026-12-22')).getTime())]: { skip:true },
+    } }) ] }) }, async ({ page }) => {
+      await setDay(page, 'r1', 28);
+      const ex = (await stored(page)).recurring[0].exceptions;
+      assert.deepEqual(Object.keys(ex).sort(), [String(new Date(D('2026-11-28')).getTime()), String(new Date(D('2026-12-28')).getTime())].sort());
+      assert.equal(ex[String(new Date(D('2026-11-28')).getTime())].amount, 18);
+    }));
+
+  test('J4 Avancer à un jour déjà passé : l’échéance du mois est générée une seule fois', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2026-10-26'), anchorDay:26 }) ] }) }, async ({ page, errors }) => {
+      await setDay(page, 'r1', 20);
+      const d = await stored(page);
+      assert.equal(d.transactions.length, 1);
+      assert.equal(d.transactions[0].date, D('2026-10-20'));
+      assert.equal(d.recurring[0].nextDate, D('2026-11-20'));
+      assert.deepEqual(errors, []);
+    }));
+
+  test('J5 « Annuler » rétablit l’ancien jour', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2026-11-22'), anchorDay:22 }) ] }) }, async ({ page }) => {
+      await setDay(page, 'r1', 30);
+      await page.evaluate(() => document.querySelector('[data-toast-undo]').click());
+      const r = (await stored(page)).recurring[0];
+      assert.equal(r.nextDate, D('2026-11-22'));
+      assert.equal(r.anchorDay, 22);
+    }));
+
+  test('J6 Pas de sélecteur de jour pour une récurrence hebdomadaire', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ frequency:'weekly', nextDate:D('2026-10-30') }) ] }) }, async ({ page }) => {
+      const n = await page.evaluate(() => { state.recurringModalOpen = true; rerender(); return document.querySelectorAll('[data-recur-day]').length; });
+      assert.equal(n, 0);
+    }));
+});

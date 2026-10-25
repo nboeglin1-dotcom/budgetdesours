@@ -335,6 +335,27 @@ function subtractPeriod(date, freq, anchorDay){
   d.setUTCDate(Math.min(anchorDay || day, daysInTargetMonth));
   return d;
 }
+// Change le jour du mois d'une regle mensuelle/annuelle : la prochaine echeance reste dans son mois
+// (recalee en fin de mois si besoin) et les exceptions suivent leur echeance naturelle deplacee.
+function setRecurringDay(rule, day){
+  if(rule.frequency!=='monthly' && rule.frequency!=='yearly') return false;
+  day = Math.round(Number(day));
+  if(!(day>=1 && day<=31)) return false;
+  const shift = (date)=>{
+    const d = new Date(date);
+    const dim = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(day, dim));
+    return d;
+  };
+  if(rule.exceptions){
+    const moved = {};
+    Object.keys(rule.exceptions).forEach(k=>{ moved[String(shift(Number(k)).getTime())] = rule.exceptions[k]; });
+    rule.exceptions = moved;
+  }
+  rule.nextDate = shift(rule.nextDate).toISOString();
+  rule.anchorDay = day;
+  return true;
+}
 function occurrencesPerMonth(freq){
   if(freq==='weekly') return 52/12;
   if(freq==='yearly') return 1/12;
@@ -3461,7 +3482,7 @@ function renderRecurringModal(){
             <div class="txrow">
               <div class="tx-left">
                 <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
-                <div><div class="tx-note">${escapeHtml(r.note||info.label)}</div><div class="tx-meta">${freqLabel(r.frequency)} · prochaine le ${new Date(r.nextDate).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div></div>
+                <div><div class="tx-note">${escapeHtml(r.note||info.label)}</div><div class="tx-meta">${freqLabel(r.frequency)}${(r.frequency==='monthly'||r.frequency==='yearly') ? ` · le <select data-recur-day="${r.id}" aria-label="Jour du mois" style="font:inherit; color:inherit; background:transparent; border:1px solid var(--line); border-radius:6px; padding:0 2px;">${Array.from({length:31},(_,i)=>i+1).map(n=>`<option value="${n}"${n===(r.anchorDay||new Date(r.nextDate).getUTCDate())?' selected':''}>${n}</option>`).join('')}</select>` : ''} · prochaine le ${new Date(r.nextDate).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div></div>
               </div>
               <div style="display:flex; align-items:center; gap:6px;">
                 <div class="tx-amt" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</div>
@@ -3906,6 +3927,16 @@ function bindEvents(){
   app.querySelectorAll('[data-open-recurmodal]').forEach(el=>el.addEventListener('click', ()=>{ state.recurringModalOpen = true; rerender(); }));
   app.querySelectorAll('[data-close-recurmodal]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.recurringModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-recurmodal]').forEach(el=>el.addEventListener('click', ()=>{ state.recurringModalOpen=false; rerender(); }));
+  app.querySelectorAll('[data-recur-day]').forEach(el=>el.addEventListener('change', ()=>{
+    const day = Number(el.value);
+    mutateWithUndo(`Récurrence calée sur le ${day}`, d=>{
+      const rule = (d.recurring||[]).find(r=>r.id===el.dataset.recurDay);
+      if(rule) setRecurringDay(rule, day);
+    });
+    // Echeance avancee a une date deja passee : elle devient une vraie transaction tout de suite.
+    processRecurring();
+    rerender();
+  }));
   app.querySelectorAll('[data-del-recur]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Récurrence supprimée', d=>{ d.recurring = d.recurring.filter(r=>r.id!==el.dataset.delRecur); }); }));
 
   app.querySelectorAll('[data-toast-undo]').forEach(el=>el.addEventListener('click', ()=>{
