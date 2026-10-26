@@ -826,8 +826,7 @@ function processCategoryRollover(){
     const byCat = {};
     state.data.transactions.forEach(t=>{
       if(t.type!=='expense') return;
-      const d = new Date(t.date);
-      if(d.getFullYear()===y && d.getMonth()===m) byCat[t.category] = (byCat[t.category]||0) + t.amount;
+      if(sameMonth(t.date, y, m)) byCat[t.category] = (byCat[t.category]||0) + t.amount;
     });
     // Le « Reste a depenser » deja mis de cote ce mois-la (envelopeCommitted) a quitte les
     // enveloppes : on le deduit des surplus pour ne pas le reporter une seconde fois.
