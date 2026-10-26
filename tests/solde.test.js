@@ -52,17 +52,17 @@ test.describe('Enveloppes', () => {
       assert.equal(r.chk, '2026-9');
     }));
 
-  test('E3 (documentation) Report activé par défaut : le surplus de septembre est ajouté à octobre', () =>
+  test('E3 Aucun report, même sans réglage enregistré : le surplus de septembre n’est pas ajouté à octobre', () =>
     withApp({ now:'2026-10-02T09:00:00+02:00', data: baseData({
-      budgets:{ loisirs:100 }, lastRolloverCheck:'2026-8', // rolloverEnabled absent -> loadData le met à true
+      budgets:{ loisirs:100 }, lastRolloverCheck:'2026-8', // rolloverEnabled absent -> loadData le met à false
       transactions:[ tx({ amount:30, category:'loisirs', date:D('2026-09-10') }) ],
     })}, async ({ page }) => {
       const r = await page.evaluate(() => ({ en: state.data.rolloverEnabled, lim: effectiveLimit('loisirs') }));
-      assert.equal(r.en, true);
-      assert.equal(r.lim, 170);
+      assert.equal(r.en, false);
+      assert.equal(r.lim, 100);
     }));
 
-  test('E4 Un reste « mis de côté » (envelopeCommitted) ne doit pas être reporté une 2e fois', () =>
+  test('E4 Même avec rolloverEnabled:true dans une ancienne sauvegarde, la limite reste le budget de base', () =>
     withApp({ now:'2026-10-02T09:00:00+02:00', data: baseData({
       budgets:{ loisirs:100 }, rolloverEnabled:true, lastRolloverCheck:'2026-8',
       envelopeCommitted:{ '2026-8':70 },
@@ -81,6 +81,23 @@ test.describe('Enveloppes', () => {
       const r = await page.evaluate(() => ({ lim: effectiveLimit('loisirs'), html: renderBudgets() }));
       assert.equal(r.lim, 100);
       assert.ok(!r.html.includes('reporté des mois précédents'), 'renderBudgets additionne categoryRollover sans vérifier rolloverEnabled');
+    }));
+});
+
+test.describe('Enveloppes sans report', () => {
+  test('E6 Ancienne sauvegarde avec report activé et reste stocké : limite = budget de base, plus de « mis de côté » ni d’interrupteur', () =>
+    withApp({ now: NOW_SEPT, data: baseData({
+      budgets:{ loisirs:100 }, rolloverEnabled:true, lastRolloverCheck:'2026-7',
+      categoryRollover:{ loisirs:50 },
+      transactions:[ tx({ amount:30, category:'loisirs', date:D('2026-08-10') }) ],
+    })}, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({ lim: effectiveLimit('loisirs'), html: renderBudgets(), chk: state.data.lastRolloverCheck, stored: state.data.categoryRollover.loisirs }));
+      assert.equal(r.lim, 100);
+      assert.ok(!r.html.includes('mis de côté') && !r.html.includes('reporté'));
+      assert.equal(r.chk, '2026-8');
+      assert.equal(r.stored, 50, 'les données enregistrées ne sont pas modifiées');
+      assert.ok(!(await page.content()).includes('data-toggle-rollover'));
+      assert.deepEqual(errors, []);
     }));
 });
 
@@ -797,13 +814,13 @@ test.describe('Périodes : une seule source de vérité (addPeriod / subtractPer
 });
 
 test.describe('Dates limites : changement d’année, 29 février, prévision sur 24 mois', () => {
-  test('Y1 Report activé : décembre → janvier, le surplus passe l’année', () =>
+  test('Y1 Aucun report : décembre → janvier, la limite repart de 100', () =>
     withApp({ now:'2027-01-02T09:00:00+01:00', data: baseData({
       budgets:{ loisirs:100 }, lastRolloverCheck:'2026-11',
       transactions:[ tx({ amount:30, category:'loisirs', date:D('2026-12-10') }) ],
     })}, async ({ page, errors }) => {
       const r = await page.evaluate(() => ({ lim: effectiveLimit('loisirs'), chk: state.data.lastRolloverCheck }));
-      assert.equal(r.lim, 170);
+      assert.equal(r.lim, 100);
       assert.equal(r.chk, '2027-0');
       assert.deepEqual(errors, []);
     }));

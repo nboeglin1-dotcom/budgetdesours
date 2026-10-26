@@ -574,7 +574,7 @@ function seedData(){
     goalTransfers: [],
     lastExportDate: null,
     notificationsEnabled: false,
-    rolloverEnabled: true,
+    rolloverEnabled: false,
     envelopeCommitted: {},
     bannerCollapsed: false,
     lastNotifiedDate: null,
@@ -606,7 +606,7 @@ function normalizeData(parsed){
       if(!parsed.goalTransfers) parsed.goalTransfers = [];
       if(parsed.lastExportDate===undefined) parsed.lastExportDate = null;
       if(parsed.notificationsEnabled===undefined) parsed.notificationsEnabled = false;
-      if(parsed.rolloverEnabled===undefined) parsed.rolloverEnabled = true;
+      if(parsed.rolloverEnabled===undefined) parsed.rolloverEnabled = false;
       if(!parsed.envelopeCommitted) parsed.envelopeCommitted = {};
       if(parsed.bannerCollapsed===undefined) parsed.bannerCollapsed = false;
       if(parsed.lastMonthlyRecapShown===undefined) parsed.lastMonthlyRecapShown = null;
@@ -723,7 +723,6 @@ let state = {
   quickTxOpen: false,
   pinCatModalOpen: false,
   gaugeCatModalOpen: false,
-  rolloverInfoOpen: false,
   recurringSearchQuery: '',
   monthPickerOpen: false,
   monthPickerYear: undefined,
@@ -744,7 +743,6 @@ let state = {
   allocateAmount: 0,
   allocateMode: 'save',
   allocateGoalMode: 'add',
-  allocateIsRollover: false,
   locked: false,
   pinInput: '',
   pinError: false,
@@ -802,55 +800,17 @@ function processRecurring(){
   });
   if(changed) saveData(state.data);
 }
+// Pas de report : chaque mois les enveloppes repartent de leur budget de base. On avance seulement le repere du mois.
 function processCategoryRollover(){
   const today = new Date();
   const curKey = today.getFullYear() + '-' + today.getMonth();
-  if(!state.data.lastRolloverCheck){
-    state.data.lastRolloverCheck = curKey;
-    saveData(state.data);
-    return;
-  }
   if(state.data.lastRolloverCheck === curKey) return;
-  if(!state.data.rolloverEnabled){
-    // Report desactive : on avance le repere sans accumuler, sinon la reactivation ferait
-    // apparaitre d'un coup tous les surplus des mois ou le report etait coupe.
-    state.data.lastRolloverCheck = curKey;
-    saveData(state.data);
-    return;
-  }
-  const parts = state.data.lastRolloverCheck.split('-').map(Number);
-  let y = parts[0], m = parts[1];
-  const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
-  let guard = 0;
-  while((y*12+m) < (today.getFullYear()*12+today.getMonth()) && guard < 36){
-    const byCat = {};
-    state.data.transactions.forEach(t=>{
-      if(t.type!=='expense') return;
-      if(sameMonth(t.date, y, m)) byCat[t.category] = (byCat[t.category]||0) + t.amount;
-    });
-    // Le « Reste a depenser » deja mis de cote ce mois-la (envelopeCommitted) a quitte les
-    // enveloppes : on le deduit des surplus pour ne pas le reporter une seconde fois.
-    let committedLeft = (state.data.envelopeCommitted||{})[y + '-' + m] || 0;
-    catsForType('expense').forEach(cat=>{
-      if(recurringCatIds.has(cat.id)) return;
-      const limit = state.data.budgets[cat.id] || 0;
-      if(limit<=0) return;
-      const spent = byCat[cat.id] || 0;
-      let surplus = Math.max(0, limit - spent);
-      const used = Math.min(committedLeft, surplus);
-      committedLeft -= used; surplus -= used;
-      if(surplus>0){
-        state.data.categoryRollover[cat.id] = Math.round(((state.data.categoryRollover[cat.id]||0) + surplus) * 100) / 100;
-      }
-    });
-    m++; if(m>11){ m=0; y++; }
-    guard++;
-  }
   state.data.lastRolloverCheck = curKey;
   saveData(state.data);
 }
+// Limite du mois d'une enveloppe : le budget de base (aucun report des mois precedents).
 function effectiveLimit(catId){
-  return (state.data.budgets[catId]||0) + (state.data.rolloverEnabled ? (state.data.categoryRollover[catId]||0) : 0);
+  return state.data.budgets[catId]||0;
 }
 function processGoalTransfers(){
   const today = new Date();
@@ -1698,13 +1658,6 @@ function renderBackupModal(){
         <div class="row">
           <span style="font-size:13px;">Notification système</span>
           <button data-toggle-notifications="1" class="toggle-switch ${state.data.notificationsEnabled?'on':''}">${state.data.notificationsEnabled?'Activée':'Désactivée'}</button>
-        </div>
-
-        ${backupSectionHeader('repeat', 'Budgets')}
-        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Quand tu ne dépenses pas tout ton budget un mois, le report ajoute automatiquement le surplus au mois suivant. Désactive-le si tu préfères des limites toujours fixes.</div>
-        <div class="row">
-          <span style="font-size:13px;">Report de budget d'un mois sur l'autre</span>
-          <button data-toggle-rollover="1" class="toggle-switch ${state.data.rolloverEnabled?'on':''}">${state.data.rolloverEnabled?'Activé':'Désactivé'}</button>
         </div>
 
         ${backupSectionHeader('chartbar', 'Tableau de bord')}
@@ -2860,9 +2813,7 @@ function renderGaugeCard(stats){
   const hiddenCount = hidden.length;
 
   const nonRecurringCats = catsForType('expense').filter(c=>c.id!=='epargne' && c.id!=='virement' && !hidden.includes(c.id));
-  const totalRollover = nonRecurringCats.reduce((s,c)=> s + (state.data.categoryRollover[c.id]||0), 0);
   const globalLimit = nonRecurringCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
-  const globalBaseLimit = nonRecurringCats.reduce((s,c)=> s + (state.data.budgets[c.id]||0), 0);
   const globalSpent = nonRecurringCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
   const globalPct = globalLimit>0 ? Math.min(100, Math.round(globalSpent/globalLimit*100)) : 0;
   const globalOver = globalLimit>0 && globalSpent>globalLimit;
@@ -2894,7 +2845,6 @@ function renderGaugeCard(stats){
           <span class="mono" style="color:${globalOver?'var(--coral)':'var(--paper)'}; font-weight:600;">${fmt2(globalSpent)}</span>
           <span style="color:var(--paperDim);">sur <span class="mono" style="color:var(--paper);">${fmt0(globalLimit)}</span></span>
         </div>
-        ${(state.data.rolloverEnabled && totalRollover>0) ? `<div style="font-size:11px; color:var(--paperDim); margin-top:2px;">dont ${fmt0(globalBaseLimit)} de limites fixées + ${fmt0(totalRollover)} reportés des mois précédents</div>` : ''}
         <div style="height:1px; background:var(--line); margin:14px 0;"></div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px;">
           ${gaugeSegments.map(s=>`
@@ -2923,13 +2873,6 @@ function renderGaugeCard(stats){
           </div>
           <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">${committedThisMonth>0 ? 'Tout a été mis de côté ce mois-ci' : 'Budget entièrement utilisé ce mois-ci'} — ça repart de zéro le mois prochain.</div>
         `}
-        ${totalRollover>0 ? `
-          <button data-toggle-rollover-info="1" class="row" style="margin-top:10px; background:var(--surfaceHi); border-radius:10px; padding:9px 12px; width:100%; border:none; text-align:left;">
-            <span style="font-size:11.5px; color:var(--paperDim); display:flex; align-items:center; gap:5px;">${icon('repeat',11)} ${fmt0(totalRollover)} non dépensés, mis de côté</span>
-            <span data-allocate-rollover="1" data-remaining-amount="${totalRollover}" onclick="event.stopPropagation()" style="font-size:11px; font-weight:600; color:var(--gold); padding:5px 9px; border-radius:8px; background:var(--surface);">Épargner</span>
-          </button>
-          ${state.rolloverInfoOpen ? `<div style="font-size:10.5px; color:var(--paperDim); line-height:1.5; padding:8px 4px 0;">${state.data.rolloverEnabled ? `Ces montants non utilisés certains mois passés s'ajoutent à tes limites de ce mois.` : `Le report est désactivé : ces montants restent de côté sans être ajoutés à tes limites.`} Tape "Épargner" pour les basculer vers un objectif.</div>` : ''}
-        ` : ''}
       ` : `<div class="empty" style="padding:12px 0 16px;">Toutes les catégories sont masquées.</div>`}
       <div style="height:1px; background:var(--line); margin:16px 0;"></div>
       <div style="display:flex; gap:8px;">
@@ -2984,9 +2927,7 @@ function renderBudgets(){
           <div style="font-size:13.5px; color:var(--paperDim); margin-top:12px;">Aucune dépense ponctuelle ce mois-ci pour l'instant.</div>
         </div>
       ` : allExpenseCats.map(cat=>{
-        const baseLimit = state.data.budgets[cat.id] || 0;
-        const rollover = state.data.rolloverEnabled ? (state.data.categoryRollover[cat.id] || 0) : 0;
-        const limit = baseLimit + rollover;
+        const limit = effectiveLimit(cat.id);
         const spent = byCat[cat.id] || 0;
         const pct = limit>0 ? Math.min(100, Math.round(spent/limit*100)) : 0;
         const over = limit>0 && spent>limit;
@@ -3005,13 +2946,12 @@ function renderBudgets(){
               </button>
               <div style="display:flex; align-items:center; gap:4px;">
                 <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${cat.color}; margin-right:8px;" title="Ajouter une dépense">+</button>
-                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" inputmode="decimal" value="${baseLimit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:18px;">${fmt0(baseLimit)}</span></button>`}
+                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" inputmode="decimal" value="${limit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:18px;">${fmt0(limit)}</span></button>`}
                 <button data-hide-budgetcat="${cat.id}" style="color:var(--paperDim); padding:4px;" title="Masquer cette catégorie">${icon('x',13)}</button>
               </div>
             </div>
             <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>
             <div class="budget-foot"><span class="mono" style="color:${over?'var(--coral)':'var(--paperDim)'}">${fmt2(spent)} dépensés${changeBadge(pctChange(spent, prevMonthCatSpend(cat.id)),'down')}</span><span>${limit>0? pct+'%' : '—'}</span></div>
-            ${rollover>0 ? `<div style="font-size:11px; color:var(--mint); margin-top:4px;">${icon('repeat',10)} +${fmt0(rollover)} reporté des mois précédents</div>` : ''}
             ${expanded && catTx.length>0 ? `
               <div style="margin-top:10px; border-top:1px solid var(--lineSoft); padding-top:6px;">
                 ${catTx.map(t=>txRow(t,false)).join('')}
@@ -4325,15 +4265,6 @@ function bindEvents(){
       .map(t=>`${t.note||t.category} | -${t.amount} | ${new Date(t.date).toLocaleDateString('fr-FR')} | recId:${t.recurringId?'oui':'non'}`).join('\n');
     alert(`--- Comparaison avec ta banque ---\nSolde réel actuel (transactions datées à aujourd'hui ou avant, tout historique confondu) : ${fmt2(realBalanceToday)}\n\nReste affiché (projection fin de mois) : ${fmt2(s.bal)}\nÉcart : ${fmt2(s.bal - realBalanceToday)} (= ce que l'app prévoit encore comme mouvements d'ici la fin du mois)\n\n--- Transactions déjà enregistrées mais datées après aujourd'hui (${futureDatedThisMonth.length}) ---\n${futureDatedList}\n\nMois affiché : ${MONTHS[state.viewM]} ${state.viewY}\n\nReste : ${fmt2(s.bal)}\nDépenses totales calculées : ${fmt2(s.expense)} (estimé: ${s.useExpenseEstimate})\n\n--- Détail du calcul des dépenses de ce mois ---\nDépenses réelles déjà enregistrées : ${fmt2(realExpenseNow)}\n+ Récurrences pas encore passées : ${fmt2(recurNow.expense)}\n+ Variable estimée (${daysRemainingNow}/${daysInMonthNow} jours restants) : ${fmt2(proratedVariableNow)}\n= Total : ${fmt2(realExpenseNow + recurNow.expense + proratedVariableNow)}\n\n--- Toutes les dépenses réelles de ${MONTHS[state.viewM]} (${viewTxAll.length}) ---\n${allViewTx}\n\n--- Détail des 3 mois utilisés pour la moyenne ---\n${monthsDetail.join('\n')}\n\nmonthsWithData détectés : ${f.monthsWithData}\navgExpense : ${fmt2(f.avgExpense)}\nvariableExpense : ${fmt2(f.variableExpense)}\n\nTotal transactions dans l'appli : ${state.data.transactions.length}\n\n5 dernières transactions (tous mois) :\n${last5}`);
   }));
-  app.querySelectorAll('[data-toggle-rollover-info]').forEach(el=>el.addEventListener('click', ()=>{ setState({rolloverInfoOpen: !state.rolloverInfoOpen}); }));
-  app.querySelectorAll('[data-toggle-rollover]').forEach(el=>el.addEventListener('click', ()=>{
-    const wasEnabled = state.data.rolloverEnabled;
-    mutateData(d=>{
-      d.rolloverEnabled = !wasEnabled;
-      if(wasEnabled){ d.categoryRollover = {}; }
-    });
-    showToast(wasEnabled ? 'Report désactivé — limites remises à leur valeur de base' : 'Report réactivé');
-  }));
   app.querySelectorAll('[data-toggle-card]').forEach(el=>el.addEventListener('click', ()=>{
     const key = el.dataset.toggleCard;
     mutateData(d=>{ d.dashboardSettings[key] = !d.dashboardSettings[key]; });
@@ -4554,7 +4485,6 @@ function bindEvents(){
     const amount = Number(el.dataset.remainingAmount) || 0;
     state.allocateAmount = amount;
     state.allocateGoalMode = 'add';
-    state.allocateIsRollover = false;
     state.allocateSource = el.dataset.allocateRemaining==='save' ? 'remaining' : null;
     state.allocateModalOpen = true;
     rerender();
@@ -4563,16 +4493,6 @@ function bindEvents(){
     const amount = Number(el.dataset.remainingAmount) || 0;
     state.allocateAmount = amount;
     state.allocateGoalMode = el.dataset.allocateQuick;
-    state.allocateIsRollover = false;
-    state.allocateSource = null;
-    state.allocateModalOpen = true;
-    rerender();
-  }));
-  app.querySelectorAll('[data-allocate-rollover]').forEach(el=>el.addEventListener('click', ()=>{
-    const amount = Number(el.dataset.remainingAmount) || 0;
-    state.allocateAmount = amount;
-    state.allocateGoalMode = 'add';
-    state.allocateIsRollover = true;
     state.allocateSource = null;
     state.allocateModalOpen = true;
     rerender();
@@ -4640,9 +4560,6 @@ function bindEvents(){
     if(state.allocateGoalMode==='withdraw'){ goalWithdraw(goalId, amount); }
     else {
       goalContribute(goalId, amount);
-      if(state.allocateIsRollover){
-        mutateData(d=>{ d.categoryRollover = {}; });
-      }
       if(state.allocateSource==='remaining'){
         const key = state.viewY + '-' + state.viewM;
         mutateData(d=>{
@@ -4651,7 +4568,6 @@ function bindEvents(){
         });
       }
     }
-    state.allocateIsRollover = false;
     state.allocateSource = null;
   }));
   app.querySelectorAll('[data-setup-key]').forEach(el=>el.addEventListener('click', ()=>{ handleSetupDigit(el.dataset.setupKey); }));
