@@ -3444,7 +3444,7 @@ function renderRecurringModal(){
             <div class="txrow">
               <div class="tx-left">
                 <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
-                <div><div class="tx-note">${escapeHtml(r.note||info.label)}</div><div class="tx-meta">${freqLabel(r.frequency)}${(r.frequency==='monthly'||r.frequency==='yearly') ? ` · le <select data-recur-day="${r.id}" aria-label="Jour du mois" style="font:inherit; font-size:16px; color:inherit; background:transparent; border:1px solid var(--line); border-radius:6px; padding:0 2px;">${Array.from({length:31},(_,i)=>i+1).map(n=>`<option value="${n}"${n===(r.anchorDay||new Date(r.nextDate).getUTCDate())?' selected':''}>${n}</option>`).join('')}</select>` : ''} · prochaine le ${new Date(r.nextDate).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div></div>
+                <div><div class="tx-note">${escapeHtml(r.note||info.label)}</div><div class="tx-meta" style="margin-bottom:2px;"><select data-recur-cat="${r.id}" aria-label="Catégorie de la récurrence" style="font:inherit; font-size:16px; color:inherit; background:transparent; border:1px solid var(--line); border-radius:6px; padding:0 2px; max-width:170px;">${catsForType(r.type).filter(c=> c.id===r.category || !NOT_INC_EXP_CATS.has(c.id)).map(c=>`<option value="${c.id}"${c.id===r.category?' selected':''}>${escapeHtml(c.label)}</option>`).join('')}</select></div><div class="tx-meta">${freqLabel(r.frequency)}${(r.frequency==='monthly'||r.frequency==='yearly') ? ` · le <select data-recur-day="${r.id}" aria-label="Jour du mois" style="font:inherit; font-size:16px; color:inherit; background:transparent; border:1px solid var(--line); border-radius:6px; padding:0 2px;">${Array.from({length:31},(_,i)=>i+1).map(n=>`<option value="${n}"${n===(r.anchorDay||new Date(r.nextDate).getUTCDate())?' selected':''}>${n}</option>`).join('')}</select>` : ''} · prochaine le ${new Date(r.nextDate).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div></div>
               </div>
               <div style="display:flex; align-items:center; gap:6px;">
                 <div class="tx-amt" style="display:flex; align-items:center; gap:2px; color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}<input data-recur-amount="${r.id}" type="text" inputmode="decimal" aria-label="Montant de la récurrence" value="${String(r.amount).replace('.',',')}" style="width:72px; text-align:right; font:inherit; font-size:16px; color:inherit; background:transparent; border:1px solid var(--line); border-radius:6px; padding:1px 4px;">€</div>
@@ -3898,6 +3898,15 @@ function bindEvents(){
     // Echeance avancee a une date deja passee : elle devient une vraie transaction tout de suite.
     processRecurring();
     rerender();
+  }));
+  app.querySelectorAll('[data-recur-cat]').forEach(el=>el.addEventListener('change', ()=>{
+    const cat = el.value;
+    if(!catsForType('expense').concat(catsForType('income')).some(c=>c.id===cat)) return;
+    // Seule la regle change : les operations deja passees gardent leur categorie.
+    mutateWithUndo(`Récurrence classée en ${catInfo(cat).label}`, d=>{
+      const r = (d.recurring||[]).find(r=>r.id===el.dataset.recurCat);
+      if(r) r.category = cat;
+    });
   }));
   app.querySelectorAll('[data-recur-amount]').forEach(el=>el.addEventListener('change', ()=>{
     const amount = Math.round(Number(String(el.value).replace(/\s/g,'').replace(',','.'))*100)/100;

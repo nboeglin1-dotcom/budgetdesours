@@ -1079,3 +1079,40 @@ test.describe('Solde après enveloppes', () => {
     }));
 });
 
+test.describe('Catégorie d’une récurrence', () => {
+  const NOW_OCT = '2026-10-26T10:00:00+01:00';
+  const stored = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('solde-budget-data-v1')));
+  const data = () => baseData({
+    customCategories:[ { id:'assur', type:'expense', label:'Assurance', color:'#7C89A6' } ],
+    transactions:[ tx({ id:'t1', amount:154, category:'transport', date:D('2026-10-08'), recurringId:'r1' }) ],
+    recurring:[ rule({ amount:154, category:'transport', nextDate:D('2026-11-08'), anchorDay:8 }) ],
+  });
+  const setCat = (page, v) => page.evaluate((v) => {
+    state.recurringModalOpen = true; rerender();
+    const el = document.querySelector('[data-recur-cat="r1"]');
+    el.value = v; el.dispatchEvent(new Event('change'));
+  }, v);
+
+  test('K1 Changer la catégorie : la règle change, le passé non, annulable', () =>
+    withApp({ now:NOW_OCT, data: data() }, async ({ page, errors }) => {
+      await setCat(page, 'assur');
+      let d = await stored(page);
+      assert.equal(d.recurring[0].category, 'assur');
+      assert.equal(d.transactions[0].category, 'transport');
+      const prev = await page.evaluate(() => recurringPreviewForMonth(2026, 10).find(e=>e.ruleId==='r1').category);
+      assert.equal(prev, 'assur');
+      await page.evaluate(() => document.querySelector('[data-toast-undo]').click());
+      d = await stored(page);
+      assert.equal(d.recurring[0].category, 'transport');
+      assert.deepEqual(errors, []);
+    }));
+
+  test('K2 Le sélecteur ne propose ni épargne ni virement', () =>
+    withApp({ now:NOW_OCT, data: data() }, async ({ page }) => {
+      const opts = await page.evaluate(() => { state.recurringModalOpen = true; rerender();
+        return [...document.querySelectorAll('[data-recur-cat="r1"] option')].map(o=>o.value); });
+      assert.ok(opts.includes('assur') && opts.includes('transport'));
+      assert.ok(!opts.includes('epargne') && !opts.includes('virement'));
+    }));
+});
+
