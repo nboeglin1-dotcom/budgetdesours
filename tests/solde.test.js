@@ -1176,3 +1176,18 @@ test.describe('Nouvelle page d’accueil', () => {
     }));
 });
 
+test.describe('Mois en bref : épargne prévue', () => {
+  test('B1 Virement auto vers un objectif pas encore passé : compté en épargne prévue, pas en dépense ; Reste inchangé', () =>
+    withApp({ now:'2026-11-03T10:00:00+01:00', data: baseData({
+      transactions:[ tx({ id:'s', type:'income', amount:3000, category:'salaire', date:D('2026-11-01') }) ],
+      goals:[ { id:'g1', name:'Objectif test', target:5000, current:0, color:'#6FA287', accountId:'main' } ],
+      goalTransfers:[ { id:'gt', goalId:'g1', amount:500, frequency:'monthly', nextDate:D('2026-11-09'), anchorDay:9 } ],
+    }) }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => { const s = computeMonthStats(); return { exp:s.expense, saved:s.savedThisMonth, bal:s.bal }; });
+      assert.equal(r.exp, 0);
+      assert.equal(r.saved, 500);
+      assert.equal(r.bal, 2500);
+      assert.deepEqual(errors, []);
+    }));
+});
+

@@ -2310,12 +2310,16 @@ function computeMonthStats(){
   const netTransfers = tx.filter(t=>t.category==='virement_retour').reduce((s,t)=>s+t.amount,0) - tx.filter(t=>t.category==='virement').reduce((s,t)=>s+t.amount,0);
   const savedDeposits = tx.filter(t=>t.type==='expense' && t.category==='epargne').reduce((s,t)=>s+t.amount,0);
   const savedWithdrawals = tx.filter(t=>t.type==='income' && t.category==='epargne_retour').reduce((s,t)=>s+t.amount,0);
-  const savedThisMonth = savedDeposits - savedWithdrawals;
+  let savedThisMonth = savedDeposits - savedWithdrawals;
   const isCurrentMonth = viewIdx===curIdx;
   const isCurrentOrFuture = isFuture || isCurrentMonth;
   const hasIncomeTx = tx.some(t=>t.type==='income' && isRealIncExp(t));
   const hasExpenseTx = tx.some(t=>t.type==='expense' && isRealIncExp(t));
-  const recurThisMonth = recurringOccurrencesInMonth(state.viewY, state.viewM);
+  const recurItems = [];
+  const recurThisMonth = recurringOccurrencesInMonth(state.viewY, state.viewM, recurItems);
+  // Virements automatiques vers les objectifs pas encore passes : de l'epargne prevue, pas une depense
+  // (une fois passes, ils deviennent des operations « epargne », deja exclues des depenses).
+  const plannedSaving = recurItems.filter(o=>o.category==='epargne').reduce((a,o)=>a+o.amount, 0);
   const useIncomeEstimate = isCurrentMonth ? (recurThisMonth.income > 0) : isFuture ? true : (isCurrentOrFuture && !hasIncomeTx);
   const useExpenseEstimate = isCurrentMonth ? true : isFuture ? true : (isCurrentOrFuture && !hasExpenseTx);
   const usingEstimate = useIncomeEstimate || useExpenseEstimate;
@@ -2325,14 +2329,16 @@ function computeMonthStats(){
     // Pas d'estimation statistique de depenses variables en plus (courses, etc.) - meme
     // logique que "Reste", pour que les deux chiffres du tableau de bord se recoupent.
     income = realIncome + recurThisMonth.income;
-    expense = realExpense + recurThisMonth.expense;
+    expense = realExpense + recurThisMonth.expense - plannedSaving;
+    savedThisMonth += plannedSaving;
   } else if(isFuture){
     // Mois futur : entrees et sorties connues, point barre - meme methode que le mois en
     // cours (reel deja saisi + echeances recurrentes prevues ce mois-la), sans estimation
     // statistique en plus. Les revenus/depenses etant stables d'un mois sur l'autre, ce
     // chiffre reste coherent avec celui du mois en cours au lieu de sauter artificiellement.
     income = realIncome + recurThisMonth.income;
-    expense = realExpense + recurThisMonth.expense;
+    expense = realExpense + recurThisMonth.expense - plannedSaving;
+    savedThisMonth += plannedSaving;
   } else {
     // Mois passe : uniquement le reel, deja completement connu
     income = realIncome;
@@ -2354,7 +2360,7 @@ function computeMonthStats(){
   const incomeChange = useIncomeEstimate ? null : pctChange(income, prevIncome);
   const expenseChange = useExpenseEstimate ? null : pctChange(expense, prevExpense);
 
-  return { isFuture, f, tx, income, expense, rate, bal, balAfterEnv, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth, netTransfers };
+  return { isFuture, plannedSaving, f, tx, income, expense, rate, bal, balAfterEnv, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth, netTransfers };
 }
 
 function renderBalanceContent(stats, showStats){
@@ -2511,7 +2517,7 @@ function renderDashboard(){
     <div class="card">
       <div class="section-title" style="margin:0 0 10px; font-size:15px;">Le mois en bref</div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
-        ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)'], [savedThisMonth>=0 ? 'Épargné' : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c])=>`
+        ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)'], [savedThisMonth>=0 ? (stats.isFuture || stats.plannedSaving>0 ? 'Épargne prévue' : 'Épargné') : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c])=>`
           <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">${l}</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${c};">${fmt0(v)}</div></div>`).join('')}
       </div>
     </div>
