@@ -18,7 +18,7 @@ async function withApp(opts, fn){
   try{ await fn(app); } finally { await app.close(); }
 }
 const remainingOf = (page) => page.evaluate(() => {
-  const html = renderGaugeCard(computeMonthStats());
+  const html = renderDashboard();
   const m = html.match(/data-allocate-remaining="save" data-remaining-amount="([^"]+)"/);
   return m ? Number(m[1]) : 0;
 });
@@ -1113,6 +1113,55 @@ test.describe('Catégorie d’une récurrence', () => {
         return [...document.querySelectorAll('[data-recur-cat="r1"] option')].map(o=>o.value); });
       assert.ok(opts.includes('assur') && opts.includes('transport'));
       assert.ok(!opts.includes('epargne') && !opts.includes('virement'));
+    }));
+});
+
+test.describe('Nouvelle page d’accueil', () => {
+  const NOW = '2026-11-12T10:00:00+01:00';
+  const data = () => baseData({
+    budgets:{ alimentation:500, loisirs:100, transport:80 },
+    transactions:[
+      tx({ id:'s', type:'income', amount:3000, category:'salaire', date:D('2026-11-01') }),
+      tx({ id:'a', amount:200, category:'alimentation', date:D('2026-11-05') }),
+      tx({ id:'t', amount:100, category:'transport', date:D('2026-11-06') }),
+      tx({ id:'m', amount:154, category:'transport', date:D('2026-11-08'), recurringId:'rm' }),
+    ],
+    recurring:[ rule({ id:'rm', amount:154, category:'transport', nextDate:D('2026-12-08'), anchorDay:8 }),
+                rule({ id:'ri', type:'income', amount:50, category:'salaire', note:'Revenu test', nextDate:D('2026-11-15'), anchorDay:15 }),
+                rule({ id:'rc', amount:20, category:'abonnements', note:'Charge test', nextDate:D('2026-11-18'), anchorDay:18 }) ],
+    goals:[ { id:'g1', name:'Objectif test', target:1000, current:250, color:'#6FA287', accountId:'main' } ],
+  });
+
+  test('A1 Reste estimé et Après enveloppes côte à côte ; enveloppes sans les récurrences', () =>
+    withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => {
+        const s = computeMonthStats(); const env = envelopeStatus(2026, 10);
+        const app = document.getElementById('app').innerHTML;
+        return { bal:s.bal, after:s.balAfterEnv, rem:env.remaining, tr:env.rows.find(x=>x.id==='transport'),
+          hasReste: app.includes('Reste estimé'), hasAfter: !!document.querySelector('[data-after-env]'),
+          envCard: !!document.querySelector('[data-envelopes]'), goal: app.includes('Objectif test') };
+      });
+      assert.equal(r.tr.spent, 100);
+      assert.equal(r.tr.over, 20);
+      assert.equal(r.rem, 300 + 100);
+      assert.equal(r.after, r.bal - 400);
+      assert.ok(r.hasReste && r.hasAfter && r.envCard && r.goal);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('A2 À surveiller : enveloppe dépassée et charges à venir, pas les revenus', () =>
+    withApp({ now:NOW, data: data() }, async ({ page }) => {
+      const t = await page.evaluate(() => document.querySelector('[data-watch]').textContent);
+      assert.match(t, /Transport/);
+      assert.match(t, /Charge test/);
+      assert.doesNotMatch(t, /Revenu test/);
+    }));
+
+  test('A3 Le graphique 12 mois est dans l’onglet Transactions, plus sur l’accueil', () =>
+    withApp({ now:NOW, data: data() }, async ({ page }) => {
+      const r = await page.evaluate(() => ({ dash: renderDashboard().includes('Revenus vs dépenses'), tx: renderTransactions().includes('Revenus vs dépenses') }));
+      assert.equal(r.dash, false);
+      assert.equal(r.tx, true);
     }));
 });
 

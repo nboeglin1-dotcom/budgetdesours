@@ -1667,16 +1667,12 @@ function renderBackupModal(){
           <button data-toggle-card="showBreakdown" class="toggle-switch ${state.data.dashboardSettings.showBreakdown?'on':''}">${state.data.dashboardSettings.showBreakdown?'Visible':'Masquée'}</button>
         </div>
         <div class="row" style="margin-bottom:10px;">
-          <span style="font-size:13px;">Revenus vs dépenses</span>
+          <span style="font-size:13px;">Revenus vs dépenses <span style="color:var(--paperDim);">(onglet Transactions)</span></span>
           <button data-toggle-card="showTrend" class="toggle-switch ${state.data.dashboardSettings.showTrend?'on':''}">${state.data.dashboardSettings.showTrend?'Visible':'Masquée'}</button>
         </div>
         <div class="row" style="margin-bottom:10px;">
           <span style="font-size:13px;">Prévisionnel</span>
           <button data-toggle-card="showForecast" class="toggle-switch ${state.data.dashboardSettings.showForecast?'on':''}">${state.data.dashboardSettings.showForecast?'Visible':'Masquée'}</button>
-        </div>
-        <div class="row">
-          <span style="font-size:13px;">Mes enveloppes</span>
-          <button data-toggle-card="showPinnedEnvelopes" class="toggle-switch ${state.data.dashboardSettings.showPinnedEnvelopes?'on':''}">${state.data.dashboardSettings.showPinnedEnvelopes?'Visible':'Masquée'}</button>
         </div>
       </div>
     </div>
@@ -2100,20 +2096,27 @@ function renderTabbar(){
 
 
 
-// Ce qu'il reste a depenser dans les enveloppes du mois (y,m) : budget - depenses deja connues
-// dans la categorie (reelles, datees a l'avance ou echeances a venir), jamais negatif. Une
-// depense connue ne compte donc pas deux fois, et une enveloppe depassee ne retire rien de plus.
-function envelopeRemainingForMonth(y, m){
-  const budgets = state.data.budgets || {};
-  const cats = Object.keys(budgets).filter(c=> budgets[c] > 0 && !NOT_INC_EXP_CATS.has(c));
-  if(!cats.length) return 0;
-  const known = {};
-  visibleTransactions().forEach(t=>{ if(t.type==='expense' && sameMonth(t.date, y, m)) known[t.category] = (known[t.category]||0) + t.amount; });
-  const pending = [];
-  recurringOccurrencesInMonth(y, m, pending);
-  pending.forEach(o=>{ if(o.type==='expense' && o.category) known[o.category] = (known[o.category]||0) + o.amount; });
-  return cats.reduce((s,c)=> s + Math.max(0, budgets[c] - (known[c]||0)), 0);
+// Etat des enveloppes du mois (y,m) : source unique pour l'accueil, « Apres enveloppes » et le Previsionnel.
+// Depense d'une enveloppe = operations ponctuelles du mois (datees a l'avance comprises) ; les recurrences
+// sont des charges fixes deja comptees dans le Reste, elles n'entament pas l'enveloppe. Une enveloppe
+// depassee ne retire rien de plus ; ce qui a deja ete mis de cote ce mois-la (envelopeCommitted) est deduit.
+function envelopeStatus(y, m){
+  const hidden = state.data.hiddenBudgetCategories || [];
+  const spentBy = {};
+  visibleTransactions().forEach(t=>{
+    if(t.type==='expense' && !isTxStrictlyRecurring(t) && sameMonth(t.date, y, m)) spentBy[t.category] = (spentBy[t.category]||0) + t.amount;
+  });
+  const rows = catsForType('expense')
+    .filter(c=> !hidden.includes(c.id) && !NOT_INC_EXP_CATS.has(c.id) && effectiveLimit(c.id) > 0)
+    .map(c=>{
+      const limit = effectiveLimit(c.id), spent = spentBy[c.id] || 0;
+      return { id:c.id, label:c.label, color:c.color, limit, spent, left: Math.max(0, limit - spent), over: Math.max(0, spent - limit) };
+    });
+  const committed = (state.data.envelopeCommitted||{})[y + '-' + m] || 0;
+  const remaining = Math.max(0, rows.reduce((a,r)=>a + r.left, 0) - committed);
+  return { rows, remaining, committed };
 }
+function envelopeRemainingForMonth(y, m){ return envelopeStatus(y, m).remaining; }
 function computeForecast(){
   if(_forecastCache && _forecastCacheToken === _renderToken) return _forecastCache;
   const today = new Date();
@@ -2246,28 +2249,21 @@ function balanceForViewedMonth(f, viewY, viewM){
 function renderForecastCard(f){
   if(!state.data.dashboardSettings.showForecast) return '';
   if(!f) f = computeForecast();
+  const withEnv = envelopeStatus(state.viewY, state.viewM).rows.length > 0;
   const viewedIdx = f.points.findIndex(p=> p.y===state.viewY && p.m===state.viewM);
-  const startIdx = viewedIdx > 0 ? viewedIdx : 0;
-  const displayPoints = f.points.slice(startIdx, startIdx+6);
-  const maxAbs = Math.max(1, f.startBalance, ...displayPoints.map(p=>Math.abs(p.afterEnv)));
+  const pts = f.points.slice(viewedIdx >= 0 ? viewedIdx + 1 : 0).slice(0, 3);
   return `
     <div class="card">
-      <div class="row" style="margin-bottom:14px;">
-        <div class="section-title" style="margin:0; font-size:15px;">Prévisionnel <span style="color:var(--paperDim); font-size:12px; font-weight:500;">· enveloppes comprises</span></div>
-        <div style="display:flex; gap:4px; align-items:center;">
-          <button data-hide-card="showForecast" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
-        </div>
+      <div class="row" style="margin-bottom:12px; align-items:flex-start;">
+        <div><div class="section-title" style="margin:0; font-size:15px;">Les mois suivants</div><div style="color:var(--paperDim); font-size:11.5px; margin-top:2px;">Fin de mois${withEnv ? ', enveloppes comprises' : ''}</div></div>
+        <button data-hide-card="showForecast" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
       </div>
-      <div class="scroll-cats">
-        ${displayPoints.map(p=>`
-          <button data-goto-month="${p.y}-${p.m}" class="catbar-row" style="width:100%; text-align:left; background:none; border:none; padding:0; display:block; cursor:pointer;">
-            <div class="row" style="margin-bottom:0;">
-              <span style="font-size:12.5px; color:var(--paperDim);">${p.label}</span>
-              <span class="mono" style="font-size:12.5px; color:${p.afterEnv<0?'var(--coral)':'var(--paper)'};">${fmt0(p.afterEnv)}</span>
-            </div>
-            <div class="catbar-track"><div class="catbar-fill" style="width:${Math.min(100, Math.abs(p.afterEnv)/maxAbs*100)}%; background:${p.afterEnv<0?'var(--coral)':'var(--gold)'};"></div></div>
-          </button>
-        `).join('')}
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+        ${pts.map(p=>{ const v = withEnv ? p.afterEnv : p.value; return `
+          <button data-goto-month="${p.y}-${p.m}" style="background:var(--surfaceHi); border:none; border-radius:12px; padding:10px 4px; text-align:center;">
+            <div style="font-size:11.5px; color:var(--paperDim);">${p.label}</div>
+            <div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${v<0?'var(--coral)':'var(--mint)'};">${v>0?'+':''}${fmt0(v)}</div>
+          </button>`; }).join('')}
       </div>
     </div>
   `;
@@ -2357,57 +2353,31 @@ function computeMonthStats(){
 
 function renderBalanceContent(stats, showStats){
   if(showStats===undefined) showStats = true;
-  const { bal, balAfterEnv, income, expense, rate, usingEstimate, useIncomeEstimate, useExpenseEstimate, f, incomeChange, expenseChange, savedThisMonth } = stats;
+  const { bal, balAfterEnv, rate, usingEstimate, f } = stats;
+  const env = envelopeStatus(state.viewY, state.viewM);
+  const showAfter = showStats && balAfterEnv!==null && env.rows.length > 0;
+  const tile = (label, inner, extra='')=> `<div ${extra} style="background:var(--surfaceHi); border-radius:14px; padding:10px 12px; min-width:0;"><div style="font-size:12px; color:var(--paperDim);">${label}</div>${inner}</div>`;
   return `
-      <div class="row" style="margin-bottom:0; align-items:flex-start;">
-        <div class="eyebrow" style="margin-bottom:0;">Reste${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
-        <div style="flex-shrink:0; margin-top:-6px;" title="Humeur du mois">${bearMascot(bearMoodFromRate(rate), 40)}</div>
+      <div class="row" style="margin-bottom:8px; align-items:flex-start;">
+        <div class="eyebrow" style="margin-bottom:0;">Fin de mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
+        <div style="flex-shrink:0; margin-top:-6px;" title="Humeur du mois">${bearMascot(bearMoodFromRate(rate), 36)}</div>
       </div>
-      <div class="row" style="margin-bottom:0; align-items:center;">
-        <div class="balance-num mono" id="balanceNum">${fmt0(bal)}</div>
-        ${showStats ? `<button class="btn-primary" data-open="addTx">${icon('plus',14)} Ajouter</button>` : ''}
+      <div style="display:grid; grid-template-columns:${showAfter ? '1fr 1fr' : '1fr'}; gap:8px;">
+        ${tile(usingEstimate ? 'Reste estimé' : 'Reste', `<div class="balance-num mono" id="balanceNum" style="font-size:${showAfter?'25px':'38px'}; color:${bal<0?'var(--coral)':'var(--paper)'};">${fmt0(bal)}</div>`)}
+        ${showAfter ? tile('Après enveloppes', `<div class="mono" style="font-size:25px; font-weight:600; letter-spacing:-.5px; color:${balAfterEnv<0?'var(--coral)':'var(--mint)'};">${balAfterEnv>0?'+':''}${fmt0(balAfterEnv)}</div>`, 'data-after-env') : ''}
       </div>
       ${(()=>{
         const td = new Date();
         if(!showStats || state.viewY!==td.getFullYear() || state.viewM!==td.getMonth()) return '';
         const lastDay = new Date(td.getFullYear(), td.getMonth()+1, 0).getDate();
         const daysLeft = lastDay - td.getDate() + 1;
-        if(bal <= 0) return `<div style="font-size:12.5px; color:var(--coral); margin-top:4px;">Plus de marge ce mois-ci — ${daysLeft} jour${daysLeft>1?'s':''} avant la fin du mois</div>`;
-        return `<div style="font-size:12.5px; color:var(--paperDim); margin-top:4px;">Soit <strong class="mono" style="color:var(--paper);">${fmt0(Math.floor(bal/daysLeft))}</strong> à dépenser par jour d'ici le ${lastDay} ${MONTHS[td.getMonth()].toLowerCase()} ${daysLeft>1?`(${daysLeft} jours, aujourd'hui compris)`:`(dernier jour)`}</div>`;
+        if(bal <= 0) return `<div style="font-size:12.5px; color:var(--coral); margin-top:10px;">Plus de marge ce mois-ci — ${daysLeft} jour${daysLeft>1?'s':''} avant la fin du mois</div>`;
+        // Avec des enveloppes : ce qu'il reste a y depenser, sans depasser le Reste.
+        const pool = env.rows.length && env.remaining > 0 ? Math.min(bal, env.remaining) : bal;
+        return `<div style="font-size:12.5px; color:var(--paperDim); margin-top:10px; background:var(--surfaceHi); border-radius:10px; padding:8px 10px;">Soit <strong class="mono" style="color:var(--paper);">${fmt0(Math.floor(pool/daysLeft))}</strong> à dépenser par jour d'ici le ${lastDay} ${MONTHS[td.getMonth()].toLowerCase()} ${daysLeft>1?`(${daysLeft} jours, aujourd'hui compris)`:`(dernier jour)`}</div>`;
       })()}
-      ${showStats && balAfterEnv!==null && Object.keys(state.data.budgets||{}).some(c=> state.data.budgets[c]>0 && !NOT_INC_EXP_CATS.has(c)) ? `<div data-after-env style="font-size:12.5px; color:var(--paperDim); margin-top:4px;">Après enveloppes : <strong class="mono" style="color:${balAfterEnv<0?'var(--coral)':'var(--paper)'};">${fmt0(balAfterEnv)}</strong></div>` : ''}
-      ${showStats ? (usingEstimate && !f.hasHistory ? `
-        <div style="font-size:12.5px; color:var(--paperDim); margin-top:14px; line-height:1.5;">
-          Pas encore assez d'historique (3 derniers mois) pour estimer les revenus et dépenses de ce mois. Le solde ci-dessus reste inchangé par rapport à aujourd'hui.
-        </div>
-      ` : `
-      <div class="row" style="margin-bottom:0; margin-top:16px;">
-        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">Revenus du mois${useIncomeEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div><div class="stat-val" style="color:var(--sage)">${fmt2(income)}${changeBadge(incomeChange,'up')}</div></div>
-        <div style="display:flex; flex-direction:column; align-items:flex-end;"><div class="stat-label">Dépenses du mois${useExpenseEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div><div class="stat-val" style="color:var(--coral)">${fmt2(expense)}${changeBadge(expenseChange,'down')}</div></div>
-      </div>
-      ${savedThisMonth !== 0 ? `
-      <div class="row" style="margin-bottom:0; margin-top:14px;">
-        <div style="display:flex; flex-direction:column; align-items:flex-start;"><div class="stat-label">${savedThisMonth>=0 ? 'Mis de côté ce mois' : "Retiré de l'épargne ce mois"}</div><div class="stat-val" style="color:var(--gold)">${fmt2(Math.abs(savedThisMonth))}</div></div>
-      </div>
-      ` : ''}
-      ${(()=>{
-        const gPct = income>0 ? Math.min(100, Math.round(expense/income*100)) : 0;
-        const gOver = income>0 && expense>income;
-        const gColor = gOver ? 'var(--coral)' : (gPct>=80 ? 'var(--amber)' : 'var(--sage)');
-        return `
-          <div style="margin-top:16px;">
-            <div class="row" style="margin-bottom:14px; align-items:flex-start;">
-              <div>
-                <div class="section-title" style="margin:0 0 2px; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Équilibre du mois</div>
-                
-              </div>
-              <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${gPct}%</span>
-            </div>
-            <div class="catbar-track" style="height:18px; border:1px solid var(--line);"><div class="catbar-fill" style="width:${gPct}%; background:${gColor};"></div></div>
-          </div>
-        `;
-      })()}
-      `) : ''}
+      ${showStats && usingEstimate && !f.hasHistory ? `<div style="font-size:12px; color:var(--paperDim); margin-top:10px; line-height:1.5;">Pas encore assez d'historique (3 derniers mois) pour estimer ce mois : le chiffre ci-dessus ne compte que ce qui est déjà connu.</div>` : ''}
+      ${showStats ? `<button class="btn-primary" data-open="addTx" style="width:100%; justify-content:center; margin-top:12px;">${icon('plus',14)} Ajouter</button>` : ''}
   `;
 }
 
@@ -2453,38 +2423,14 @@ function computeOverdraftAlert(){
 
 function renderDashboard(){
   const stats = computeMonthStats();
-  const { isFuture, f, tx, income, expense, rate, bal, usingEstimate } = stats;
+  const { f, tx, income, expense, usingEstimate, savedThisMonth } = stats;
 
   const byCat = {};
   tx.filter(t=>t.type==='expense' && t.category!=='ajustement').forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
   const catData = usingEstimate ? computeCategoryForecast(expense, state.viewY, state.viewM) : Object.entries(byCat).map(([id,value])=>({id,value,...catInfo(id)})).sort((a,b)=>b.value-a.value);
   const maxCat = Math.max(1, ...catData.map(c=>c.value));
-
-  // Graphique 12 mois : memes regles que "Revenus / Depenses du mois" (carte du haut) :
-  // compte affiche uniquement, epargne exclue, et pour le mois en cours / a venir
-  // les echeances recurrentes pas encore passees sont ajoutees (partie "prevue", plus claire).
   const overdraftAlert = computeOverdraftAlert();
-  const trend = [];
-  const trendCurIdx = monthIndex(new Date().getFullYear(), new Date().getMonth());
-  for(let i=11;i>=0;i--){
-    let m = state.viewM-i, y=state.viewY;
-    if(m<0){m+=12;y--;}
-    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m));
-    const inc = txs.filter(t=>t.type==='income' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
-    const exp = txs.filter(t=>t.type==='expense' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
-    const plan = monthIndex(y,m) >= trendCurIdx ? recurringOccurrencesInMonth(y,m) : {income:0, expense:0};
-    trend.push({ key: y+'-'+m, label: MONTHS_SHORT[m], name: MONTHS[m]+(y!==new Date().getFullYear()?' '+y:''), isView: i===0, inc, exp, incPlan: plan.income, expPlan: plan.expense });
-  }
-  // On masque les mois vides du debut (avant la premiere donnee), en gardant au moins 3 mois.
-  while(trend.length>3 && trend[0].inc+trend[0].exp+trend[0].incPlan+trend[0].expPlan===0) trend.shift();
-  const maxTrend = Math.max(1, ...trend.map(t=>Math.max(t.inc+t.incPlan, t.exp+t.expPlan)));
-  const trendHasPlan = trend.some(t=>t.incPlan>0 || t.expPlan>0);
-  const trendView = trend.find(t=>t.key===state.trendSelKey) || trend[trend.length-1];
-  trend.forEach(t=>{ t.isSel = t===trendView; });
-
-  const over = Object.entries(state.data.budgets)
-    .map(([id,limit])=>({id,limit,spent:byCat[id]||0,...catInfo(id)}))
-    .filter(b=>b.limit>0 && b.spent>b.limit);
+  const env = envelopeStatus(state.viewY, state.viewM);
 
   const now0 = new Date();
   const futureRealTx = visibleTransactions()
@@ -2502,39 +2448,108 @@ function renderDashboard(){
       seen.add(key);
       return true;
     })
-    .slice(0,2);
+    .filter(item=> item.daysUntil <= 14 && item.type!=='income')
+    .slice(0,4);
   const dayLabel = (n)=> n<0 ? (n===-1?'hier':`il y a ${Math.abs(n)} jours`) : n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
-  const bannerCollapsed = state.data.bannerCollapsed;
+  const overEnv = env.rows.filter(r=>r.over>0);
+  const goals = state.data.goals || [];
+
+  // Enveloppes : les entamees en liste (la plus entamee d'abord), les autres sur une ligne.
+  const started = env.rows.filter(r=>r.spent>0).sort((a,b)=> b.spent/b.limit - a.spent/a.limit);
+  const untouched = env.rows.filter(r=>r.spent<=0);
 
   return `
-    ${dueSoon.length>0 ? (bannerCollapsed ? `
-      <button data-toggle-banner="1" class="row" style="width:100%; background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); border-radius:14px; margin-bottom:14px; padding:10px 14px; text-align:left;">
-        <span style="font-size:13px; font-weight:700; color:var(--gold); display:flex; align-items:center; gap:7px;">${icon('alert',14)} ${dueSoon.length>1?`${dueSoon.length} échéances à venir`:'1 échéance à venir'}</span>
-        ${icon('chevronR',14)}
-      </button>
-    ` : `
-      <div class="card" style="background:linear-gradient(135deg, rgba(212,169,79,.16), rgba(232,102,77,.08)); border:1px solid rgba(212,169,79,.35); margin-bottom:14px; padding:14px 16px; position:relative;">
-        <button data-toggle-banner="1" style="position:absolute; top:8px; right:8px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; color:var(--paper); background:rgba(0,0,0,.15); border-radius:50%; z-index:2;">${icon('x',14)}</button>
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; padding-right:20px;">
-          ${icon('alert',15)}
-          <span style="font-size:13px; font-weight:700; color:var(--gold);">${dueSoon.length>1?'2 prochaines échéances':'1 prochaine échéance'}</span>
-        </div>
-        ${dueSoon.map(r=>{
-          const info = catInfo(r.category);
-          return `<button data-banner-item="${r.source}:${r.id}" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; font-size:13px; padding:5px 0; background:none; border:none;">
-            <span style="color:var(--paper);">${escapeHtml(r.note || info.label)} · ${dayLabel(r.daysUntil)}</span>
-            <span class="mono" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</span>
-          </button>`;
-        }).join('')}
-      </div>
-    `) : ''}
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
       ${monthNav()}
     </div>
-    ${overdraftAlert ? `<div class="alert">${icon('alert',16)}<div>${overdraftAlert}</div></div>` : ''}
     ${renderExportReminder()}
-    ${renderGaugeCard(stats)}
-    ${over.length ? `<div class="alert">${icon('alert',16)}<div><strong>Attention : </strong>${escapeHtml(over.map(b=>b.label).join(', '))} ${over.length>1?'dépassent':'dépasse'} la limite fixée ce mois-ci.</div></div>` : ''}
+    <div class="card">${renderBalanceContent(stats, true)}</div>
+
+    ${(overdraftAlert || overEnv.length || dueSoon.length) ? `
+    <div class="card" data-watch style="background:rgba(232,102,77,.07); border:1px solid rgba(232,102,77,.28);">
+      <div style="display:flex; align-items:center; gap:7px; font-weight:600; font-size:15px; margin-bottom:8px;">${icon('alert',15)} À surveiller</div>
+      ${overdraftAlert ? `<div style="font-size:13px; line-height:1.45; padding:5px 0; color:var(--coral);">${overdraftAlert}</div>` : ''}
+      ${overEnv.map(r=>`<div class="row" style="font-size:13px; padding:5px 0; margin:0;"><span><strong>${escapeHtml(r.label)}</strong> dépasse son enveloppe</span><span class="mono" style="color:var(--coral);">${fmt0(r.spent)} / ${fmt0(r.limit)}</span></div>`).join('')}
+      ${dueSoon.map(r=>{
+        const info = catInfo(r.category);
+        return `<button data-banner-item="${r.source}:${r.id}" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; font-size:13px; padding:5px 0; background:none; border:none; color:var(--paper);">
+          <span>${escapeHtml(r.note || info.label)} · ${dayLabel(r.daysUntil)}</span>
+          <span class="mono" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</span>
+        </button>`;
+      }).join('')}
+    </div>` : ''}
+
+    ${env.rows.length ? `
+    <div class="card" data-envelopes>
+      <div class="row" style="margin-bottom:6px;">
+        <div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div>
+        ${env.remaining>0
+          ? `<button data-allocate-remaining="save" data-remaining-amount="${env.remaining}" style="background:none; border:none; padding:0; font-size:12.5px; color:var(--paperDim); display:flex; align-items:center; gap:4px;">reste <span class="mono" style="font-weight:700; color:var(--mint);">${fmt0(env.remaining)}</span>${icon('chevronR',11)}</button>`
+          : `<span style="font-size:12.5px; color:var(--paperDim);">reste <span class="mono" style="font-weight:700;">0 €</span></span>`}
+      </div>
+      ${started.map(r=>{
+        const pct = Math.min(100, Math.round(r.spent/r.limit*100));
+        const bar = r.over>0 ? 'var(--coral)' : (pct>=80 ? 'var(--amber)' : r.color);
+        return `
+        <button data-quick-tx-cat="${r.id}" data-quick-tx-type="expense" style="display:block; width:100%; text-align:left; background:none; border:none; padding:8px 0; color:var(--paper);">
+          <div class="row" style="margin:0; font-size:13.5px;"><span>${escapeHtml(r.label)}</span><span class="mono" style="${r.over>0?'color:var(--coral);':''}">${fmt0(r.spent)} / ${fmt0(r.limit)}</span></div>
+          <div class="catbar-track" style="margin-top:5px;"><div class="catbar-fill" style="width:${pct}%; background:${bar};"></div></div>
+          <div style="font-size:11.5px; margin-top:3px; color:${r.over>0?'var(--coral)':'var(--paperDim)'};">${r.over>0 ? `Dépassée de ${fmt0(r.over)}` : (r.left>0 ? `Reste ${fmt0(r.left)}` : 'Pleine')}</div>
+        </button>`;
+      }).join('')}
+      ${untouched.length ? `<div style="font-size:11.5px; color:var(--paperDim); margin-top:8px;">Pas encore entamées :</div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">${untouched.map(r=>`<button data-quick-tx-cat="${r.id}" data-quick-tx-type="expense" style="font-size:12px; border:1px solid var(--line); background:var(--surface); color:var(--paper); border-radius:999px; padding:5px 10px;"><span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:${r.color}; margin-right:5px;"></span>${escapeHtml(r.label)} <span class="mono" style="color:var(--paperDim);">${fmt0(r.limit)}</span></button>`).join('')}</div>` : ''}
+      <div style="font-size:10.5px; color:var(--paperDim); margin-top:10px;">Touche une enveloppe pour y ajouter une dépense.</div>
+    </div>` : ''}
+
+    <div class="card">
+      <div class="section-title" style="margin:0 0 10px; font-size:15px;">Le mois en bref</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+        ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)'], [savedThisMonth>=0 ? 'Épargné' : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c])=>`
+          <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">${l}</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${c};">${fmt0(v)}</div></div>`).join('')}
+      </div>
+    </div>
+
+    ${renderForecastCard(f)}
+
+    ${goals.length ? `
+    <div class="card">
+      <div class="row" style="margin-bottom:6px;">
+        <div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div>
+        <button data-tab="goals" style="background:none; border:none; color:var(--paperDim); padding:4px;">${icon('chevronR',14)}</button>
+      </div>
+      ${goals.map(g=>{ const pct = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0; return `
+        <div style="margin:8px 0;">
+          <div class="row" style="margin:0; font-size:13.5px;"><span>${escapeHtml(g.name)}</span><span class="mono">${fmt0(g.current)} / ${fmt0(g.target)}</span></div>
+          <div class="catbar-track" style="margin-top:5px;"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
+        </div>`; }).join('')}
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button data-allocate-quick="withdraw" data-remaining-amount="${env.remaining}" style="background:var(--coral); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Retirer rapidement">−</button>
+        <button data-allocate-remaining="quick" data-remaining-amount="${env.remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne <span class="mono" style="opacity:.75; font-weight:600;">· ${fmt0(goals.reduce((a,g)=>a+g.current,0))}</span></button>
+        <button data-allocate-quick="add" data-remaining-amount="${env.remaining}" style="background:var(--sage); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter rapidement">+</button>
+      </div>
+    </div>` : ''}
+
+    ${(state.data.accounts||[]).length>1 ? `
+      <div class="card">
+        <div class="row" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0; font-size:15px;">Mes comptes</div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            ${state.activeAccountFilter ? `<button data-select-accountfilter="" class="btn-ghost" style="font-size:11px; padding:6px 9px;">${icon('tag',11)} Tous les comptes</button>` : ''}
+            <button data-open-accounts-newaccount="1" class="btn-ghost" style="padding:6px 9px; display:flex;" title="Nouveau compte">${icon('plus',13)}</button>
+          </div>
+        </div>
+        ${state.data.accounts.map(a=>{
+          const isActive = state.activeAccountFilter === a.id;
+          return `
+          <button data-select-accountfilter="${isActive?'':a.id}" class="txrow" style="width:100%; text-align:left; ${isActive?`background:${a.color}14; border-radius:10px;`:''}">
+            <div class="tx-left"><div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div><div class="tx-note">${escapeHtml(a.name)} ${isActive?`<span style="color:${a.color}; font-size:11px;">· affiché seul</span>`:''}</div></div>
+            <span class="mono" style="font-size:13.5px; font-weight:600;">${fmt0(accountBalance(a.id))}</span>
+          </button>
+        `;}).join('')}
+        <button data-open-transfer="1" class="btn-ghost" style="width:100%; justify-content:center; margin-top:10px;">${icon('repeat',13)} Virement entre comptes</button>
+      </div>
+    ` : ''}
     ${state.data.dashboardSettings.showBreakdown ? `
     <div class="card">
       <div class="row" style="margin-bottom:12px;">
@@ -2556,7 +2571,33 @@ function renderDashboard(){
       `}
     </div>
     ` : ''}
-    ${state.data.dashboardSettings.showTrend ? `
+  `;
+}
+
+// Graphique « Revenus vs depenses — 12 mois » (onglet Transactions). Memes regles que le mois en bref :
+// compte affiche uniquement, epargne exclue, echeances a venir ajoutees pour le mois en cours / a venir.
+function renderTrendCard(){
+  if(!state.data.dashboardSettings.showTrend) return '';
+  const stats = computeMonthStats();
+  const trend = [];
+  const trendCurIdx = monthIndex(new Date().getFullYear(), new Date().getMonth());
+  for(let i=11;i>=0;i--){
+    let m = state.viewM-i, y=state.viewY;
+    if(m<0){m+=12;y--;}
+    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m));
+    const inc = txs.filter(t=>t.type==='income' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
+    const exp = txs.filter(t=>t.type==='expense' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
+    const plan = monthIndex(y,m) >= trendCurIdx ? recurringOccurrencesInMonth(y,m) : {income:0, expense:0};
+    trend.push({ key: y+'-'+m, label: MONTHS_SHORT[m], name: MONTHS[m]+(y!==new Date().getFullYear()?' '+y:''), isView: i===0, inc, exp, incPlan: plan.income, expPlan: plan.expense });
+  }
+  // On masque les mois vides du debut (avant la premiere donnee), en gardant au moins 3 mois.
+  while(trend.length>3 && trend[0].inc+trend[0].exp+trend[0].incPlan+trend[0].expPlan===0) trend.shift();
+  const maxTrend = Math.max(1, ...trend.map(t=>Math.max(t.inc+t.incPlan, t.exp+t.expPlan)));
+  const trendHasPlan = trend.some(t=>t.incPlan>0 || t.expPlan>0);
+  const trendView = trend.find(t=>t.key===state.trendSelKey) || trend[trend.length-1];
+  trend.forEach(t=>{ t.isSel = t===trendView; });
+
+  return `
     <div class="card">
       <div class="row" style="margin-bottom:2px;">
         <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
@@ -2597,60 +2638,6 @@ function renderDashboard(){
         ${trendView.isView && state.activeAccountFilter && stats.netTransfers ? `<div class="row" style="margin-bottom:0;"><span style="color:var(--paperDim);">Virements avec tes autres comptes</span><span class="mono" style="color:var(--paperDim);">${stats.netTransfers>0?'+':'−'}${fmt0(Math.abs(stats.netTransfers))}</span></div>` : ''}
       </div>
     </div>
-    ` : ''}
-    ${(state.data.accounts||[]).length>1 ? `
-      <div class="card">
-        <div class="row" style="margin-bottom:10px;">
-          <div class="section-title" style="margin:0; font-size:15px;">Mes comptes</div>
-          <div style="display:flex; align-items:center; gap:6px;">
-            ${state.activeAccountFilter ? `<button data-select-accountfilter="" class="btn-ghost" style="font-size:11px; padding:6px 9px;">${icon('tag',11)} Tous les comptes</button>` : ''}
-            <button data-open-accounts-newaccount="1" class="btn-ghost" style="padding:6px 9px; display:flex;" title="Nouveau compte">${icon('plus',13)}</button>
-          </div>
-        </div>
-        ${state.data.accounts.map(a=>{
-          const isActive = state.activeAccountFilter === a.id;
-          return `
-          <button data-select-accountfilter="${isActive?'':a.id}" class="txrow" style="width:100%; text-align:left; ${isActive?`background:${a.color}14; border-radius:10px;`:''}">
-            <div class="tx-left"><div class="swatch" style="background:${a.color}22;"><span class="dot" style="background:${a.color};"></span></div><div class="tx-note">${escapeHtml(a.name)} ${isActive?`<span style="color:${a.color}; font-size:11px;">· affiché seul</span>`:''}</div></div>
-            <span class="mono" style="font-size:13.5px; font-weight:600;">${fmt0(accountBalance(a.id))}</span>
-          </button>
-        `;}).join('')}
-        <button data-open-transfer="1" class="btn-ghost" style="width:100%; justify-content:center; margin-top:10px;">${icon('repeat',13)} Virement entre comptes</button>
-      </div>
-    ` : ''}
-    ${state.data.dashboardSettings.showPinnedEnvelopes ? `
-    <div class="card">
-      <div class="row" style="margin-bottom:12px;">
-        <div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <button data-open-pincat="1" class="btn-ghost" style="padding:6px 10px; font-size:11.5px; display:flex; align-items:center; gap:4px;">${icon('plus',12)} Ajouter</button>
-          <button data-hide-card="showPinnedEnvelopes" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
-        </div>
-      </div>
-      ${(state.data.pinnedCategories||[]).length===0 ? `<div class="empty">Aucune catégorie épinglée</div>` : (state.data.pinnedCategories||[]).map(catId=>{
-        const cat = catInfo(catId);
-        const limit = state.data.budgets[catId] || 0;
-        const spent = byCat[catId] || 0;
-        const pct = limit>0 ? Math.min(100, Math.round(spent/limit*100)) : 0;
-        const over = limit>0 && spent>limit;
-        const barColor = over ? COLORS.coral : (pct>=80 ? COLORS.amber : cat.color);
-        return `
-          <div style="margin-bottom:14px;">
-            <div class="row" style="margin-bottom:6px;">
-              <span style="font-size:13px; display:flex; align-items:center; gap:7px;"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${escapeHtml(cat.label)}</span>
-              <div style="display:flex; align-items:center; gap:6px;">
-                <button data-quick-tx-cat="${catId}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${cat.color};" title="Ajouter une dépense">+</button>
-                <button data-unpin-cat="${catId}" style="color:var(--paperDim); padding:2px;" title="Retirer">${icon('x',13)}</button>
-              </div>
-            </div>
-            <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>
-            <div class="budget-foot" style="margin-top:6px;"><span class="mono" style="color:${over?'var(--coral)':'var(--paperDim)'}">${fmt2(spent)}</span><span>${limit>0? fmt0(limit)+' limite' : 'pas de limite'}</span></div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-    ` : ''}
-    ${renderForecastCard(f)}
   `;
 }
 
@@ -2779,6 +2766,7 @@ function renderTransactions(){
         return header + (t.isPending ? previewTxRow(t) : txRow(t,true));
       }).join('');
     })()}</div>
+    ${renderTrendCard()}
   `;
 }
 function previewTxRow(t){
@@ -2805,85 +2793,6 @@ function previewTxRow(t){
 
 /* ---------------- Budgets ---------------- */
 let budgetEditingId = null;
-function renderGaugeCard(stats){
-  const tx = stats.tx || monthTx();
-  const byCat = {};
-  tx.filter(t=>t.type==='expense' && !isTxStrictlyRecurring(t)).forEach(t=>{ byCat[t.category]=(byCat[t.category]||0)+t.amount; });
-  const hidden = state.data.hiddenBudgetCategories||[];
-  const hiddenCount = hidden.length;
-
-  const nonRecurringCats = catsForType('expense').filter(c=>c.id!=='epargne' && c.id!=='virement' && !hidden.includes(c.id));
-  const globalLimit = nonRecurringCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
-  const globalSpent = nonRecurringCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
-  const globalPct = globalLimit>0 ? Math.min(100, Math.round(globalSpent/globalLimit*100)) : 0;
-  const globalOver = globalLimit>0 && globalSpent>globalLimit;
-  const committedKey = state.viewY + '-' + state.viewM;
-  const committedThisMonth = state.data.envelopeCommitted[committedKey] || 0;
-  const remaining = Math.max(0, globalLimit - globalSpent - committedThisMonth);
-  const alwaysShow = new Set(state.data.gaugeAlwaysShow||[]);
-  const gaugeSegments = nonRecurringCats
-    .map(c=>({ id:c.id, color:c.color, label:c.label, value: byCat[c.id]||0 }))
-    .filter(s=>s.value>0 || alwaysShow.has(s.id))
-    .sort((a,b)=>b.value-a.value);
-
-  return `
-    <div class="card">
-      ${renderBalanceContent(stats, true)}
-      <div style="height:1px; background:var(--line); margin:16px 0;"></div>
-      ${globalLimit>0 ? `
-        <div class="row" style="margin-bottom:14px; align-items:flex-start;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <div class="section-title" style="margin:0; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; letter-spacing:normal;">Total de mes enveloppes</div>
-            <button data-open-gaugecat="1" class="btn-ghost" style="padding:9px 11px; font-size:13px; min-width:34px; min-height:34px; display:flex; align-items:center; justify-content:center;" title="Ajouter une catégorie">${icon('plus',14)}</button>
-          </div>
-          <span class="mono" style="font-size:14px; font-weight:600; color:var(--paper); line-height:1;">${globalPct}%</span>
-        </div>
-        <div class="catbar-track" style="height:18px; display:flex; overflow:hidden; gap:2px; border:1px solid var(--line);">
-          ${gaugeSegments.map(s=>`<div style="width:${Math.min(100,(s.value/globalLimit*100))}%; background:${s.color}; height:100%;" title="${escapeHtml(s.label)}: ${fmt0(s.value)}"></div>`).join('')}
-        </div>
-        <div class="budget-foot" style="margin-top:10px; font-size:13.5px;">
-          <span class="mono" style="color:${globalOver?'var(--coral)':'var(--paper)'}; font-weight:600;">${fmt2(globalSpent)}</span>
-          <span style="color:var(--paperDim);">sur <span class="mono" style="color:var(--paper);">${fmt0(globalLimit)}</span></span>
-        </div>
-        <div style="height:1px; background:var(--line); margin:14px 0;"></div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px;">
-          ${gaugeSegments.map(s=>`
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-              <span style="font-size:12.5px; color:var(--paper); display:flex; align-items:center; gap:6px; min-width:0;">
-                <span style="width:8px;height:8px;border-radius:50%;background:${s.color};display:inline-block; flex-shrink:0;"></span>
-                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(s.label)}</span>
-              </span>
-              <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-                <span class="mono" style="font-size:12px; color:var(--paperDim);">${fmt0(s.value)}</span>
-                <button data-quick-tx-cat="${s.id}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${s.color};" title="Ajouter une dépense">+</button>
-              </span>
-            </div>
-          `).join('')}
-        </div>
-        ${remaining>0 ? `
-          <button data-allocate-remaining="save" data-remaining-amount="${remaining}" class="row" style="margin-top:14px; margin-bottom:0; width:100%; text-align:left; background:none; border:none; padding:0; cursor:pointer;">
-            <span style="font-size:12.5px; color:var(--paperDim); display:flex; align-items:center; gap:5px;">Reste à dépenser ${icon('chevronR',11)}</span>
-            <span class="mono" style="font-size:16px; font-weight:700; color:var(--mint);">${fmt0(remaining)}</span>
-          </button>
-          <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">Tape pour mettre ce solde de côté — tes limites repartent à zéro le mois prochain, comme prévu.</div>
-        ` : `
-          <div class="row" style="margin-top:14px; margin-bottom:0;">
-            <span style="font-size:12.5px; color:var(--paperDim);">Reste à dépenser</span>
-            <span class="mono" style="font-size:16px; font-weight:700; color:var(--paperDim);">0 €</span>
-          </div>
-          <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">${committedThisMonth>0 ? 'Tout a été mis de côté ce mois-ci' : 'Budget entièrement utilisé ce mois-ci'} — ça repart de zéro le mois prochain.</div>
-        `}
-      ` : `<div class="empty" style="padding:12px 0 16px;">Toutes les catégories sont masquées.</div>`}
-      <div style="height:1px; background:var(--line); margin:16px 0;"></div>
-      <div style="display:flex; gap:8px;">
-        <button data-allocate-quick="withdraw" data-remaining-amount="${remaining}" style="background:var(--coral); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Retirer rapidement">−</button>
-        <button data-allocate-remaining="quick" data-remaining-amount="${remaining}" class="btn-primary" style="flex:1; justify-content:center; font-size:13px;">${icon('faceid',14)} Épargne <span class="mono" style="opacity:.75; font-weight:600;">· ${fmt0((state.data.goals||[]).reduce((s,g)=>s+g.current,0))}</span></button>
-        <button data-allocate-quick="add" data-remaining-amount="${remaining}" style="background:var(--sage); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter rapidement">+</button>
-      </div>
-    </div>
-  `;
-}
-
 function renderBudgets(){
   const tx = monthTx();
   const byCat = {};
