@@ -977,6 +977,17 @@ test.describe('Jour d’une récurrence', () => {
       assert.equal(ex[String(new Date(D('2026-11-28')).getTime())].amount, 18);
     }));
 
+  test('J3b Une échéance modifiée seulement en montant suit aussi le nouveau jour ; une date choisie à la main est gardée', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2026-11-22'), anchorDay:22, exceptions:{
+      [String(new Date(D('2026-11-22')).getTime())]: { amount:18, date:D('2026-11-22') },
+      [String(new Date(D('2026-12-22')).getTime())]: { amount:20, date:D('2026-12-03') },
+    } }) ] }) }, async ({ page }) => {
+      await setDay(page, 'r1', 15);
+      const ex = (await stored(page)).recurring[0].exceptions;
+      assert.equal(ex[String(new Date(D('2026-11-15')).getTime())].date, D('2026-11-15'));
+      assert.equal(ex[String(new Date(D('2026-12-15')).getTime())].date, D('2026-12-03'));
+    }));
+
   test('J4 Avancer à un jour déjà passé : l’échéance du mois est générée une seule fois', () =>
     withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2026-10-26'), anchorDay:26 }) ] }) }, async ({ page, errors }) => {
       await setDay(page, 'r1', 20);

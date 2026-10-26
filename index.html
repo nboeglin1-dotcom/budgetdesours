@@ -349,7 +349,13 @@ function setRecurringDay(rule, day){
   };
   if(rule.exceptions){
     const moved = {};
-    Object.keys(rule.exceptions).forEach(k=>{ moved[String(shift(Number(k)).getTime())] = rule.exceptions[k]; });
+    Object.keys(rule.exceptions).forEach(k=>{
+      const ex = rule.exceptions[k];
+      const nk = shift(Number(k));
+      // Echeance modifiee sans changement de date (date = ancienne date naturelle) : elle suit le nouveau jour.
+      if(ex && ex.date && new Date(ex.date).getTime() === Number(k)) ex.date = nk.toISOString();
+      moved[String(nk.getTime())] = ex;
+    });
     rule.exceptions = moved;
   }
   rule.nextDate = shift(rule.nextDate).toISOString();
