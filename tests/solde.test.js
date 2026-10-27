@@ -1051,12 +1051,11 @@ test.describe('Solde après enveloppes', () => {
     rolloverEnabled:false, lastRolloverCheck:'2026-9',
   }, extra));
 
-  test('E1 Mois en cours : Reste moins le reste des enveloppes, dépense connue non comptée deux fois', () =>
+  test('E1 Mois en cours (calcul) : Reste moins le reste des enveloppes, dépense connue non comptée deux fois', () =>
     withApp({ now:NOW_OCT, data: data() }, async ({ page, errors }) => {
-      const r = await page.evaluate(() => { _forecastCache=null; const s = computeMonthStats(); return { bal:s.bal, after:s.balAfterEnv, line: document.querySelector('[data-after-env]')?.textContent || '' }; });
+      const r = await page.evaluate(() => { _forecastCache=null; const s = computeMonthStats(); return { bal:s.bal, after:s.balAfterEnv }; });
       assert.equal(r.bal, 2700);
       assert.equal(r.after, 2300);
-      assert.match(r.line.replace(/\s/g,' '), /Après enveloppes/);
       assert.deepEqual(errors, []);
     }));
 
@@ -1077,8 +1076,8 @@ test.describe('Solde après enveloppes', () => {
       assert.equal(p[1].afterEnv, p[1].value - 400 - 700 - 700);
     }));
 
-  test('E4 Sans enveloppe : pas de ligne « Après enveloppes »', () =>
-    withApp({ now:NOW_OCT, data: data({ budgets:{} }) }, async ({ page }) => {
+  test('E4 La case « Après enveloppes » n’est plus affichée sur l’accueil', () =>
+    withApp({ now:NOW_OCT, data: data() }, async ({ page }) => {
       const n = await page.evaluate(() => document.querySelectorAll('[data-after-env]').length);
       assert.equal(n, 0);
     }));
@@ -1143,7 +1142,7 @@ test.describe('Nouvelle page d’accueil', () => {
         const s = computeMonthStats(); const env = envelopeStatus(2026, 10);
         const app = document.getElementById('app').innerHTML;
         return { bal:s.bal, after:s.balAfterEnv, rem:env.remaining, tr:env.rows.find(x=>x.id==='transport'),
-          hasReste: app.includes('Reste estimé'), hasAfter: !!document.querySelector('[data-after-env]'),
+          hasReste: app.includes('Reste estimé'), hasAfter: !document.querySelector('[data-after-env]'),
           envCard: !!document.querySelector('[data-envelopes]'), goal: app.includes('Objectif test') };
       });
       assert.equal(r.tr.spent, 100);

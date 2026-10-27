@@ -2368,19 +2368,14 @@ function computeMonthStats(){
 
 function renderBalanceContent(stats, showStats){
   if(showStats===undefined) showStats = true;
-  const { bal, balAfterEnv, rate, usingEstimate, f } = stats;
+  const { bal, rate, usingEstimate, f } = stats;
   const env = envelopeStatus(state.viewY, state.viewM);
-  const showAfter = showStats && balAfterEnv!==null && env.rows.length > 0;
-  const tile = (label, inner, extra='')=> `<div ${extra} style="background:var(--surfaceHi); border-radius:14px; padding:10px 12px; min-width:0;"><div style="font-size:12px; color:var(--paperDim);">${label}</div>${inner}</div>`;
   return `
       <div class="row" style="margin-bottom:8px; align-items:flex-start;">
         <div class="eyebrow" style="margin-bottom:0;">Fin de mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
         <div style="flex-shrink:0; margin-top:-6px;" title="Humeur du mois">${bearMascot(bearMoodFromRate(rate), 36)}</div>
       </div>
-      <div style="display:grid; grid-template-columns:${showAfter ? '1fr 1fr' : '1fr'}; gap:8px;">
-        ${tile(usingEstimate ? 'Reste estimé' : 'Reste', `<div class="balance-num mono" id="balanceNum" style="font-size:${showAfter?'25px':'38px'}; color:${bal<0?'var(--coral)':'var(--paper)'};">${fmt0(bal)}</div>`)}
-        ${showAfter ? tile('Après enveloppes', `<div class="mono" style="font-size:25px; font-weight:600; letter-spacing:-.5px; color:${balAfterEnv<0?'var(--coral)':'var(--mint)'};">${balAfterEnv>0?'+':''}${fmt0(balAfterEnv)}</div>`, 'data-after-env') : ''}
-      </div>
+      <div style="background:var(--surfaceHi); border-radius:14px; padding:10px 12px; min-width:0;"><div style="font-size:12px; color:var(--paperDim);">${usingEstimate ? 'Reste estimé' : 'Reste'}</div><div class="balance-num mono" id="balanceNum" style="font-size:38px; color:${bal<0?'var(--coral)':'var(--paper)'};">${fmt0(bal)}</div></div>
       ${(()=>{
         const td = new Date();
         if(!showStats || state.viewY!==td.getFullYear() || state.viewM!==td.getMonth()) return '';
