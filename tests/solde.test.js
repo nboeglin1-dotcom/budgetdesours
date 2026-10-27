@@ -1173,6 +1173,29 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.deepEqual(errors, []);
     }));
 
+  test('A3 Le mois en bref : solde au 1er = fin du mois précédent ; À surveiller limité au mois', () =>
+    withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
+      budgets:{ alimentation:500 },
+      transactions:[
+        tx({ id:'o', type:'income', amount:1000, category:'salaire', date:D('2026-10-01') }),
+        tx({ id:'oe', amount:1250, category:'alimentation', date:D('2026-10-05') }),
+        tx({ id:'s', type:'income', amount:3000, category:'salaire', date:D('2026-11-01') }),
+        tx({ id:'aj', type:'income', amount:20, category:'ajustement', date:D('2026-11-20') }),
+      ],
+      recurring:[ rule({ id:'fin', amount:30, category:'abonnements', note:'Fin de mois', nextDate:D('2026-11-29'), anchorDay:29 }),
+                  rule({ id:'dec', amount:40, category:'abonnements', note:'Debut decembre', nextDate:D('2026-12-03'), anchorDay:3 }) ],
+    }) }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({ start: computeMonthStats().startBal,
+        line: document.querySelector('[data-month-start]').textContent.replace(/\s+/g,' '),
+        watch: document.querySelector('[data-watch]').textContent }));
+      assert.equal(r.start, -250);
+      assert.match(r.line, /Solde au 1er novembre/);
+      assert.match(r.line, /ajustements \+20/);
+      assert.match(r.watch, /Fin de mois/);
+      assert.doesNotMatch(r.watch, /Debut decembre/);
+      assert.deepEqual(errors, []);
+    }));
+
   test('A2 À surveiller : enveloppe dépassée et charges à venir, pas les revenus', () =>
     withApp({ now:NOW, data: data() }, async ({ page }) => {
       const t = await page.evaluate(() => document.querySelector('[data-watch]').textContent);

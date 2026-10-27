@@ -2359,8 +2359,11 @@ function computeMonthStats(){
   const prevExpense = prevTx.filter(t=>t.type==='expense' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
   const incomeChange = useIncomeEstimate ? null : pctChange(income, prevIncome);
   const expenseChange = useExpenseEstimate ? null : pctChange(expense, prevExpense);
+  // Solde au 1er du mois = solde de fin du mois precedent (reel s'il est passe, estime sinon).
+  const startBal = balanceForViewedMonth(f, py, pm);
+  const adjustments = tx.filter(t=>t.category==='ajustement').reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
 
-  return { isFuture, plannedSaving, f, tx, income, expense, rate, bal, balAfterEnv, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth, netTransfers };
+  return { startBal, adjustments, isFuture, plannedSaving, f, tx, income, expense, rate, bal, balAfterEnv, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth, netTransfers };
 }
 
 function renderBalanceContent(stats, showStats){
@@ -2460,7 +2463,7 @@ function renderDashboard(){
       seen.add(key);
       return true;
     })
-    .filter(item=> item.daysUntil <= 14 && item.type!=='income')
+    .filter(item=> item.daysUntil <= 14 && item.type!=='income' && sameMonth(item.date||item.next, state.viewY, state.viewM))
     .slice(0,4);
   const dayLabel = (n)=> n<0 ? (n===-1?'hier':`il y a ${Math.abs(n)} jours`) : n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
   const overEnv = env.rows.filter(r=>r.over>0);
@@ -2520,6 +2523,7 @@ function renderDashboard(){
         ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)'], [savedThisMonth>=0 ? (stats.isFuture || stats.plannedSaving>0 ? 'Épargne prévue' : 'Épargné') : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c])=>`
           <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">${l}</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${c};">${fmt0(v)}</div></div>`).join('')}
       </div>
+      <div data-month-start style="font-size:12px; color:var(--paperDim); margin-top:10px;">Solde au 1er ${MONTHS[state.viewM].toLowerCase()} : <span class="mono" style="color:${stats.startBal<0?'var(--coral)':'var(--paper)'};">${fmt0(stats.startBal)}</span>${Math.abs(stats.adjustments)>=0.5 ? ` · ajustements <span class="mono">${stats.adjustments>0?'+':'−'}${fmt0(Math.abs(stats.adjustments))}</span>` : ''}</div>
     </div>
 
     ${renderForecastCard(f)}
