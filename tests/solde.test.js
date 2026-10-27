@@ -1068,12 +1068,21 @@ test.describe('Solde après enveloppes', () => {
       assert.equal(r.after, 2300 - 100 - 100);
     }));
 
-  test('E3 Prévisionnel : enveloppes de chaque mois déduites en cumul, valeur brute inchangée', () =>
+  test('E3 Prévisionnel : enveloppes des mois suivants déduites en cumul, pas le reste du mois en cours', () =>
     withApp({ now:NOW_OCT, data: data() }, async ({ page }) => {
       const p = await page.evaluate(() => { _forecastCache=null; const f = computeForecast(); return f.points.slice(0,2); });
       assert.equal(p[0].value, 3700);
-      assert.equal(p[0].afterEnv, 3700 - 400 - 700);
-      assert.equal(p[1].afterEnv, p[1].value - 400 - 700 - 700);
+      assert.equal(p[0].afterEnv, 3700 - 700);
+      assert.equal(p[1].afterEnv, p[1].value - 700 - 700);
+    }));
+
+  test('E5 Mois futur : solde de fin = solde au 1er + mois en bref (enveloppes comprises)', () =>
+    withApp({ now:NOW_OCT, data: data() }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => { state.viewY = 2026; state.viewM = 10; _forecastCache=null; const s = computeMonthStats(); _forecastCache=null;
+        return { bal:s.bal, start:s.startBal, net: s.income - s.expense - s.savedThisMonth + s.adjustments, pt: computeForecast().points[0].afterEnv }; });
+      assert.equal(r.bal, r.pt);
+      assert.ok(Math.abs(r.start + r.net - r.bal) < 0.01, JSON.stringify(r));
+      assert.deepEqual(errors, []);
     }));
 
   test('E4 La case « Après enveloppes » n’est plus affichée sur l’accueil', () =>

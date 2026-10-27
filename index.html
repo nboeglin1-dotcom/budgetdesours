@@ -2174,9 +2174,11 @@ function computeForecast(){
   const startBalance = realBalanceToDate + futureRealThisMonth + recFC.income - recFC.expense;
   const points = [];
   let lastValue = startBalance;
-  // Meme projection, enveloppes du mois en cours et des mois suivants deduites (cumul).
+  // Meme projection, enveloppes des mois suivants deduites (cumul). Pas celles du mois en cours :
+  // le solde de fin de mois affiche ne les deduit pas non plus, sinon le reste non depense du
+  // mois en cours pesait a tort sur tous les mois suivants.
   const envNow = envelopeRemainingForMonth(today.getFullYear(), today.getMonth());
-  let envCum = envNow;
+  let envCum = 0;
   for(let i=1;i<=24;i++){
     let m = today.getMonth()+i, y = today.getFullYear();
     while(m>11){ m-=12; y++; }
@@ -2248,7 +2250,8 @@ function balanceForViewedMonth(f, viewY, viewM){
       .filter(t => new Date(t.date) <= monthEnd)
       .reduce((s,t)=> s + (t.type==='income' ? t.amount : -t.amount), 0);
   }
-  if(diff <= 24) return f.points[diff-1].value;
+  // Mois futur : enveloppes du mois comprises (depenses variables prevues), comme « Les mois suivants ».
+  if(diff <= 24) return f.points[diff-1].afterEnv;
   return f.startBalance + f.netAvg*diff;
 }
 
@@ -2265,7 +2268,7 @@ function renderForecastCard(f){
         <button data-hide-card="showForecast" style="color:var(--paperDim); padding:4px;" title="Masquer">${icon('x',15)}</button>
       </div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
-        ${pts.map(p=>{ const v = withEnv ? p.afterEnv : p.value; return `
+        ${pts.map(p=>{ const v = p.afterEnv; return `
           <button data-goto-month="${p.y}-${p.m}" style="background:var(--surfaceHi); border:none; border-radius:12px; padding:10px 4px; text-align:center;">
             <div style="font-size:11.5px; color:var(--paperDim);">${p.label}</div>
             <div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${v<0?'var(--coral)':'var(--mint)'};">${v>0?'+':''}${fmt0(v)}</div>
@@ -2337,7 +2340,7 @@ function computeMonthStats(){
     // statistique en plus. Les revenus/depenses etant stables d'un mois sur l'autre, ce
     // chiffre reste coherent avec celui du mois en cours au lieu de sauter artificiellement.
     income = realIncome + recurThisMonth.income;
-    expense = realExpense + recurThisMonth.expense - plannedSaving;
+    expense = realExpense + recurThisMonth.expense - plannedSaving + envelopeRemainingForMonth(state.viewY, state.viewM);
     savedThisMonth += plannedSaving;
   } else {
     // Mois passe : uniquement le reel, deja completement connu
