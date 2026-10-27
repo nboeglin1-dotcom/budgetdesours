@@ -1136,13 +1136,13 @@ test.describe('Nouvelle page d’accueil', () => {
     goals:[ { id:'g1', name:'Objectif test', target:1000, current:250, color:'#6FA287', accountId:'main' } ],
   });
 
-  test('A1 Reste estimé et Après enveloppes côte à côte ; enveloppes sans les récurrences', () =>
+  test('A1 Solde de fin de mois seul (sans libellé en double) ; enveloppes sans les récurrences', () =>
     withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
       const r = await page.evaluate(() => {
         const s = computeMonthStats(); const env = envelopeStatus(2026, 10);
         const app = document.getElementById('app').innerHTML;
         return { bal:s.bal, after:s.balAfterEnv, rem:env.remaining, tr:env.rows.find(x=>x.id==='transport'),
-          hasReste: app.includes('Reste estimé'), hasAfter: !document.querySelector('[data-after-env]'),
+          hasReste: app.includes('Fin de mois') && !!document.getElementById('balanceNum') && !app.includes('Reste estimé'), hasAfter: !document.querySelector('[data-after-env]'),
           envCard: !!document.querySelector('[data-envelopes]'), goal: app.includes('Objectif test') };
       });
       assert.equal(r.tr.spent, 100);

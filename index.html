@@ -2372,7 +2372,7 @@ function renderBalanceContent(stats, showStats){
   const env = envelopeStatus(state.viewY, state.viewM);
   return `
       <div class="eyebrow" style="margin-bottom:8px;">Fin de mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
-      <div style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="min-width:0;"><div style="font-size:12.5px; color:var(--paperDim);">${usingEstimate ? 'Reste estimé' : 'Reste'}</div><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; margin-top:4px; color:${bal<0?'var(--coral)':'var(--mint)'};">${fmt0(bal)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromRate(rate), 72)}</div></div>
+      <div style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${bal<0?'var(--coral)':'var(--mint)'};">${fmt0(bal)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromRate(rate), 72)}</div></div>
       ${(()=>{
         const td = new Date();
         if(!showStats || state.viewY!==td.getFullYear() || state.viewM!==td.getMonth()) return '';
