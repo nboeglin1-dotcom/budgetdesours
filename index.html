@@ -294,7 +294,9 @@ function catInfo(id){
 }
 function catsForType(type){
   const custom = (state.data.customCategories||[]).filter(c=>c.type===type);
-  const base = (type==='expense'?EXPENSE_CATS:INCOME_CATS).map(c=>{
+  // Categories de base « retirees » (fusionnees dans une autre) : plus proposees nulle part.
+  const retired = state.data.retiredCategories || [];
+  const base = (type==='expense'?EXPENSE_CATS:INCOME_CATS).filter(c=>!retired.includes(c.id)).map(c=>{
     const override = (state.data.categoryColorOverrides||{})[c.id];
     return override ? { ...c, color: override } : c;
   });

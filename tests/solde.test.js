@@ -1129,6 +1129,18 @@ test.describe('Catégorie d’une récurrence', () => {
     }));
 });
 
+test.describe('Catégories retirées', () => {
+  test('C1 Une catégorie de base retirée n’est plus proposée ni en enveloppe', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ budgets:{ transport:80, loisirs:100 }, retiredCategories:['transport'] }) }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({ cats: catsForType('expense').map(c=>c.id), env: envelopeStatus(2026,8).rows.map(x=>x.id), label: catInfo('transport').label }));
+      assert.ok(!r.cats.includes('transport'));
+      assert.ok(r.cats.includes('loisirs'));
+      assert.deepEqual(r.env, ['loisirs']);
+      assert.equal(r.label, 'Transport');
+      assert.deepEqual(errors, []);
+    }));
+});
+
 test.describe('Nouvelle page d’accueil', () => {
   const NOW = '2026-11-12T10:00:00+01:00';
   const data = () => baseData({
