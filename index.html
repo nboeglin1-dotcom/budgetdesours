@@ -2466,7 +2466,6 @@ function renderDashboard(){
     .filter(item=> item.daysUntil <= 14 && item.type!=='income' && sameMonth(item.date||item.next, state.viewY, state.viewM))
     .slice(0,4);
   const dayLabel = (n)=> n<0 ? (n===-1?'hier':`il y a ${Math.abs(n)} jours`) : n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
-  const overEnv = env.rows.filter(r=>r.over>0);
   const goals = state.data.goals || [];
 
   // Enveloppes : les entamees en liste (la plus entamee d'abord), les autres sur une ligne.
@@ -2480,11 +2479,10 @@ function renderDashboard(){
     ${renderExportReminder()}
     <div class="card">${renderBalanceContent(stats, true)}</div>
 
-    ${(overdraftAlert || overEnv.length || dueSoon.length) ? `
+    ${(overdraftAlert || dueSoon.length) ? `
     <div class="card" data-watch>
-      <div class="section-title" style="margin:0 0 8px; font-size:15px; display:flex; align-items:center; gap:7px;"><span style="color:var(--coral); display:inline-flex;">${icon('alert',15)}</span>À surveiller</div>
+      <div class="section-title" style="margin:0 0 8px; font-size:15px; display:flex; align-items:center; gap:7px;"><span style="color:var(--paperDim); display:inline-flex;">${icon('repeat',15)}</span>Prochaines échéances</div>
       ${overdraftAlert ? `<div style="font-size:13px; line-height:1.45; padding:5px 0; color:var(--coral);">${overdraftAlert}</div>` : ''}
-      ${overEnv.map(r=>`<div class="row" style="font-size:13px; padding:5px 0; margin:0;"><span><strong>${escapeHtml(r.label)}</strong> dépasse son enveloppe</span><span class="mono" style="color:var(--coral);">${fmt0(r.spent)} / ${fmt0(r.limit)}</span></div>`).join('')}
       ${dueSoon.map(r=>{
         const info = catInfo(r.category);
         return `<button data-banner-item="${r.source}:${r.id}" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; font-size:13px; padding:5px 0; background:none; border:none; color:var(--paper);">

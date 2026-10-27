@@ -1173,7 +1173,7 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.deepEqual(errors, []);
     }));
 
-  test('A3 Le mois en bref : solde au 1er = fin du mois précédent ; À surveiller limité au mois', () =>
+  test('A3 Le mois en bref : solde au 1er = fin du mois précédent ; échéances limitées au mois', () =>
     withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
       budgets:{ alimentation:500 },
       transactions:[
@@ -1196,10 +1196,11 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.deepEqual(errors, []);
     }));
 
-  test('A2 À surveiller : enveloppe dépassée et charges à venir, pas les revenus', () =>
+  test('A2 Prochaines échéances : charges à venir, ni revenus ni dépassements d’enveloppe', () =>
     withApp({ now:NOW, data: data() }, async ({ page }) => {
       const t = await page.evaluate(() => document.querySelector('[data-watch]').textContent);
-      assert.match(t, /Transport/);
+      assert.match(t, /Prochaines échéances/);
+      assert.doesNotMatch(t, /dépasse/);
       assert.match(t, /Charge test/);
       assert.doesNotMatch(t, /Revenu test/);
     }));
