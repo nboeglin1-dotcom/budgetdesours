@@ -1129,6 +1129,20 @@ test.describe('Catégorie d’une récurrence', () => {
     }));
 });
 
+test.describe('Nom d’une récurrence', () => {
+  test('N1 Renommer une récurrence change la règle, pas les transactions passées', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ recurring:[ rule({ id:'rn', note:'Assurance Macif', nextDate: D('2026-09-20') }) ],
+      transactions:[ tx({ id:'old', amount:15, category:'abonnements', note:'Assurance Macif', recurringId:'rn', date:D('2026-08-20') }) ] }) }, async ({ page, errors }) => {
+      await page.evaluate(() => { state.recurringModalOpen = true; rerender(); });
+      const input = page.locator('[data-recur-note="rn"]');
+      await input.fill('Assurance MAIF'); await input.dispatchEvent('change');
+      const d = await page.evaluate(() => ({ rule: state.data.recurring[0].note, old: state.data.transactions.find(t=>t.id==='old').note }));
+      assert.equal(d.rule, 'Assurance MAIF');
+      assert.equal(d.old, 'Assurance Macif');
+      assert.deepEqual(errors, []);
+    }));
+});
+
 test.describe('Catégories retirées', () => {
   test('C1 Une catégorie de base retirée n’est plus proposée ni en enveloppe', () =>
     withApp({ now: NOW_SEPT, data: baseData({ budgets:{ transport:80, loisirs:100 }, retiredCategories:['transport'] }) }, async ({ page, errors }) => {
