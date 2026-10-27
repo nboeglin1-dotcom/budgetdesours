@@ -156,30 +156,11 @@ test.describe('Récurrences', () => {
       assert.equal(await page.evaluate(() => recurringOccurrencesInMonth(2026, 8).expense), 20);
     }));
 
-  test('R7 Bannière : une échéance ignorée ne doit plus être annoncée', () =>
+  test('R7 Échéance ignorée : plus annoncée par upcomingRecurring()', () =>
     withApp({ now: NOW_SEPT, data: baseData({ recurring:[ rule({ note:'Abo ignoré', nextDate: D('2026-09-20'),
       exceptions:{ [String(new Date(D('2026-09-20')).getTime())]: { skip:true } } }) ] }) }, async ({ page }) => {
-      const r = await page.evaluate(() => ({ html: renderDashboard(), next: upcomingRecurring(365).map(x=>x.next.toISOString().slice(0,10)) }));
-      assert.deepEqual(r.next, ['2026-10-20'], 'upcomingRecurring() ignore rule.exceptions');
-      assert.ok(!r.html.includes('dans 5 jours'), 'la bannière annonce l’échéance ignorée du 20/09');
-    }));
-
-  test('R8 Rapprochement catégorie + montant : transaction future manuelle et échéance fusionnées', () =>
-    withApp({ now: NOW_SEPT, data: baseData({
-      recurring:[ rule({ nextDate: D('2026-09-20') }) ],
-      transactions:[ tx({ amount:15, category:'abonnements', date:D('2026-09-20') }) ],
-    })}, async ({ page }) => {
-      const html = await page.evaluate(() => renderDashboard());
-      assert.equal(html.split('data-banner-item').length - 1, 1);
-    }));
-
-  test('R9 Rapprochement montant + note : transaction future d’une autre catégorie reconnue', () =>
-    withApp({ now: NOW_SEPT, data: baseData({
-      recurring:[ rule({ note:'Box internet', nextDate: D('2026-10-20') }) ],
-      transactions:[ tx({ amount:15, category:'autres_d', note:'Box internet', date:D('2026-09-25') }) ],
-    })}, async ({ page }) => {
-      const html = await page.evaluate(() => renderDashboard());
-      assert.ok(html.includes('data-banner-item="tx:'), 'la transaction future doit apparaître dans la bannière');
+      const next = await page.evaluate(() => upcomingRecurring(365).map(x=>x.next.toISOString().slice(0,10)));
+      assert.deepEqual(next, ['2026-10-20'], 'upcomingRecurring() ignore rule.exceptions');
     }));
 });
 
@@ -1173,7 +1154,7 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.deepEqual(errors, []);
     }));
 
-  test('A3 Le mois en bref : solde au 1er = fin du mois précédent ; échéances limitées au mois', () =>
+  test('A4 Le mois en bref : solde au 1er = fin du mois précédent', () =>
     withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
       budgets:{ alimentation:500 },
       transactions:[
@@ -1186,23 +1167,19 @@ test.describe('Nouvelle page d’accueil', () => {
                   rule({ id:'dec', amount:40, category:'abonnements', note:'Debut decembre', nextDate:D('2026-12-03'), anchorDay:3 }) ],
     }) }, async ({ page, errors }) => {
       const r = await page.evaluate(() => ({ start: computeMonthStats().startBal,
-        line: document.querySelector('[data-month-start]').textContent.replace(/\s+/g,' '),
-        watch: document.querySelector('[data-watch]').textContent }));
+        line: document.querySelector('[data-month-start]').textContent.replace(/\s+/g,' ') }));
       assert.equal(r.start, -250);
       assert.match(r.line, /Solde au 1er novembre/);
       assert.match(r.line, /ajustements \+20/);
-      assert.match(r.watch, /Fin de mois/);
-      assert.doesNotMatch(r.watch, /Debut decembre/);
       assert.deepEqual(errors, []);
     }));
 
-  test('A2 Prochaines échéances : charges à venir, ni revenus ni dépassements d’enveloppe', () =>
-    withApp({ now:NOW, data: data() }, async ({ page }) => {
-      const t = await page.evaluate(() => document.querySelector('[data-watch]').textContent);
-      assert.match(t, /Prochaines échéances/);
-      assert.doesNotMatch(t, /dépasse/);
-      assert.match(t, /Charge test/);
-      assert.doesNotMatch(t, /Revenu test/);
+  test('A2 Plus de cadre des échéances sur l’accueil ; alerte découvert seule si besoin', () =>
+    withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => ({ watch: !!document.querySelector('[data-watch]'), od: !!document.querySelector('[data-overdraft]') }));
+      assert.equal(r.watch, false);
+      assert.equal(r.od, false);
+      assert.deepEqual(errors, []);
     }));
 
   test('A3 Le graphique 12 mois est dans l’onglet Transactions, plus sur l’accueil', () =>

@@ -2447,25 +2447,6 @@ function renderDashboard(){
   const overdraftAlert = computeOverdraftAlert();
   const env = envelopeStatus(state.viewY, state.viewM);
 
-  const now0 = new Date();
-  const futureRealTx = visibleTransactions()
-    .filter(t=> new Date(t.date) > now0 && isLinkedToRecurring(t))
-    .map(t=> ({ ...t, daysUntil: Math.ceil((new Date(t.date)-now0)/86400000), source:'tx' }));
-  const pendingRules = upcomingRecurring(365).map(r=> ({ ...r, daysUntil: Math.ceil((r.next-now0)/86400000), source:'rule' }));
-  const combined = [...futureRealTx, ...pendingRules];
-  const seen = new Set();
-  const dueSoon = combined
-    .sort((a,b)=> new Date(a.date||a.next) - new Date(b.date||b.next))
-    .filter(item=>{
-      const dateKey = localYMD(new Date(item.date||item.next));
-      const key = item.category+'|'+item.amount+'|'+dateKey;
-      if(seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .filter(item=> item.daysUntil <= 14 && item.type!=='income' && sameMonth(item.date||item.next, state.viewY, state.viewM))
-    .slice(0,4);
-  const dayLabel = (n)=> n<0 ? (n===-1?'hier':`il y a ${Math.abs(n)} jours`) : n===0 ? "aujourd'hui" : n===1 ? "demain" : `dans ${n} jours`;
   const goals = state.data.goals || [];
 
   // Enveloppes : les entamees en liste (la plus entamee d'abord), les autres sur une ligne.
@@ -2479,18 +2460,7 @@ function renderDashboard(){
     ${renderExportReminder()}
     <div class="card">${renderBalanceContent(stats, true)}</div>
 
-    ${(overdraftAlert || dueSoon.length) ? `
-    <div class="card" data-watch>
-      <div class="section-title" style="margin:0 0 8px; font-size:15px; display:flex; align-items:center; gap:7px;"><span style="color:var(--paperDim); display:inline-flex;">${icon('repeat',15)}</span>Prochaines échéances</div>
-      ${overdraftAlert ? `<div style="font-size:13px; line-height:1.45; padding:5px 0; color:var(--coral);">${overdraftAlert}</div>` : ''}
-      ${dueSoon.map(r=>{
-        const info = catInfo(r.category);
-        return `<button data-banner-item="${r.source}:${r.id}" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; font-size:13px; padding:5px 0; background:none; border:none; color:var(--paper);">
-          <span>${escapeHtml(r.note || info.label)} · ${dayLabel(r.daysUntil)}</span>
-          <span class="mono" style="color:${r.type==='income'?'var(--sage)':'var(--paper)'}">${r.type==='income'?'+':'−'}${fmt2(r.amount)}</span>
-        </button>`;
-      }).join('')}
-    </div>` : ''}
+    ${overdraftAlert ? `<div class="alert" data-overdraft style="line-height:1.45;"><span style="color:var(--coral); display:inline-flex; flex-shrink:0; margin-top:1px;">${icon('alert',15)}</span><div>${overdraftAlert}</div></div>` : ''}
 
     ${env.rows.length ? `
     <div class="card" data-envelopes>
@@ -3410,11 +3380,6 @@ function bindEvents(){
   }));
   app.querySelectorAll('[data-move]').forEach(el=>el.addEventListener('click', ()=> moveMonth(Number(el.dataset.move))));
   app.querySelectorAll('[data-toggle-banner]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.bannerCollapsed = !d.bannerCollapsed; }); }));
-  app.querySelectorAll('[data-banner-item]').forEach(el=>el.addEventListener('click', ()=>{
-    const [source, id] = el.dataset.bannerItem.split(':');
-    if(source==='tx'){ openEditTx(id); }
-    else { state.recurringModalOpen = true; rerender(); }
-  }));
   app.querySelectorAll('[data-edit-preview]').forEach(el=>el.addEventListener('click', ()=>{ openEditPreview(el.dataset.editPreview); }));
   app.querySelectorAll('[data-skip-preview]').forEach(el=>el.addEventListener('click', ()=>{ skipPreviewOccurrence(el.dataset.skipPreview); }));
   app.querySelectorAll('[data-restore-exception]').forEach(el=>el.addEventListener('click', ()=>{
