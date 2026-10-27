@@ -2478,8 +2478,8 @@ function renderDashboard(){
     <div class="card">${renderBalanceContent(stats, true)}</div>
 
     ${(overdraftAlert || overEnv.length || dueSoon.length) ? `
-    <div class="card" data-watch style="background:rgba(232,102,77,.07); border:1px solid rgba(232,102,77,.28);">
-      <div style="display:flex; align-items:center; gap:7px; font-weight:600; font-size:15px; margin-bottom:8px;">${icon('alert',15)} À surveiller</div>
+    <div class="card" data-watch>
+      <div class="section-title" style="margin:0 0 8px; font-size:15px; display:flex; align-items:center; gap:7px;"><span style="color:var(--coral); display:inline-flex;">${icon('alert',15)}</span>À surveiller</div>
       ${overdraftAlert ? `<div style="font-size:13px; line-height:1.45; padding:5px 0; color:var(--coral);">${overdraftAlert}</div>` : ''}
       ${overEnv.map(r=>`<div class="row" style="font-size:13px; padding:5px 0; margin:0;"><span><strong>${escapeHtml(r.label)}</strong> dépasse son enveloppe</span><span class="mono" style="color:var(--coral);">${fmt0(r.spent)} / ${fmt0(r.limit)}</span></div>`).join('')}
       ${dueSoon.map(r=>{
