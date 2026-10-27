@@ -988,6 +988,19 @@ test.describe('Jour d’une récurrence', () => {
       assert.equal(ex[String(new Date(D('2026-12-15')).getTime())].date, D('2026-12-03'));
     }));
 
+  test('J5 Jour 31 avec une échéance de février 2028 (bissextile) modifiée en montant : recalée au 29, date suivie', () =>
+    withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2028-02-15'), anchorDay:15, exceptions:{
+      [String(new Date(D('2028-02-15')).getTime())]: { amount:18, date:D('2028-02-15') },
+    } }) ] }) }, async ({ page }) => {
+      await setDay(page, 'r1', 31);
+      const r = (await stored(page)).recurring[0];
+      assert.equal(r.nextDate, D('2028-02-29'));
+      assert.equal(r.anchorDay, 31);
+      const ex = r.exceptions[String(new Date(D('2028-02-29')).getTime())];
+      assert.equal(ex.amount, 18);
+      assert.equal(ex.date, D('2028-02-29'));
+    }));
+
   test('J4 Avancer à un jour déjà passé : l’échéance du mois est générée une seule fois', () =>
     withApp({ now:NOW_OCT, data: baseData({ recurring:[ rule({ nextDate:D('2026-10-26'), anchorDay:26 }) ] }) }, async ({ page, errors }) => {
       await setDay(page, 'r1', 20);
@@ -1189,5 +1202,34 @@ test.describe('Mois en bref : épargne prévue', () => {
       assert.equal(r.bal, 2500);
       assert.deepEqual(errors, []);
     }));
-});
 
+  test('B2 Virement auto déjà passé : compté une seule fois en épargne, jamais en dépense ; un retrait d’épargne le réduit', () =>
+    withApp({ now:'2026-11-12T10:00:00+01:00', data: baseData({
+      transactions:[
+        tx({ id:'s', type:'income', amount:3000, category:'salaire', date:D('2026-11-01') }),
+        tx({ id:'e', amount:500, category:'epargne', date:D('2026-11-09') }),
+        tx({ id:'r', type:'income', amount:100, category:'epargne_retour', date:D('2026-11-10') }),
+      ],
+      goals:[ { id:'g1', name:'Objectif test', target:5000, current:400, color:'#6FA287', accountId:'main' } ],
+      goalTransfers:[ { id:'gt', goalId:'g1', amount:500, frequency:'monthly', nextDate:D('2026-12-09'), anchorDay:9 } ],
+    }) }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => { const s = computeMonthStats(); return { exp:s.expense, saved:s.savedThisMonth, planned:s.plannedSaving }; });
+      assert.equal(r.planned, 0);
+      assert.equal(r.exp, 0);
+      assert.equal(r.saved, 400);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('B3 Mois futur : le virement auto est de l’épargne prévue, les dépenses ne contiennent que les vraies charges', () =>
+    withApp({ now:'2026-11-12T10:00:00+01:00', data: baseData({
+      recurring:[ rule({ amount:20, category:'abonnements', nextDate:D('2026-12-18'), anchorDay:18 }) ],
+      goals:[ { id:'g1', name:'Objectif test', target:5000, current:0, color:'#6FA287', accountId:'main' } ],
+      goalTransfers:[ { id:'gt', goalId:'g1', amount:300, frequency:'monthly', nextDate:D('2026-12-09'), anchorDay:9 } ],
+    }) }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => { state.viewY = 2026; state.viewM = 11; const s = computeMonthStats(); return { exp:s.expense, saved:s.savedThisMonth, fut:s.isFuture }; });
+      assert.equal(r.fut, true);
+      assert.equal(r.exp, 20);
+      assert.equal(r.saved, 300);
+      assert.deepEqual(errors, []);
+    }));
+});
