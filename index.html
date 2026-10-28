@@ -2726,30 +2726,51 @@ function renderTransactions(){
   const upcoming = [...realList.filter(t=> new Date(t.date) > todayStart.getTime()+86399999), ...previewList].sort((a,b)=> new Date(a.date)-new Date(b.date));
   const list = [...pastAndToday, ...upcoming];
   const recurCount = (state.data.recurring||[]).length;
+  const pillBtn = 'display:flex; align-items:center; gap:5px; background:none; border:1px solid var(--line); color:var(--paper); border-radius:999px; padding:6px 11px; font-size:12px;';
+  // Totaux du mois selon la recherche et le filtre Entrees/Sorties (mais pas « Masquer passees »,
+  // pour que « a ce jour » reste juste), hors virements internes et epargne.
+  const endToday = todayStart.getTime()+86399999;
+  const match = t => (state.txFilter==='all' || t.type===state.txFilter) && (!q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q));
+  const monthReal = visibleTransactions().filter(t => sameMonth(t.date, state.viewY, state.viewM)).filter(match);
+  const donePart = monthReal.filter(t=> new Date(t.date) <= endToday);
+  const upPart = [...monthReal.filter(t=> new Date(t.date) > endToday), ...recurringPreviewForMonth(state.viewY, state.viewM).filter(match)];
+  const sumOf = (arr, type)=> arr.filter(t=>t.type===type && isRealIncExp(t)).reduce((a,t)=>a+t.amount,0);
+  const inDone = sumOf(donePart,'income'), outDone = sumOf(donePart,'expense');
+  const upNet = sumOf(upPart,'income') - sumOf(upPart,'expense');
+  const filtered = !!q || state.txFilter!=='all';
 
   return `
-    <div class="row" style="margin-bottom:14px;">
-      <div class="section-title" style="margin:0;">Transactions</div>
-    </div>
-    <div class="month-nav" style="margin-bottom:14px;">
+    <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
       ${monthNav()}
     </div>
-    <div class="row" style="margin-bottom:14px;">
-      <div class="search-wrap" style="position:relative;">${icon('search',15)}<input id="txSearch" placeholder="Rechercher…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>
-      <button class="btn-ghost" data-open-recurmodal="1" style="font-size:12px; display:flex; align-items:center; gap:5px;">${icon('repeat',13)} Récurrences${recurCount?` (${recurCount})`:''}</button>
+    <div class="row" style="margin-bottom:12px;">
+      <div class="section-title" style="margin:0;">Mes transactions</div>
+      <button data-open-recurmodal="1" style="${pillBtn}">${icon('repeat',13)} Récurrences${recurCount?` · ${recurCount}`:''}</button>
     </div>
-    <div class="row" style="margin-bottom:14px;">
-      <div class="filter-pills">
-        <button data-filter="all" class="${state.txFilter==='all'?'active':''}">Tout</button>
-        <button data-filter="income" class="${state.txFilter==='income'?'active':''}">Entrées</button>
-        <button data-filter="expense" class="${state.txFilter==='expense'?'active':''}">Sorties</button>
+    <div class="card tx-summary-card">
+      <div class="row" style="margin-bottom:10px;">
+        <div class="section-title" style="margin:0; font-size:15px;">${filtered ? 'Selon ta recherche' : 'Le mois en opérations'}</div>
+        <span style="font-size:12.5px; color:var(--paperDim);">${donePart.length+upPart.length} opération${donePart.length+upPart.length>1?'s':''}</span>
       </div>
-      <button data-toggle-hide-past="1" class="toggle-switch ${state.hidePastTx?'on':''}" style="font-size:11px;">${icon('x',11)} Masquer passées</button>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+        ${caTile('Entrées', fmt0(inDone), 'var(--sage)', "à ce jour")}
+        ${caTile('Sorties', fmt0(outDone), 'var(--coral)', "à ce jour")}
+        ${caTile('À venir', upPart.length ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', `${upPart.length} prévue${upPart.length>1?'s':''}`)}
+      </div>
+      <div class="search-wrap" style="position:relative; margin-top:12px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>
+      <div class="row" style="margin:10px 0 0; gap:8px;">
+        <div class="filter-pills" style="background:var(--surfaceHi);">
+          <button data-filter="all" class="${state.txFilter==='all'?'active':''}">Tout</button>
+          <button data-filter="income" class="${state.txFilter==='income'?'active':''}">Entrées</button>
+          <button data-filter="expense" class="${state.txFilter==='expense'?'active':''}">Sorties</button>
+        </div>
+        <button data-toggle-hide-past="1" class="toggle-switch ${state.hidePastTx?'on':''}" style="font-size:11.5px;">${state.hidePastTx ? 'Passées masquées' : 'Masquer passées'}</button>
+      </div>
     </div>
-    <div class="card">${list.length===0 ? `
+    <div class="card tx-list-card">${list.length===0 ? `
       <div style="padding:30px 20px; text-align:center;">
         ${bearMascot('sleepy', 56)}
-        <div style="font-size:13.5px; color:var(--paperDim); margin:12px 0 16px;">Rien par ici ce mois-ci — ton ours fait la sieste 🐻</div>
+        <div style="font-size:13.5px; color:var(--paperDim); margin:12px 0 16px;">${filtered ? 'Aucune opération ne correspond.' : state.hidePastTx && donePart.length ? 'Plus rien de prévu ce mois-ci. Touche « Masquer passées » pour revoir les opérations passées.' : 'Rien par ici ce mois-ci — ton ours fait la sieste 🐻'}</div>
         <button data-open="addTx" class="btn-ghost" style="display:inline-flex; margin:0 auto;">${icon('plus',14)} Ajouter une transaction</button>
       </div>
     ` : (()=>{
@@ -2761,10 +2782,20 @@ function renderTransactions(){
         if(diffDays===1) return 'Demain';
         return d.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
       };
+      // Total net du jour a droite de chaque en-tete (hors virements internes et epargne).
+      const dayNet = {};
+      list.forEach(t=>{ if(!isRealIncExp(t)) return; const k = new Date(t.date).toDateString(); dayNet[k] = (dayNet[k]||0) + (t.type==='income' ? t.amount : -t.amount); });
       let lastKey = null;
       return list.map(t=>{
         const key = new Date(t.date).toDateString();
-        const header = key!==lastKey ? `<div style="font-size:11.5px; font-weight:600; color:var(--paperDim); text-transform:uppercase; letter-spacing:.03em; padding:${lastKey===null?'2px':'14px'} 2px 6px;">${dayLabelFor(t.date)}</div>` : '';
+        let header = '';
+        if(key!==lastKey){
+          const n = dayNet[key] || 0;
+          header = `<div class="row" style="margin:0; padding:${lastKey===null?'2px':'14px'} 2px 6px; ${lastKey===null?'':'border-top:1px solid var(--lineSoft); margin-top:8px;'}">
+            <span style="font-size:11.5px; font-weight:600; color:var(--paperDim); text-transform:uppercase; letter-spacing:.03em;">${dayLabelFor(t.date)}</span>
+            ${Math.abs(n)>=0.005 ? `<span class="mono" style="font-size:11.5px; color:${n>0?'var(--sage)':'var(--paperDim)'};">${n>0?'+':'−'}${fmt2(Math.abs(n))}</span>` : ''}
+          </div>`;
+        }
         lastKey = key;
         return header + (t.isPending ? previewTxRow(t) : txRow(t,true));
       }).join('');
