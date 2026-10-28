@@ -48,6 +48,7 @@ test.describe('Objectif de CA', () => {
       const txt = await page.textContent('.ca-card');
       assert.match(txt, /Reste 52\s€ · 2 jours ouvrés restants/);
       assert.match(txt, /1\s518/); // 4 048,50 × 0,375 ≈ 1 518 €
+      assert.match(txt, /Encaissé au total : 1\s518\s€ avant URSSAF, soit ≈ 1\s196\s€ net/); // visible même sans courses perso
       // Champ vidé = mois effacé
       await page.fill('#caInput', '');
       await page.click('[data-save-ca]');
