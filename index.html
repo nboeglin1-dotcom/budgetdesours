@@ -590,6 +590,7 @@ function seedData(){
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
+    caTracker: { target:4100, rate:0.375, months:{} },
   };
 }
 
@@ -628,6 +629,12 @@ function normalizeData(parsed){
         parsed.pinnedCategories = [essenceCustom ? essenceCustom.id : 'transport', 'loisirs', 'autres_d'];
       }
       if(!parsed.hiddenBudgetCategories) parsed.hiddenBudgetCategories = [];
+      // Suivi du chiffre d'affaires (activite moto-taxi) : objectif mensuel, part reversee, CA saisi par mois.
+      if(!parsed.caTracker || typeof parsed.caTracker !== 'object') parsed.caTracker = {};
+      if(!(Number(parsed.caTracker.target) > 0)) parsed.caTracker.target = 4100;
+      if(!(Number(parsed.caTracker.rate) > 0 && Number(parsed.caTracker.rate) <= 1)) parsed.caTracker.rate = 0.375;
+      if(!parsed.caTracker.months || typeof parsed.caTracker.months !== 'object') parsed.caTracker.months = {};
+      Object.keys(parsed.caTracker.months).forEach(k=>{ const v = Number(parsed.caTracker.months[k]); if(!/^\d{4}-\d{2}$/.test(k) || !isFinite(v) || v < 0) delete parsed.caTracker.months[k]; else parsed.caTracker.months[k] = v; });
       // Regles creees avant l'ajout de accountId : on reprend le compte de leur derniere transaction liee.
       (parsed.recurring||[]).forEach(r=>{
         if(r.accountId) return;
@@ -2891,6 +2898,90 @@ function computeGoalPaceProjection(g){
 }
 
 /* ---------------- Goals ---------------- */
+/* ---------------- Objectif de chiffre d'affaires ---------------- */
+// Jours feries de France metropolitaine de l'annee y ('AAAA-MM-JJ'). Paques : algorithme de Meeus.
+function frHolidays(y){
+  const a=y%19, b=Math.floor(y/100), c=y%100, d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25), g=Math.floor((b-f+1)/3);
+  const h=(19*a+b-d-g+15)%30, i=Math.floor(c/4), k=c%4, l=(32+2*e+2*i-h-k)%7, mm=Math.floor((a+11*h+22*l)/451);
+  const easter = new Date(y, Math.floor((h+l-7*mm+114)/31)-1, ((h+l-7*mm+114)%31)+1);
+  const fromEaster = n=>{ const x = new Date(easter); x.setDate(x.getDate()+n); return localYMD(x); };
+  const fixed = (mo,da)=> localYMD(new Date(y, mo-1, da));
+  return new Set([fixed(1,1), fromEaster(1), fixed(5,1), fixed(5,8), fromEaster(39), fromEaster(50), fixed(7,14), fixed(8,15), fixed(11,1), fixed(11,11), fixed(12,25)]);
+}
+// Jours ouvres (lundi-vendredi hors feries) du mois (y,m), a partir du jour fromDay inclus.
+function workingDaysInMonth(y, m, fromDay = 1){
+  const hol = frHolidays(y), last = new Date(y, m+1, 0).getDate();
+  let n = 0;
+  for(let day = Math.max(1, fromDay); day <= last; day++){
+    const dt = new Date(y, m, day), wd = dt.getDay();
+    if(wd !== 0 && wd !== 6 && !hol.has(localYMD(dt))) n++;
+  }
+  return n;
+}
+const caMonthKey = (y, m) => `${y}-${String(m+1).padStart(2,'0')}`;
+const parseAmountInput = v => { const n = parseFloat(String(v==null?'':v).replace(/\s/g,'').replace(',','.')); return isFinite(n) ? n : NaN; };
+// Chiffres du mois (y,m) pour la carte : CA saisi, reste a faire, jours ouvres restants, rythme, versement attendu.
+function caMonthStatus(y, m, now = new Date()){
+  const ct = state.data.caTracker || { target:4100, rate:0.375, months:{} };
+  const key = caMonthKey(y, m);
+  const has = Object.prototype.hasOwnProperty.call(ct.months||{}, key);
+  const ca = has ? Number(ct.months[key]) : 0;
+  const curY = now.getFullYear(), curM = now.getMonth();
+  const when = (y < curY || (y === curY && m < curM)) ? 'past' : (y === curY && m === curM) ? 'current' : 'future';
+  // Mois en cours : on compte a partir de demain (le CA saisi couvre la journee d'aujourd'hui).
+  const daysLeft = when === 'past' ? 0 : when === 'current' ? workingDaysInMonth(y, m, now.getDate()+1) : workingDaysInMonth(y, m);
+  const remaining = Math.max(0, ct.target - ca);
+  return {
+    key, has, ca, target: ct.target, rate: ct.rate, when,
+    daysTotal: workingDaysInMonth(y, m), daysLeft, remaining,
+    perDay: daysLeft > 0 ? remaining / daysLeft : null,
+    reached: ca >= ct.target, payout: ca * ct.rate,
+  };
+}
+function renderCaCard(){
+  const y = state.viewY, m = state.viewM;
+  const s = caMonthStatus(y, m);
+  const pct = s.target > 0 ? Math.min(100, Math.round(s.ca / s.target * 100)) : 0;
+  const nextName = MONTHS[(m+1)%12].toLowerCase();
+  const monthLabel = `${MONTHS[m].toLowerCase()} ${y}`;
+  const color = s.reached ? 'var(--sage)' : 'var(--gold)';
+  let paceLine;
+  if(s.reached){
+    paceLine = `<span style="color:var(--sage); font-weight:600;">${icon('spark',11)} Objectif atteint${s.ca > s.target ? ` (+${fmt0(s.ca - s.target)})` : ''}</span>`;
+  } else if(s.when === 'past'){
+    paceLine = `Il a manqué <span class="mono">${fmt0(s.remaining)}</span> sur ce mois.`;
+  } else if(s.perDay === null){
+    paceLine = `Plus de jour ouvré ce mois-ci : il reste <span class="mono">${fmt0(s.remaining)}</span>.`;
+  } else {
+    paceLine = `Reste <span class="mono" style="color:var(--paper);">${fmt0(s.remaining)}</span> · ${s.daysLeft} jour${s.daysLeft>1?'s':''} ouvré${s.daysLeft>1?'s':''}${s.when==='current'?' restants':''} · <strong class="mono" style="color:var(--gold);">≈ ${fmt0(s.perDay)}/jour</strong>`;
+  }
+  return `
+    <div class="section-title" style="margin:0 0 10px;">Objectif de chiffre d'affaires</div>
+    <div class="card ca-card" style="margin-bottom:22px; padding:16px 18px;">
+      <div class="eyebrow" style="margin-bottom:4px;">CA de ${monthLabel}</div>
+      <div class="row" style="align-items:baseline; margin-bottom:0;">
+        <div class="mono" style="font-size:28px; font-weight:700; color:${s.has?color:'var(--paperDim)'};">${fmt0(s.ca)}</div>
+        <div style="font-size:13px; color:var(--paperDim);">sur ${fmt0(s.target)} · ${pct}%</div>
+      </div>
+      <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pct}%; background:${color};"></div></div>
+      <div style="font-size:12px; color:var(--paperDim); margin-top:8px; line-height:1.5;">${paceLine}</div>
+      ${s.has ? `<div style="font-size:12px; color:var(--paperDim); margin-top:4px;">Versement attendu début ${nextName} : <span class="mono" style="color:var(--paper);">${fmt0(s.payout)}</span> (${String(Math.round(s.rate*1000)/10).replace('.',',')} % du CA)</div>` : ''}
+      <div class="goal-form">
+        <input id="caInput" type="text" inputmode="decimal" placeholder="CA du mois à date" value="${s.has ? escapeHtml(String(s.ca).replace('.',',')) : ''}">
+        <button class="add" data-save-ca="${s.key}">Mettre à jour</button>
+      </div>
+      <details style="margin-top:10px;">
+        <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Réglages de l'objectif</summary>
+        <div class="goal-form" style="margin-top:8px;">
+          <input id="caTargetInput" type="text" inputmode="decimal" aria-label="Objectif mensuel en euros" placeholder="Objectif / mois" value="${escapeHtml(String(s.target).replace('.',','))}">
+          <input id="caRateInput" type="text" inputmode="decimal" aria-label="Part reversée en pourcentage" placeholder="% reversé" value="${escapeHtml(String(Math.round(s.rate*1000)/10).replace('.',','))}">
+          <button class="add" data-save-ca-settings="1">OK</button>
+        </div>
+        <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">Objectif mensuel (€) · part reversée (%)</div>
+      </details>
+    </div>`;
+}
+
 function renderGoals(){
   const allGoals = state.data.goals;
   const filteredGoals = state.activeAccountFilter ? allGoals.filter(g=>(g.accountId||'main')===state.activeAccountFilter) : allGoals;
@@ -2905,6 +2996,7 @@ function renderGoals(){
   const totalSaved = goals.reduce((s,g)=>s+g.current,0);
   const totalTarget = goals.reduce((s,g)=>s+g.target,0);
   return `
+    ${renderCaCard()}
     <div class="row" style="margin-bottom:14px;">
       <div class="section-title" style="margin:0;">Objectifs d'épargne</div>
       <button class="btn-primary" data-open="addGoal">${icon('plus',14)} Nouvel objectif</button>
@@ -3577,6 +3669,23 @@ function bindEvents(){
     mutateData(d=>{ d.budgets[id] = val; });
   }));
 
+  app.querySelectorAll('[data-save-ca]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.dataset.saveCa;
+    const input = document.getElementById('caInput');
+    const raw = input ? input.value.trim() : '';
+    if(raw === ''){ mutateData(d=>{ delete d.caTracker.months[key]; }); showToast('CA du mois effacé'); return; }
+    const v = parseAmountInput(raw);
+    if(!(v >= 0)){ showToast('Montant de CA invalide'); return; }
+    mutateData(d=>{ d.caTracker.months[key] = Math.round(v*100)/100; });
+    showToast('CA mis à jour');
+  }));
+  app.querySelectorAll('[data-save-ca-settings]').forEach(el=>el.addEventListener('click', ()=>{
+    const t = parseAmountInput((document.getElementById('caTargetInput')||{}).value);
+    const r = parseAmountInput((document.getElementById('caRateInput')||{}).value);
+    if(!(t > 0) || !(r > 0 && r <= 100)){ showToast('Réglages invalides'); return; }
+    mutateData(d=>{ d.caTracker.target = Math.round(t); d.caTracker.rate = Math.round(r*10)/1000; });
+    showToast('Objectif enregistré');
+  }));
   app.querySelectorAll('[data-contribute]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.contribute;
     const input = document.getElementById('goalAmount-'+id);
