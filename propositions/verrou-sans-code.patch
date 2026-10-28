@@ -1,0 +1,30 @@
+diff --git a/index.html b/index.html
+index d633d25..a54b190 100644
+--- a/index.html
++++ b/index.html
+@@ -599,6 +599,8 @@ function normalizeData(parsed){
+       if(!parsed.customCategories) parsed.customCategories = [];
+       if(!parsed.recurring) parsed.recurring = [];
+       if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
++      // Verrou actif sans code enregistre (fichier modifie a la main) : aucun code ne pourrait l'ouvrir.
++      if(parsed.security.enabled && (typeof parsed.security.pin !== 'string' || !parsed.security.pin)) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
+       if(!parsed.accounts || !parsed.accounts.length) parsed.accounts = [{ id:'main', name:'Compte principal', color: COLORS.gold }];
+       if(!parsed.dashboardSettings) parsed.dashboardSettings = { showBreakdown:true, showTrend:true };
+       if(parsed.dashboardSettings.showEnvelopesGauge===undefined) parsed.dashboardSettings.showEnvelopesGauge = true;
+diff --git a/tests/solde.test.js b/tests/solde.test.js
+index 7b7c5a0..5983b0a 100644
+--- a/tests/solde.test.js
++++ b/tests/solde.test.js
+@@ -455,6 +455,12 @@ test.describe('Sauvegardes', () => {
+     }
+   });
+ 
++  test('S5c Sauvegarde avec verrou actif mais sans code : appli non verrouillée, aucune erreur', () =>
++    withApp({ now: NOW_SEPT, data: baseData({ security:{ enabled:true, pin:null, useBiometric:false, credentialId:null } }) }, async ({ page, errors }) => {
++      assert.equal(await page.evaluate(() => state.locked), false);
++      assert.deepEqual(errors, []);
++    }));
++
+   test('S6 Clé principale absente mais instantanés présents : instantané rechargé', () =>
+     withApp({ now: NOW_SEPT, data: null, storage: { [SNAP + '2026-09-14']: JSON.stringify(realData()) } }, async ({ page }) => {
+       assert.deepEqual(await page.evaluate(() => state.data.transactions.map(t => t.id)), ['reel1']);
