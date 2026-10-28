@@ -2649,7 +2649,7 @@ function monthNav(){
   const isCurrent = state.viewY===today.getFullYear() && state.viewM===today.getMonth();
   return `<div class="month-nav">
     <button data-move="-1">${icon('chevronL',16)}</button>
-    <button data-open-monthpicker="1" class="label ledger" style="background:none; border:none;">${MONTHS[state.viewM]} ${state.viewY}</button>
+    <button data-open-monthpicker="1" class="label ledger" style="border:none;">${MONTHS[state.viewM]} ${state.viewY}</button>
     <button data-move="1">${icon('chevronR',16)}</button>
     ${!isCurrent ? `<button data-goto-today="1" class="today-btn">Aujourd'hui</button>` : ''}
   </div>`;
@@ -2804,14 +2804,24 @@ function renderBudgets(){
   const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id) && (byCat[c.id]||0)>0).sort((a,b)=>a.label.localeCompare(b.label,'fr'));
   const hiddenCount = hidden.length;
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
+  const pillBtn = 'display:flex; align-items:center; gap:5px; background:none; border:1px solid var(--line); color:var(--paper); border-radius:999px; padding:6px 11px; font-size:12px;';
+
+  // Jours restants du mois affiche (aujourd'hui compris) pour le rythme « par jour ».
+  const today = new Date();
+  const daysInMonth = new Date(state.viewY, state.viewM+1, 0).getDate();
+  const isCur = state.viewY===today.getFullYear() && state.viewM===today.getMonth();
+  const isPast = state.viewY<today.getFullYear() || (state.viewY===today.getFullYear() && state.viewM<today.getMonth());
+  const daysLeft = isPast ? 0 : isCur ? daysInMonth - today.getDate() + 1 : daysInMonth;
 
   return `
-    <div class="row" style="margin-bottom:14px;">
-      <div class="section-title" style="margin:0;">Budgets par catégorie</div>
-      <div style="display:flex; align-items:center; gap:8px;">
-        ${monthNav()}
-        <button class="btn-ghost" data-open-managecat="1" style="padding:8px; display:flex;" title="Gérer les catégories">${icon('tag',15)}</button>
-        ${hiddenCount ? `<button class="btn-ghost" data-open-hiddencat="1" style="font-size:11px; padding:8px; display:flex; align-items:center; gap:4px;" title="Catégories masquées">${icon('x',12)} ${hiddenCount}</button>` : ''}
+    <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
+      ${monthNav()}
+    </div>
+    <div class="row" style="margin-bottom:12px;">
+      <div class="section-title" style="margin:0;">Mes budgets</div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        ${hiddenCount ? `<button data-open-hiddencat="1" style="${pillBtn}" title="Catégories masquées">${icon('x',11)} ${hiddenCount} masquée${hiddenCount>1?'s':''}</button>` : ''}
+        <button data-open-managecat="1" style="${pillBtn}" title="Gérer les catégories">${icon('tag',13)} Catégories</button>
       </div>
     </div>
     ${(()=>{
@@ -2820,59 +2830,77 @@ function renderBudgets(){
       if(totalLimit<=0) return '';
       const pctTotal = Math.min(100, Math.round(totalSpent/totalLimit*100));
       const overTotal = totalSpent > totalLimit;
-      return `<div class="card" style="margin-bottom:14px; padding:16px 18px;">
+      const left = totalLimit - totalSpent;
+      const withLimit = allExpenseCats.filter(c=> effectiveLimit(c.id) > 0);
+      const overCount = withLimit.filter(c=> (byCat[c.id]||0) > effectiveLimit(c.id)).length;
+      return `<div class="card budgets-total-card">
         <div class="row" style="margin-bottom:8px;">
-          <div class="eyebrow" style="margin-bottom:0;">Total du mois</div>
-          <span class="mono" style="font-size:13px; color:${overTotal?'var(--coral)':'var(--paperDim)'};">${pctTotal}%</span>
+          <div class="section-title" style="margin:0; font-size:15px;">Total du mois</div>
+          <span class="mono" style="font-size:12.5px; color:${overTotal?'var(--coral)':'var(--paperDim)'};">${pctTotal}%</span>
         </div>
-        <div class="row" style="align-items:baseline; margin-bottom:8px;">
-          <div class="mono" style="font-size:24px; font-weight:700; color:${overTotal?'var(--coral)':'var(--paper)'};">${fmt0(totalSpent)}</div>
-          <div style="font-size:13px; color:var(--paperDim);">sur ${fmt0(totalLimit)}</div>
+        <div class="row" style="align-items:baseline; margin-bottom:0;">
+          <div class="mono" style="font-size:28px; font-weight:700; color:${overTotal?'var(--coral)':'var(--paper)'};">${fmt0(totalSpent)}</div>
+          <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(totalLimit)}</div>
         </div>
-        <div class="catbar-track"><div class="catbar-fill" style="width:${pctTotal}%; background:${overTotal?'var(--coral)':'var(--gold)'};"></div></div>
+        <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pctTotal}%; background:${overTotal?'var(--coral)':'var(--gold)'};"></div></div>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px;">
+          ${left>=0 ? caTile('Reste', fmt0(left), 'var(--mint)') : caTile('Dépassé', fmt0(-left), 'var(--coral)')}
+          ${caTile('Par jour', left>0 && daysLeft>0 ? `≈ ${fmt0(left/daysLeft)}` : '—', 'var(--paper)', daysLeft>0 ? `${daysLeft} jour${daysLeft>1?'s':''}` : 'mois terminé')}
+          ${caTile('Dépassées', `${overCount} / ${withLimit.length}`, overCount ? 'var(--coral)' : 'var(--sage)')}
+        </div>
       </div>`;
     })()}
-    <div class="budget-stack">
-      ${allExpenseCats.length===0 ? `
-        <div class="card" style="padding:30px 20px; text-align:center;">
-          ${bearMascot('sleepy', 52)}
-          <div style="font-size:13.5px; color:var(--paperDim); margin-top:12px;">Aucune dépense ponctuelle ce mois-ci pour l'instant.</div>
-        </div>
-      ` : allExpenseCats.map(cat=>{
-        const limit = effectiveLimit(cat.id);
-        const spent = byCat[cat.id] || 0;
-        const pct = limit>0 ? Math.min(100, Math.round(spent/limit*100)) : 0;
-        const over = limit>0 && spent>limit;
-        const barColor = over ? COLORS.coral : (pct>=80 ? COLORS.amber : cat.color);
-        const editing = budgetEditingId === cat.id;
-        const isRecurring = recurringCatIds.has(cat.id);
-        const expanded = state.expandedBudgetCat === cat.id;
-        const catTx = tx.filter(t=>t.type==='expense' && t.category===cat.id).sort((a,b)=> new Date(b.date)-new Date(a.date));
-        return `
-          <div class="card" style="margin-bottom:0; position:relative;">
-            <div class="budget-head">
-              <button data-toggle-budget-detail="${cat.id}" class="budget-cat" style="background:none; border:none; padding:0; cursor:pointer;">
-                <span class="dot" style="width:8px;height:8px;border-radius:50%;background:${cat.color};display:inline-block;"></span>${escapeHtml(cat.label)}
+    ${allExpenseCats.length===0 ? `
+      <div class="card" style="padding:30px 20px; text-align:center;">
+        ${bearMascot('sleepy', 52)}
+        <div style="font-size:13.5px; color:var(--paperDim); margin-top:12px;">Aucune dépense ponctuelle ce mois-ci pour l'instant.</div>
+      </div>
+    ` : allExpenseCats.map(cat=>{
+      const limit = effectiveLimit(cat.id);
+      const spent = byCat[cat.id] || 0;
+      const pct = limit>0 ? Math.min(100, Math.round(spent/limit*100)) : 0;
+      const over = limit>0 && spent>limit;
+      const barColor = over ? COLORS.coral : (pct>=80 ? COLORS.amber : cat.color);
+      const editing = budgetEditingId === cat.id;
+      const isRecurring = recurringCatIds.has(cat.id);
+      const expanded = state.expandedBudgetCat === cat.id;
+      const catTx = tx.filter(t=>t.type==='expense' && t.category===cat.id).sort((a,b)=> new Date(b.date)-new Date(a.date));
+      const foot = limit<=0 ? 'Pas de limite' : over ? `<span style="color:var(--coral);">Dépassée de ${fmt0(spent-limit)}</span>` : (limit-spent>0 ? `Reste ${fmt0(limit-spent)}` : 'Pleine');
+      const actBtn = 'display:flex; align-items:center; justify-content:center; gap:5px; background:var(--surfaceHi); border:1px solid var(--line); color:var(--paper); border-radius:10px; padding:8px; font-size:12px; font-weight:600;';
+      return `
+        <div class="card budget-card">
+          <button data-toggle-budget-detail="${cat.id}" style="display:block; width:100%; text-align:left; background:none; border:none; padding:0; color:var(--paper); cursor:pointer;">
+            <div class="row" style="margin:0; align-items:center;">
+              <span style="display:flex; align-items:center; gap:8px; font-size:15px; font-weight:600; min-width:0;">
+                <span style="width:9px; height:9px; border-radius:50%; background:${cat.color}; display:inline-block; flex-shrink:0;"></span>${escapeHtml(cat.label)}
                 ${isRecurring ? `<span title="Liée à une récurrence" style="color:var(--paperDim); display:flex;">${icon('repeat',12)}</span>` : ''}
                 ${catTx.length>0 ? `<span style="color:var(--paperDim); display:flex; transform:rotate(${expanded?90:0}deg); transition:transform .15s;">${icon('chevronR',12)}</span>` : ''}
-              </button>
-              <div style="display:flex; align-items:center; gap:4px;">
-                <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" class="quick-add-pastille" style="background:${cat.color}; margin-right:8px;" title="Ajouter une dépense">+</button>
-                ${editing ? `<div class="budget-limit-edit"><input id="budgetInput-${cat.id}" type="number" inputmode="decimal" value="${limit}"><button data-save-budget="${cat.id}">OK</button></div>` : `<button class="budget-limit-btn" data-edit-budget="${cat.id}">limite : <span class="mono" style="color:var(--paper); font-size:18px;">${fmt0(limit)}</span></button>`}
-                <button data-hide-budgetcat="${cat.id}" style="color:var(--paperDim); padding:4px;" title="Masquer cette catégorie">${icon('x',13)}</button>
-              </div>
+              </span>
+              <span class="mono" style="font-size:13.5px; ${over?'color:var(--coral);':''}">${fmt0(spent)}${limit>0 ? ` / ${fmt0(limit)}` : ''}</span>
             </div>
-            <div class="catbar-track"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>
-            <div class="budget-foot"><span class="mono" style="color:${over?'var(--coral)':'var(--paperDim)'}">${fmt2(spent)} dépensés${changeBadge(pctChange(spent, prevMonthCatSpend(cat.id)),'down')}</span><span>${limit>0? pct+'%' : '—'}</span></div>
-            ${expanded && catTx.length>0 ? `
-              <div style="margin-top:10px; border-top:1px solid var(--lineSoft); padding-top:6px;">
-                ${catTx.map(t=>txRow(t,false)).join('')}
-              </div>
-            ` : ''}
-          </div>
-        `;
-      }).join('')}
-    </div>
+            <div class="catbar-track" style="margin-top:8px;"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>
+            <div class="row" style="margin:0; font-size:11.5px; color:var(--paperDim);"><span>${foot}</span><span class="mono">${limit>0 ? pct+'%' : ''}${changeBadge(pctChange(spent, prevMonthCatSpend(cat.id)),'down')}</span></div>
+          </button>
+          ${editing ? `
+            <div style="display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:12px; align-items:end;">
+              <label style="min-width:0;"><span class="field-label">Limite du mois (€)</span>
+                <input id="budgetInput-${cat.id}" type="number" inputmode="decimal" class="field-input" style="margin-bottom:0; font-size:14px;" value="${limit}">
+              </label>
+              <button class="btn-primary" data-save-budget="${cat.id}" style="justify-content:center; height:44px;">OK</button>
+            </div>` : `
+            <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:8px; margin-top:12px;">
+              <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" style="${actBtn}">${icon('plus',12)} Dépense</button>
+              <button data-edit-budget="${cat.id}" style="${actBtn}">Limite <span class="mono" style="color:var(--gold);">${fmt0(limit)}</span></button>
+              <button data-hide-budgetcat="${cat.id}" aria-label="Masquer cette catégorie" title="Masquer cette catégorie" style="${actBtn} color:var(--paperDim); padding:8px 11px;">${icon('x',12)}</button>
+            </div>`}
+          ${expanded && catTx.length>0 ? `
+            <div style="margin-top:10px; border-top:1px solid var(--lineSoft); padding-top:6px;">
+              ${catTx.map(t=>txRow(t,false)).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('')}
   `;
 }
 
@@ -3133,7 +3161,7 @@ function renderGoals(){
       const doneCount = goals.filter(g=>g.target>0 && g.current>=g.target).length;
       const ids = new Set(goals.map(g=>g.id));
       const perMonth = (state.data.goalTransfers||[]).filter(t=>ids.has(t.goalId))
-        .reduce((a,t)=> a + t.amount * ({weekly:52/12, monthly:1, yearly:1/12}[t.frequency] ?? 1), 0);
+        .reduce((a,t)=> a + t.amount * occurrencesPerMonth(t.frequency), 0);
       return `
       <div class="card goals-total-card">
         <div class="row" style="margin-bottom:8px;">
