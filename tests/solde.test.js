@@ -443,6 +443,18 @@ test.describe('Sauvegardes', () => {
       assert.deepEqual(errors, []);
     }));
 
+  test('S5b Données principales valant « null » ou contenant une transaction nulle : instantané rechargé, sans erreur', async () => {
+    for(const raw of ['null', '{"transactions":[null]}']){
+      await withApp({ now: NOW_SEPT, raw, storage: {
+        [SNAP + '2026-09-14']: JSON.stringify(realData()),
+        [SNAP + 'last']: '2026-09-14',
+      } }, async ({ page, errors }) => {
+        assert.deepEqual(await page.evaluate(() => state.data.transactions.map(t => t.id)), ['reel1'], raw);
+        assert.deepEqual(errors, [], raw);
+      });
+    }
+  });
+
   test('S6 Clé principale absente mais instantanés présents : instantané rechargé', () =>
     withApp({ now: NOW_SEPT, data: null, storage: { [SNAP + '2026-09-14']: JSON.stringify(realData()) } }, async ({ page }) => {
       assert.deepEqual(await page.evaluate(() => state.data.transactions.map(t => t.id)), ['reel1']);
