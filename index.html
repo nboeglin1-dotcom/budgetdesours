@@ -3124,19 +3124,34 @@ function renderGoals(){
     <div class="section-title" style="margin:0 0 12px;">Mon activité</div>
     ${renderCaCard()}
     <div style="height:10px;"></div>
-    <div class="row" style="margin-bottom:14px;">
-      <div class="section-title" style="margin:0;">Objectifs d'épargne</div>
-      <button class="btn-primary" data-open="addGoal">${icon('plus',14)} Nouvel objectif</button>
+    <div class="row" style="margin-bottom:12px;">
+      <div class="section-title" style="margin:0;">Mon épargne</div>
+      <button data-open="addGoal" style="display:flex; align-items:center; gap:5px; background:none; border:1px solid var(--line); color:var(--paper); border-radius:999px; padding:6px 12px; font-size:12.5px;">${icon('plus',13)} Nouvel objectif</button>
     </div>
-    ${goals.length>0 ? `
-      <div class="card" style="margin-bottom:14px; padding:16px 18px;">
-        <div class="eyebrow" style="margin-bottom:4px;">Total épargné</div>
+    ${goals.length>0 ? (()=>{
+      const pctAll = totalTarget>0 ? Math.min(100, Math.round(totalSaved/totalTarget*100)) : 0;
+      const doneCount = goals.filter(g=>g.target>0 && g.current>=g.target).length;
+      const ids = new Set(goals.map(g=>g.id));
+      const perMonth = (state.data.goalTransfers||[]).filter(t=>ids.has(t.goalId))
+        .reduce((a,t)=> a + t.amount * ({weekly:52/12, monthly:1, yearly:1/12}[t.frequency] ?? 1), 0);
+      return `
+      <div class="card goals-total-card">
+        <div class="row" style="margin-bottom:8px;">
+          <div class="section-title" style="margin:0; font-size:15px;">Total épargné</div>
+          <span style="font-size:12.5px; color:var(--paperDim);">${pctAll}%</span>
+        </div>
         <div class="row" style="align-items:baseline; margin-bottom:0;">
           <div class="mono" style="font-size:28px; font-weight:700; color:var(--paper);">${fmt0(totalSaved)}</div>
-          <div style="font-size:13px; color:var(--paperDim);">sur ${fmt0(totalTarget)} visés</div>
+          <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(totalTarget)} visés</div>
         </div>
-      </div>
-    ` : ''}
+        <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pctAll}%; background:var(--gold);"></div></div>
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px;">
+          ${caTile('Reste à mettre', fmt0(Math.max(0, totalTarget-totalSaved)))}
+          ${caTile('Auto / mois', perMonth ? fmt0(perMonth) : '—', perMonth ? 'var(--gold)' : 'var(--paperDim)', 'virements')}
+          ${caTile('Atteints', `${doneCount} / ${goals.length}`, doneCount ? 'var(--sage)' : 'var(--paper)')}
+        </div>
+      </div>`;
+    })() : ''}
     ${goals.length===0 ? `
       <div class="card" style="padding:32px 20px; text-align:center;">
         ${bearMascot('content', 56)}
@@ -3144,61 +3159,72 @@ function renderGoals(){
         <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:18px; line-height:1.5;">Un voyage, un imprévu, un projet — commence par te fixer un cap.</div>
         <button data-open="addGoal" class="btn-primary" style="display:inline-flex; margin:0 auto;">${icon('plus',14)} Créer mon premier objectif</button>
       </div>
-    ` : `
-      <div class="budget-stack">
-        ${goals.map(g=>{
-          const pct = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
-          const done = pct>=100;
-          const transfer = (state.data.goalTransfers||[]).find(t=>t.goalId===g.id);
-          const goalAcc = (state.data.accounts||[]).find(a=>a.id===(g.accountId||'main'));
-          const showAccBadge = !state.activeAccountFilter && (state.data.accounts||[]).length>1 && goalAcc;
-          return `
-            <div class="card goal-card" style="margin-bottom:0;">
-              ${done ? `<div class="goal-badge">${icon('spark',11)} Atteint</div>` : ''}
-              ${showAccBadge ? `<div style="display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:${goalAcc.color}; margin-bottom:6px;"><span class="dot" style="width:6px;height:6px;border-radius:50%;background:${goalAcc.color};display:inline-block;"></span>${escapeHtml(goalAcc.name)}</div>` : ''}
-              <div class="goal-name">${escapeHtml(g.name)}</div>
-              <div class="row" style="margin-bottom:0; align-items:baseline;">
-                <div class="goal-amt" style="color:${g.color}; margin-bottom:0;">${fmt0(g.current)} <span class="target">/ ${fmt0(g.target)}</span></div>
-                <div class="mono" style="font-size:14px; font-weight:600; color:var(--paperDim);">${pct}%</div>
-              </div>
-              <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
-              <div class="row" style="margin-top:10px; margin-bottom:0;">
-                <button data-open-goaltransfer="${g.id}" style="display:flex; align-items:center; gap:6px; color:${transfer?g.color:'var(--paperDim)'}; font-size:11.5px; background:none; border:none; padding:0;">
-                  ${icon('repeat',12)} ${transfer ? `${fmt0(transfer.amount)} ${freqLabel(transfer.frequency).toLowerCase()} — virement auto` : 'Configurer un virement automatique'}
-                </button>
-                ${transfer ? `<button data-stop-goaltransfer="${g.id}" style="font-size:10.5px; color:var(--coral); background:none; border:none; padding:0;">Arrêter</button>` : ''}
-              </div>
-              ${!done ? (()=>{
-                const pace = computeGoalPaceProjection(g);
-                if(!pace || pace.noRate){
-                  return `<div style="font-size:11px; color:var(--paperDim); margin-top:6px; display:flex; align-items:center; gap:5px;">${icon('spark',11)} Pas encore de rythme d'épargne régulier détecté pour cap</div>`;
-                }
-                const dateLabel = pace.projectedDate.toLocaleDateString('fr-FR',{month:'long',year:'numeric'});
-                return `<div style="font-size:11px; color:${g.color}; margin-top:6px; display:flex; align-items:center; gap:5px; font-weight:500;">${icon('spark',11)} Au rythme actuel (${fmt0(pace.monthlyRate)}/mois), objectif atteint vers <span style="text-transform:capitalize;">${dateLabel}</span></div>`;
-              })() : ''}
-              ${g.deadline && !done ? (()=>{
-                const dl = new Date(g.deadline);
-                const now = new Date();
-                const monthsLeft = Math.max(1, Math.round((dl - now) / (1000*60*60*24*30.44)));
-                const remaining = Math.max(0, g.target - g.current);
-                const perMonth = remaining / monthsLeft;
-                const overdue = dl < now;
-                return `<button data-open-goaldeadline="${g.id}" style="display:block; width:100%; text-align:left; background:none; border:none; padding:0; font-size:11.5px; color:${overdue?'var(--coral)':'var(--paperDim)'}; margin-top:8px;">
-                  ${overdue ? "Échéance dépassée" : `Échéance : ${dl.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'})}`}
-                  ${!overdue ? ` · suggéré <span class="mono" style="color:${g.color};">${fmt0(perMonth)}</span>/mois` : ''} · <span style="text-decoration:underline;">modifier</span>
-                </button>`;
-              })() : !done ? `<button data-open-goaldeadline="${g.id}" style="display:flex; align-items:center; gap:6px; color:var(--paperDim); font-size:11.5px; background:none; border:none; padding:0; margin-top:8px;">${icon('target',12)} Définir une échéance</button>` : ''}
-              <div class="goal-form">
-                <input id="goalAmount-${g.id}" type="number" inputmode="decimal" placeholder="Autre montant">
-                <button class="add" data-contribute="${g.id}">Ajouter</button>
-                <button class="withdraw" data-withdraw="${g.id}">Retirer</button>
-                <button class="del" data-del-goal="${g.id}">${icon('trash',14)}</button>
-              </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `}
+    ` : goals.map(g=>{
+      const pct = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
+      const done = g.target>0 && g.current>=g.target;
+      const remaining = Math.max(0, g.target - g.current);
+      const transfer = (state.data.goalTransfers||[]).find(t=>t.goalId===g.id);
+      const goalAcc = (state.data.accounts||[]).find(a=>a.id===(g.accountId||'main'));
+      const showAccBadge = !state.activeAccountFilter && (state.data.accounts||[]).length>1 && goalAcc;
+      // Echeance : montant suggere par mois jusqu'a la date choisie.
+      let deadlineTile = caTile('Par mois', '—', 'var(--paperDim)', 'pas d’échéance');
+      let deadlineLine = '';
+      if(g.deadline && !done){
+        const dl = new Date(g.deadline), now = new Date();
+        const overdue = dl < now;
+        const monthsLeft = Math.max(1, Math.round((dl - now) / (1000*60*60*24*30.44)));
+        deadlineTile = overdue ? caTile('Par mois', '—', 'var(--coral)', 'échéance dépassée')
+          : caTile('Par mois', `≈ ${fmt0(remaining/monthsLeft)}`, g.color, `d'ici ${dl.toLocaleDateString('fr-FR',{month:'short',year:'numeric'})}`);
+        deadlineLine = `<button data-open-goaldeadline="${g.id}" style="background:none; border:none; padding:0; font-size:11.5px; color:${overdue?'var(--coral)':'var(--paperDim)'};">${icon('target',11)} ${overdue ? 'Échéance dépassée' : `Échéance : ${dl.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'})}`} · <span style="text-decoration:underline;">modifier</span></button>`;
+      } else if(!done){
+        deadlineLine = `<button data-open-goaldeadline="${g.id}" style="background:none; border:none; padding:0; font-size:11.5px; color:var(--paperDim);">${icon('target',11)} <span style="text-decoration:underline;">Définir une échéance</span></button>`;
+      }
+      let paceLine = '';
+      if(!done){
+        const pace = computeGoalPaceProjection(g);
+        paceLine = (!pace || pace.noRate)
+          ? `Pas encore de rythme d'épargne régulier détecté.`
+          : `Au rythme actuel (${fmt0(pace.monthlyRate)}/mois), objectif atteint vers <span style="text-transform:capitalize;">${pace.projectedDate.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</span>.`;
+      }
+      return `
+      <div class="card goal-card">
+        <div class="row" style="margin-bottom:8px; align-items:flex-start;">
+          <div style="min-width:0;">
+            <div class="section-title" style="margin:0; font-size:15px;">${escapeHtml(g.name)}</div>
+            ${showAccBadge ? `<div style="display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:${goalAcc.color}; margin-top:3px;"><span style="width:6px;height:6px;border-radius:50%;background:${goalAcc.color};display:inline-block;"></span>${escapeHtml(goalAcc.name)}</div>` : ''}
+          </div>
+          ${done ? `<span style="display:flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:4px 9px; border-radius:99px; background:rgba(212,169,79,.16); color:var(--gold); flex-shrink:0;">${icon('spark',11)} Atteint</span>` : `<span class="mono" style="font-size:12.5px; color:var(--paperDim); flex-shrink:0;">${pct}%</span>`}
+        </div>
+        <div class="row" style="align-items:baseline; margin-bottom:0;">
+          <div class="mono" style="font-size:28px; font-weight:700; color:${g.color};">${fmt0(g.current)}</div>
+          <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(g.target)}</div>
+        </div>
+        <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
+        ${paceLine ? `<div style="font-size:12px; color:var(--paperDim); margin:4px 0 0; line-height:1.5;">${paceLine}</div>` : ''}
+        ${done ? `<div style="font-size:12px; color:var(--sage); margin-top:4px;">${icon('spark',11)} Objectif atteint${g.current>g.target ? ` · +${fmt0(g.current-g.target)}` : ''}</div>` : ''}
+        <div style="display:${done && !transfer ? 'none' : 'grid'}; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px;">
+          ${caTile('Reste', done ? '—' : fmt0(remaining), done ? 'var(--sage)' : 'var(--paper)')}
+          ${deadlineTile}
+          <button data-open-goaltransfer="${g.id}" style="display:block; text-align:left; background:var(--surfaceHi); border:none; border-radius:12px; padding:10px; min-width:0; color:var(--paper);">
+            <div style="font-size:11.5px; color:var(--paperDim);">Virement auto</div>
+            <div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${transfer?g.color:'var(--paperDim)'};">${transfer ? fmt0(transfer.amount) : 'Aucun'}</div>
+            <div style="font-size:10.5px; color:var(--paperDim); margin-top:2px;">${transfer ? escapeHtml(freqLabel(transfer.frequency).toLowerCase()) : 'configurer'}</div>
+          </button>
+        </div>
+        <div class="row" style="margin:8px 0 0; gap:10px; ${!deadlineLine && !transfer ? 'display:none;' : ''}">
+          <div>${deadlineLine}</div>
+          ${transfer ? `<button data-stop-goaltransfer="${g.id}" style="font-size:11px; color:var(--coral); background:none; border:none; padding:0; flex-shrink:0;">Arrêter le virement</button>` : ''}
+        </div>
+        <label style="display:block; margin-top:12px;"><span class="field-label">Montant</span>
+          <input id="goalAmount-${g.id}" type="number" inputmode="decimal" class="field-input" style="margin-bottom:0; font-size:14px;" placeholder="ex : 100">
+        </label>
+        <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:8px; margin-top:8px;">
+          <button class="btn-primary" data-contribute="${g.id}" style="justify-content:center;">${icon('plus',13)} Ajouter</button>
+          <button data-withdraw="${g.id}" style="background:transparent; border:1px solid var(--coral); color:var(--coral); font-weight:600; font-size:13px; border-radius:12px;">Retirer</button>
+          <button data-del-goal="${g.id}" aria-label="Supprimer l'objectif" style="background:none; border:1px solid var(--line); color:var(--paperDim); border-radius:12px; padding:0 12px;">${icon('trash',14)}</button>
+        </div>
+      </div>`;
+    }).join('')}
   `;
 }
 function renderRecalModal(){
