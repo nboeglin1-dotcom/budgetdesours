@@ -48,7 +48,7 @@ test.describe('Objectif de CA', () => {
       const txt = await page.textContent('.ca-card');
       assert.match(txt, /Reste 52\s€ · 2 jours ouvrés restants/);
       assert.match(txt, /1\s518/); // 4 048,50 × 0,375 ≈ 1 518 €
-      assert.match(txt, /Encaissé au total : 1\s518\s€ avant URSSAF, soit ≈ 1\s196\s€ net/); // visible même sans courses perso
+      assert.match(txt, /Net encaissé\s*≈ 1\s196\s€\s*1\s518\s€ avant URSSAF/); // visible même sans courses perso
       // Champ vidé = mois effacé
       await page.fill('#caInput', '');
       await page.click('[data-save-ca]');
@@ -90,8 +90,9 @@ test.describe('Objectif de CA', () => {
       assert.equal(p.commun, 950);
       assert.equal(p.payM, 10); // virements du 5 novembre
       assert.ok(p.shineAfter >= 1500);
-      const txt = await page.textContent('.ca-card');
+      const txt = await page.textContent('.ca-shine-card');
       assert.match(txt, /Virements du 5 novembre/);
+      assert.match(txt, /950\s€/);
       assert.deepEqual(errors, []);
     }));
 

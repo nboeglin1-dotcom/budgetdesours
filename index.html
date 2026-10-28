@@ -2987,96 +2987,124 @@ function shineTransferPlan(){
     shineAfter: afterIn - perso - Math.max(0, Math.floor(raw / 10) * 10),
   };
 }
+// Petits blocs communs aux deux cartes « activite » (meme style que l'accueil).
+const caTile = (label, value, color = 'var(--paper)', sub = '') => `
+  <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;">
+    <div style="font-size:11.5px; color:var(--paperDim);">${label}</div>
+    <div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${color};">${value}</div>
+    ${sub ? `<div style="font-size:10.5px; color:var(--paperDim); margin-top:2px;">${sub}</div>` : ''}
+  </div>`;
+const caField = (id, label, value, placeholder) => `
+  <label style="min-width:0;"><span class="field-label">${label}</span>
+    <input id="${id}" type="text" inputmode="decimal" class="field-input" style="margin-bottom:0; font-size:14px;" placeholder="${placeholder}" value="${value}">
+  </label>`;
+const caNum = v => escapeHtml(String(v).replace('.',','));
+
 function renderShinePlan(){
   const ct = state.data.caTracker || {};
   const snap = ct.shine;
   const p = shineTransferPlan();
   const savedDate = snap ? snap.date.split('-').reverse().slice(0,2).join('/') : '';
-  let body = `<div style="font-size:12px; color:var(--paperDim); line-height:1.5; margin-top:4px;">Tape le « Solde restant » affiché par Shine (cotisations déjà déduites) : l'app calcule tes virements.</div>`;
+  let body;
   if(p){
-    const payLabel = `5 ${MONTHS[p.payM].toLowerCase()}`;
     const lines = [`Solde restant Shine le ${savedDate} : ${fmt0(p.amount)}`];
     if(!p.after){
-      lines.push(p.hasCa ? `+ versement Skoot de ${MONTHS[p.caM].toLowerCase()} net d'URSSAF : ${fmt0(p.payoutNet)} (${fmt0(p.payout)} brut)` : `+ versement Skoot : CA de ${MONTHS[p.caM].toLowerCase()} pas encore saisi, compté 0 €`);
+      lines.push(p.hasCa ? `+ versement Skoot de ${MONTHS[p.caM].toLowerCase()}, net d'URSSAF : ${fmt0(p.payoutNet)} (${fmt0(p.payout)} brut)` : `+ versement Skoot : CA de ${MONTHS[p.caM].toLowerCase()} pas encore saisi, compté 0 €`);
       if(p.motoIn) lines.push(`+ remboursement moto Skoot : ${fmt0(p.motoIn)}`);
     }
-    lines.push(`− perso ${fmt0(p.perso)} · − plancher gardé ${fmt0(p.floor)}`);
+    lines.push(`− virement perso : ${fmt0(p.perso)}`, `− plancher gardé sur Shine : ${fmt0(p.floor)}`);
+    const row = (label, sub, amount, color) => `
+      <div style="padding:8px 0;">
+        <div class="row" style="margin:0; font-size:13.5px;"><span>${label}</span><strong class="mono" style="font-size:16px; color:${color};">${fmt0(amount)}</strong></div>
+        <div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${sub}</div>
+      </div>`;
     body = `
-      <div class="row" style="margin:8px 0 0; font-size:13.5px;"><span>${icon('swap',13)} Vers le LCL perso</span><strong class="mono" style="color:var(--paper);">${fmt0(p.perso)}</strong></div>
-      <div style="font-size:10.5px; color:var(--paperDim);">${p.motoActive ? `${fmt0(ct.moto)} pour le crédit moto + ${fmt0(ct.persoBase)}` : `crédit moto terminé`}</div>
-      <div class="row" style="margin:8px 0 0; font-size:13.5px;"><span>${icon('swap',13)} Vers le commun</span><strong class="mono" style="color:${p.short ? 'var(--coral)' : 'var(--sage)'};">${fmt0(p.commun)}</strong></div>
-      ${p.short ? `<div style="font-size:11px; color:var(--coral); line-height:1.4;">Shine passerait ${fmt0(p.short)} sous ton plancher : rien vers le commun ce mois-ci.</div>` : ''}
-      <div style="font-size:10.5px; color:var(--paperDim); margin-top:8px; line-height:1.5;">${lines.map(escapeHtml).join('<br>')}<br>Il restera ≈ ${escapeHtml(fmt0(p.shineAfter))} sur Shine.</div>
-      ${!p.hasCa ? `<div style="font-size:11px; color:var(--gold); margin-top:4px;">Saisis le CA de ${MONTHS[p.caM].toLowerCase()} pour un calcul juste.</div>` : ''}`;
-    body = `<div style="font-size:12px; color:var(--paperDim); margin-top:2px;">Virements du <strong style="color:var(--paper);">${payLabel}</strong> depuis Shine</div>` + body;
+      ${row('Vers le LCL perso', p.motoActive ? `${fmt0(ct.moto)} de crédit moto + ${fmt0(ct.persoBase)}` : 'Crédit moto terminé', p.perso, 'var(--paper)')}
+      ${row('Vers le commun', p.short ? `<span style="color:var(--coral);">Shine passerait ${fmt0(p.short)} sous ton plancher : rien ce mois-ci</span>` : `Il restera ≈ ${fmt0(p.shineAfter)} sur Shine`, p.commun, p.short ? 'var(--coral)' : 'var(--sage)')}
+      ${!p.hasCa ? `<div class="alert" style="margin:6px 0 0; font-size:12px;">${icon('alert',13)} <div>Saisis le CA de ${MONTHS[p.caM].toLowerCase()} pour un calcul juste.</div></div>` : ''}
+      <details style="margin-top:6px;">
+        <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Voir le calcul</summary>
+        <div style="font-size:11.5px; color:var(--paperDim); margin-top:6px; line-height:1.6;">${lines.map(escapeHtml).join('<br>')}</div>
+      </details>`;
+  } else {
+    body = `<div style="font-size:12.5px; color:var(--paperDim); line-height:1.5; margin:2px 0 4px;">Recopie le « Solde restant » affiché par Shine (cotisations déjà déduites) : l'app calcule ce que tu peux virer.</div>`;
   }
   return `
-    <div style="border-top:1px solid var(--lineSoft); margin-top:14px; padding-top:12px;">
-      <div class="eyebrow" style="margin-bottom:2px;">Mes virements du 5</div>
-      ${body}
-      <div class="goal-form">
-        <input id="shineInput" type="text" inputmode="decimal" aria-label="Solde restant affiché par Shine" placeholder="Solde restant Shine" value="${snap ? escapeHtml(String(snap.amount).replace('.',',')) : ''}">
-        <select id="shineAfterInput" aria-label="Versement Skoot déjà reçu ?" style="background:var(--surfaceHi); border:1px solid var(--line); border-radius:10px; padding:9px 8px; font-size:12px; color:var(--paper);">
-          <option value="0" ${snap && snap.after ? '' : 'selected'}>Avant versement Skoot</option>
-          <option value="1" ${snap && snap.after ? 'selected' : ''}>Versement reçu</option>
-        </select>
-        <button class="add" data-save-shine="1">Calculer</button>
+    <div class="card ca-shine-card">
+      <div class="row" style="margin-bottom:4px;">
+        <div class="section-title" style="margin:0; font-size:15px;">${p ? `Virements du 5 ${MONTHS[p.payM].toLowerCase()}` : 'Mes virements du 5'}</div>
       </div>
+      ${p ? `<div style="font-size:11.5px; color:var(--paperDim);">Depuis Shine · solde saisi le ${savedDate}</div>` : ''}
+      ${body}
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; align-items:end;">
+        ${caField('shineInput', 'Solde restant Shine', snap ? caNum(snap.amount) : '', 'ex : 1409,88')}
+        <label style="min-width:0;"><span class="field-label">Versement Skoot</span>
+          <select id="shineAfterInput" class="field-input" style="margin-bottom:0; font-size:14px; color:var(--paper);">
+            <option value="0" ${snap && snap.after ? '' : 'selected'}>Pas encore reçu</option>
+            <option value="1" ${snap && snap.after ? 'selected' : ''}>Déjà reçu</option>
+          </select>
+        </label>
+      </div>
+      <button class="btn-primary" data-save-shine="1" style="width:100%; justify-content:center; margin-top:10px;">Calculer mes virements</button>
     </div>`;
 }
 function renderCaCard(){
   const y = state.viewY, m = state.viewM;
   const s = caMonthStatus(y, m);
+  const ct = state.data.caTracker || {};
   const pct = s.target > 0 ? Math.min(100, Math.round(s.ca / s.target * 100)) : 0;
-  const nextName = MONTHS[(m+1)%12].toLowerCase();
-  const monthLabel = `${MONTHS[m].toLowerCase()} ${y}`;
   const color = s.reached ? 'var(--sage)' : 'var(--gold)';
-  let paceLine;
-  if(s.reached){
-    paceLine = `<span style="color:var(--sage); font-weight:600;">${icon('spark',11)} Objectif atteint${s.ca > s.target ? ` (+${fmt0(s.ca - s.target)})` : ''}</span>`;
-  } else if(s.when === 'past'){
-    paceLine = `Il a manqué <span class="mono">${fmt0(s.remaining)}</span> sur ce mois.`;
-  } else if(s.perDay === null){
-    paceLine = `Plus de jour ouvré ce mois-ci : il reste <span class="mono">${fmt0(s.remaining)}</span>.`;
-  } else {
-    paceLine = `Reste <span class="mono" style="color:var(--paper);">${fmt0(s.remaining)}</span> · ${s.daysLeft} jour${s.daysLeft>1?'s':''} ouvré${s.daysLeft>1?'s':''}${s.when==='current'?' restants':''} · <strong class="mono" style="color:var(--gold);">≈ ${fmt0(s.perDay)}/jour</strong>`;
-  }
+  const net = s.totalIn * (1 - (ct.urssaf ?? 0.212));
+  let status;
+  if(s.reached) status = `<span style="color:var(--sage); font-weight:600;">${icon('spark',11)} Objectif atteint${s.ca > s.target ? ` · +${fmt0(s.ca - s.target)}` : ''}</span>`;
+  else if(s.when === 'past') status = `Il a manqué <span class="mono">${fmt0(s.remaining)}</span> sur ce mois.`;
+  else if(s.perDay === null) status = `Plus de jour ouvré ce mois-ci : il reste <span class="mono">${fmt0(s.remaining)}</span>.`;
+  else status = `Reste ${fmt0(s.remaining)} · ${s.daysLeft} jour${s.daysLeft>1?'s':''} ouvré${s.daysLeft>1?'s':''}${s.when==='current'?' restants':''}`;
+  const perDayTile = s.reached ? caTile('Par jour', '—', 'var(--sage)')
+    : s.perDay === null ? caTile('Par jour', '—')
+    : caTile('Par jour', `≈ ${fmt0(s.perDay)}`, 'var(--gold)', `${s.daysLeft} j. ouvrés`);
   return `
-    <div class="section-title" style="margin:0 0 10px;">Objectif de chiffre d'affaires</div>
-    <div class="card ca-card" style="margin-bottom:22px; padding:16px 18px;">
-      <div class="eyebrow" style="margin-bottom:4px;">CA de ${monthLabel}</div>
+    <div class="card ca-card">
+      <div class="row" style="margin-bottom:8px;">
+        <div class="section-title" style="margin:0; font-size:15px;">Mon chiffre d'affaires</div>
+        <div style="display:flex; align-items:center; gap:2px;">
+          <button data-move="-1" aria-label="Mois précédent" style="background:none; border:none; color:var(--paperDim); padding:4px;">${icon('chevronL',14)}</button>
+          <span style="font-size:12.5px; color:var(--paper); min-width:74px; text-align:center;">${MONTHS_SHORT[m]} ${y}</span>
+          <button data-move="1" aria-label="Mois suivant" style="background:none; border:none; color:var(--paperDim); padding:4px;">${icon('chevronR',14)}</button>
+        </div>
+      </div>
       <div class="row" style="align-items:baseline; margin-bottom:0;">
         <div class="mono" style="font-size:28px; font-weight:700; color:${s.has?color:'var(--paperDim)'};">${fmt0(s.ca)}</div>
-        <div style="font-size:13px; color:var(--paperDim);">sur ${fmt0(s.target)} · ${pct}%</div>
+        <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(s.target)} · ${pct}%</div>
       </div>
       <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pct}%; background:${color};"></div></div>
-      <div style="font-size:12px; color:var(--paperDim); margin-top:8px; line-height:1.5;">${paceLine}</div>
-      ${s.hasPerso && s.perso > 0 ? `<div style="font-size:12px; color:var(--paperDim); margin-top:4px;">Dont courses perso : <span class="mono" style="color:var(--paper);">${fmt0(s.perso)}</span>, sans commission (comptent pour ${fmt0(s.persoEquiv)} de CA Skoot)</div>` : ''}
-      ${s.has ? `<div style="font-size:12px; color:var(--paperDim); margin-top:4px;">Versement Skoot attendu début ${nextName} : <span class="mono" style="color:var(--paper);">${fmt0(s.payout)}</span> (${String(Math.round(s.rate*1000)/10).replace('.',',')} % de ${fmt0(s.skoot)})</div>
-      <div style="font-size:12px; color:var(--paperDim); margin-top:4px;">Encaissé au total${s.perso > 0 ? ' (Skoot + courses perso)' : ''} : <span class="mono" style="color:var(--paper);">${fmt0(s.totalIn)}</span> avant URSSAF, soit <strong class="mono" style="color:var(--sage);">≈ ${fmt0(s.totalIn * (1 - ((state.data.caTracker||{}).urssaf ?? 0.212)))}</strong> net</div>` : ''}
-      <div class="goal-form">
-        <input id="caInput" type="text" inputmode="decimal" aria-label="CA Skoot du mois" placeholder="CA Skoot à date" value="${s.hasSkoot ? escapeHtml(String(s.skoot).replace('.',',')) : ''}">
-        <input id="caPersoInput" type="text" inputmode="decimal" aria-label="Courses perso du mois, sans commission" placeholder="Courses perso" value="${s.hasPerso ? escapeHtml(String(s.perso).replace('.',',')) : ''}">
-        <button class="add" data-save-ca="${s.key}">Mettre à jour</button>
+      <div style="font-size:12px; color:var(--paperDim); margin:4px 0 12px;">${status}</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+        ${perDayTile}
+        ${caTile('Skoot', fmt0(s.payout), 'var(--paper)', `versé début ${MONTHS_SHORT[(m+1)%12].toLowerCase()}.`)}
+        ${caTile('Net encaissé', `≈ ${fmt0(net)}`, 'var(--sage)', `${fmt0(s.totalIn)} avant URSSAF`)}
       </div>
-      <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">CA Skoot (avec commission) · courses perso (sans commission)</div>
-      <details style="margin-top:10px;">
-        <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Réglages de l'objectif</summary>
-        <div class="goal-form" style="margin-top:8px;">
-          <input id="caTargetInput" type="text" inputmode="decimal" aria-label="Objectif mensuel en euros" placeholder="Objectif / mois" value="${escapeHtml(String(s.target).replace('.',','))}">
-          <input id="caRateInput" type="text" inputmode="decimal" aria-label="Part reversée en pourcentage" placeholder="% reversé" value="${escapeHtml(String(Math.round(s.rate*1000)/10).replace('.',','))}">
-          <button class="add" data-save-ca-settings="1">OK</button>
+      ${s.perso > 0 ? `<div style="font-size:11.5px; color:var(--paperDim); margin-top:10px; line-height:1.5;">Dont courses perso ${fmt0(s.perso)}, sans commission : elles comptent pour ${fmt0(s.persoEquiv)} de CA Skoot.</div>` : ''}
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;">
+        ${caField('caInput', 'CA Skoot à date', s.hasSkoot ? caNum(s.skoot) : '', 'avec commission')}
+        ${caField('caPersoInput', 'Courses perso', s.hasPerso ? caNum(s.perso) : '', 'sans commission')}
+      </div>
+      <button class="btn-primary" data-save-ca="${s.key}" style="width:100%; justify-content:center; margin-top:10px;">Enregistrer le CA</button>
+      <details style="margin-top:12px;">
+        <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Réglages</summary>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
+          ${caField('caTargetInput', 'Objectif par mois (€)', caNum(s.target), '4100')}
+          ${caField('caRateInput', 'Part reversée par Skoot (%)', caNum(Math.round(s.rate*1000)/10), '37,5')}
         </div>
-        <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">Objectif mensuel (€) · part reversée (%)</div>
-        <div class="goal-form" style="margin-top:8px;">
-          <input id="caFloorInput" type="text" inputmode="decimal" aria-label="Plancher gardé sur Shine en euros" placeholder="Plancher Shine" value="${escapeHtml(String((state.data.caTracker||{}).floor ?? 1500))}">
-          <input id="caPersoBaseInput" type="text" inputmode="decimal" aria-label="Part perso hors crédit moto en euros" placeholder="Perso hors moto" value="${escapeHtml(String((state.data.caTracker||{}).persoBase ?? 153))}">
-          <button class="add" data-save-ca-transfer-settings="1">OK</button>
+        <button class="add" data-save-ca-settings="1" style="width:100%; margin-top:8px; background:var(--surfaceHi); border:1px solid var(--line); color:var(--paper); border-radius:10px; padding:9px; font-size:12.5px; font-weight:600;">Enregistrer l'objectif</button>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;">
+          ${caField('caFloorInput', 'Plancher sur Shine (€)', caNum(ct.floor ?? 1500), '1500')}
+          ${caField('caPersoBaseInput', 'Perso hors moto (€)', caNum(ct.persoBase ?? 153), '153')}
         </div>
-        <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">Plancher gardé sur Shine (€) · virement perso hors crédit moto (€)</div>
+        <button class="add" data-save-ca-transfer-settings="1" style="width:100%; margin-top:8px; background:var(--surfaceHi); border:1px solid var(--line); color:var(--paper); border-radius:10px; padding:9px; font-size:12.5px; font-weight:600;">Enregistrer les virements</button>
       </details>
-      ${renderShinePlan()}
-    </div>`;
+    </div>
+    ${renderShinePlan()}`;
 }
 
 function renderGoals(){
@@ -3093,7 +3121,9 @@ function renderGoals(){
   const totalSaved = goals.reduce((s,g)=>s+g.current,0);
   const totalTarget = goals.reduce((s,g)=>s+g.target,0);
   return `
+    <div class="section-title" style="margin:0 0 12px;">Mon activité</div>
     ${renderCaCard()}
+    <div style="height:10px;"></div>
     <div class="row" style="margin-bottom:14px;">
       <div class="section-title" style="margin:0;">Objectifs d'épargne</div>
       <button class="btn-primary" data-open="addGoal">${icon('plus',14)} Nouvel objectif</button>
