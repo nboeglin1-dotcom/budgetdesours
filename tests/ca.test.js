@@ -24,7 +24,7 @@ test.describe('Objectif de CA', () => {
   test('CA2 Données anciennes sans réglage : objectif 4 100 € et 37,5 % par défaut', () =>
     withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData() }, async ({ page }) => {
       const ct = await page.evaluate(() => state.data.caTracker);
-      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{} });
+      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.212, persoBase:153, moto:697, motoEnd:'2027-08', shine:null });
     }));
 
   test('CA3 Mois en cours : reste à faire réparti sur les jours ouvrés après aujourd’hui', () =>
@@ -76,6 +76,41 @@ test.describe('Objectif de CA', () => {
       assert.equal(ct.months['2026-11'], 2000);
       assert.equal('2026-11' in ct.perso, false);
       assert.deepEqual(errors, []);
+    }));
+
+  test('CA7 Virements du 5 : avant le versement Skoot, commun = ce qui laisse 1 500 € sur Shine', () =>
+    withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData({ caTracker:{ months:{ '2026-10':4048 } } }) }, async ({ page, errors }) => {
+      await page.click('[data-tab="goals"]');
+      await page.fill('#shineInput', '1 409,88');
+      await page.click('[data-save-shine]');
+      const p = await page.evaluate(() => shineTransferPlan());
+      // 1 409,88 + 1 518 × (1 − 21,2 %) + 697 − 850 − 1 500 = 953,08 → arrondi à 950
+      assert.equal(p.perso, 850);
+      assert.equal(p.commun, 950);
+      assert.equal(p.payM, 10); // virements du 5 novembre
+      assert.ok(p.shineAfter >= 1500);
+      const txt = await page.textContent('.ca-card');
+      assert.match(txt, /Virements du 5 novembre/);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('CA8 Versement déjà reçu : rien n’est ajouté ; sous le plancher, 0 € vers le commun', () =>
+    withApp({ now:'2026-12-05T12:00:00+01:00', data: baseData({ caTracker:{ months:{ '2026-11':4000 }, shine:{ amount:2000, after:true, date:'2026-12-05' } } }) }, async ({ page }) => {
+      const p = await page.evaluate(() => shineTransferPlan());
+      assert.equal(p.payM, 11);
+      assert.equal(p.perso, 850);
+      assert.equal(p.commun, 0);
+      assert.equal(p.short, 350);
+    }));
+
+  test('CA9 Après la fin du crédit moto (août 2027) : perso 153 €, sans remboursement moto', () =>
+    withApp({ now:'2027-09-02T12:00:00+02:00', data: baseData({ caTracker:{ months:{ '2027-08':4000 }, shine:{ amount:1500, after:false, date:'2027-09-02' } } }) }, async ({ page }) => {
+      const p = await page.evaluate(() => shineTransferPlan());
+      assert.equal(p.motoActive, false);
+      assert.equal(p.perso, 153);
+      assert.equal(p.motoIn, 0);
+      // 1 500 + 1 500 × 0,788 − 153 − 1 500 = 1 029 → 1 020
+      assert.equal(p.commun, 1020);
     }));
 
   test('CA5 Réglages : objectif et pourcentage modifiables, valeurs invalides refusées', () =>

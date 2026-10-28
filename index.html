@@ -590,7 +590,7 @@ function seedData(){
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
-    caTracker: { target:4100, rate:0.375, months:{}, perso:{} },
+    caTracker: { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.212, persoBase:153, moto:697, motoEnd:'2027-08', shine:null },
   };
 }
 
@@ -633,6 +633,15 @@ function normalizeData(parsed){
       if(!parsed.caTracker || typeof parsed.caTracker !== 'object') parsed.caTracker = {};
       if(!(Number(parsed.caTracker.target) > 0)) parsed.caTracker.target = 4100;
       if(!(Number(parsed.caTracker.rate) > 0 && Number(parsed.caTracker.rate) <= 1)) parsed.caTracker.rate = 0.375;
+      // Virements du 5 : plancher garde sur Shine, URSSAF + versement liberatoire, part perso, credit moto.
+      const ctx = parsed.caTracker;
+      if(!(Number(ctx.floor) >= 0)) ctx.floor = 1500;
+      if(!(Number(ctx.urssaf) >= 0 && Number(ctx.urssaf) < 1)) ctx.urssaf = 0.212;
+      if(!(Number(ctx.persoBase) >= 0)) ctx.persoBase = 153;
+      if(!(Number(ctx.moto) >= 0)) ctx.moto = 697;
+      if(typeof ctx.motoEnd !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.motoEnd)) ctx.motoEnd = '2027-08';
+      if(ctx.shine && !(isFinite(Number(ctx.shine.amount)) && typeof ctx.shine.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ctx.shine.date))) ctx.shine = null;
+      if(ctx.shine === undefined) ctx.shine = null;
       // months : CA des courses Skoot (soumis a la commission) ; perso : courses perso encaissees en entier.
       ['months','perso'].forEach(f=>{
         if(!parsed.caTracker[f] || typeof parsed.caTracker[f] !== 'object') parsed.caTracker[f] = {};
@@ -2949,6 +2958,72 @@ function caMonthStatus(y, m, now = new Date()){
     reached: ca >= ct.target, payout: skoot * ct.rate, totalIn: skoot * ct.rate + perso,
   };
 }
+// Virements du 5 depuis Shine, d'apres le « Solde restant » saisi (cotisations deja deduites par Shine).
+// Avant le versement Skoot : on ajoute le versement attendu (net d'URSSAF) et le remboursement moto.
+// Perso = part fixe + credit moto (jusqu'a motoEnd inclus) ; commun = ce qui laisse le plancher sur Shine.
+function shineTransferPlan(){
+  const ct = state.data.caTracker || {};
+  const snap = ct.shine;
+  if(!snap) return null;
+  const [sy, sm, sd] = snap.date.split('-').map(Number);
+  // Mois du virement : celui du saisi si le versement est deja arrive ou arrive le 5 de ce mois-ci.
+  let py = sy, pm = sm - 1;
+  if(!snap.after && sd > 5){ pm++; if(pm > 11){ pm = 0; py++; } }
+  const payKey = caMonthKey(py, pm);
+  const caY = pm === 0 ? py - 1 : py, caM = pm === 0 ? 11 : pm - 1;
+  const caKey = caMonthKey(caY, caM);
+  const motoActive = payKey <= ct.motoEnd;
+  const perso = ct.persoBase + (motoActive ? ct.moto : 0);
+  const hasCa = Object.prototype.hasOwnProperty.call(ct.months||{}, caKey);
+  const payout = snap.after ? 0 : (hasCa ? Number(ct.months[caKey]) : 0) * ct.rate;
+  const payoutNet = payout * (1 - ct.urssaf);
+  const motoIn = (!snap.after && motoActive) ? ct.moto : 0;
+  const afterIn = Number(snap.amount) + payoutNet + motoIn;
+  const raw = afterIn - perso - ct.floor;
+  return {
+    payY: py, payM: pm, caY, caM, hasCa: snap.after || hasCa, after: !!snap.after, date: snap.date,
+    amount: Number(snap.amount), payout, payoutNet, motoIn, motoActive, perso, floor: ct.floor,
+    commun: Math.max(0, Math.floor(raw / 10) * 10), short: raw < 0 ? -raw : 0,
+    shineAfter: afterIn - perso - Math.max(0, Math.floor(raw / 10) * 10),
+  };
+}
+function renderShinePlan(){
+  const ct = state.data.caTracker || {};
+  const snap = ct.shine;
+  const p = shineTransferPlan();
+  const savedDate = snap ? snap.date.split('-').reverse().slice(0,2).join('/') : '';
+  let body = `<div style="font-size:12px; color:var(--paperDim); line-height:1.5; margin-top:4px;">Tape le « Solde restant » affiché par Shine (cotisations déjà déduites) : l'app calcule tes virements.</div>`;
+  if(p){
+    const payLabel = `5 ${MONTHS[p.payM].toLowerCase()}`;
+    const lines = [`Solde restant Shine le ${savedDate} : ${fmt0(p.amount)}`];
+    if(!p.after){
+      lines.push(p.hasCa ? `+ versement Skoot de ${MONTHS[p.caM].toLowerCase()} net d'URSSAF : ${fmt0(p.payoutNet)} (${fmt0(p.payout)} brut)` : `+ versement Skoot : CA de ${MONTHS[p.caM].toLowerCase()} pas encore saisi, compté 0 €`);
+      if(p.motoIn) lines.push(`+ remboursement moto Skoot : ${fmt0(p.motoIn)}`);
+    }
+    lines.push(`− perso ${fmt0(p.perso)} · − plancher gardé ${fmt0(p.floor)}`);
+    body = `
+      <div class="row" style="margin:8px 0 0; font-size:13.5px;"><span>${icon('swap',13)} Vers le LCL perso</span><strong class="mono" style="color:var(--paper);">${fmt0(p.perso)}</strong></div>
+      <div style="font-size:10.5px; color:var(--paperDim);">${p.motoActive ? `${fmt0(ct.moto)} pour le crédit moto + ${fmt0(ct.persoBase)}` : `crédit moto terminé`}</div>
+      <div class="row" style="margin:8px 0 0; font-size:13.5px;"><span>${icon('swap',13)} Vers le commun</span><strong class="mono" style="color:${p.short ? 'var(--coral)' : 'var(--sage)'};">${fmt0(p.commun)}</strong></div>
+      ${p.short ? `<div style="font-size:11px; color:var(--coral); line-height:1.4;">Shine passerait ${fmt0(p.short)} sous ton plancher : rien vers le commun ce mois-ci.</div>` : ''}
+      <div style="font-size:10.5px; color:var(--paperDim); margin-top:8px; line-height:1.5;">${lines.map(escapeHtml).join('<br>')}<br>Il restera ≈ ${escapeHtml(fmt0(p.shineAfter))} sur Shine.</div>
+      ${!p.hasCa ? `<div style="font-size:11px; color:var(--gold); margin-top:4px;">Saisis le CA de ${MONTHS[p.caM].toLowerCase()} pour un calcul juste.</div>` : ''}`;
+    body = `<div style="font-size:12px; color:var(--paperDim); margin-top:2px;">Virements du <strong style="color:var(--paper);">${payLabel}</strong> depuis Shine</div>` + body;
+  }
+  return `
+    <div style="border-top:1px solid var(--lineSoft); margin-top:14px; padding-top:12px;">
+      <div class="eyebrow" style="margin-bottom:2px;">Mes virements du 5</div>
+      ${body}
+      <div class="goal-form">
+        <input id="shineInput" type="text" inputmode="decimal" aria-label="Solde restant affiché par Shine" placeholder="Solde restant Shine" value="${snap ? escapeHtml(String(snap.amount).replace('.',',')) : ''}">
+        <select id="shineAfterInput" aria-label="Versement Skoot déjà reçu ?" style="background:var(--surfaceHi); border:1px solid var(--line); border-radius:10px; padding:9px 8px; font-size:12px; color:var(--paper);">
+          <option value="0" ${snap && snap.after ? '' : 'selected'}>Avant versement Skoot</option>
+          <option value="1" ${snap && snap.after ? 'selected' : ''}>Versement reçu</option>
+        </select>
+        <button class="add" data-save-shine="1">Calculer</button>
+      </div>
+    </div>`;
+}
 function renderCaCard(){
   const y = state.viewY, m = state.viewM;
   const s = caMonthStatus(y, m);
@@ -2992,7 +3067,14 @@ function renderCaCard(){
           <button class="add" data-save-ca-settings="1">OK</button>
         </div>
         <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">Objectif mensuel (€) · part reversée (%)</div>
+        <div class="goal-form" style="margin-top:8px;">
+          <input id="caFloorInput" type="text" inputmode="decimal" aria-label="Plancher gardé sur Shine en euros" placeholder="Plancher Shine" value="${escapeHtml(String((state.data.caTracker||{}).floor ?? 1500))}">
+          <input id="caPersoBaseInput" type="text" inputmode="decimal" aria-label="Part perso hors crédit moto en euros" placeholder="Perso hors moto" value="${escapeHtml(String((state.data.caTracker||{}).persoBase ?? 153))}">
+          <button class="add" data-save-ca-transfer-settings="1">OK</button>
+        </div>
+        <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">Plancher gardé sur Shine (€) · virement perso hors crédit moto (€)</div>
       </details>
+      ${renderShinePlan()}
     </div>`;
 }
 
@@ -3701,6 +3783,22 @@ function bindEvents(){
     if(!(t > 0) || !(r > 0 && r <= 100)){ showToast('Réglages invalides'); return; }
     mutateData(d=>{ d.caTracker.target = Math.round(t); d.caTracker.rate = Math.round(r*10)/1000; });
     showToast('Objectif enregistré');
+  }));
+  app.querySelectorAll('[data-save-shine]').forEach(el=>el.addEventListener('click', ()=>{
+    const inp = document.getElementById('shineInput');
+    const raw = inp ? inp.value.trim() : '';
+    if(raw === ''){ mutateData(d=>{ d.caTracker.shine = null; }); return; }
+    const v = parseAmountInput(raw);
+    if(!isFinite(v)){ showToast('Montant invalide'); return; }
+    const after = (document.getElementById('shineAfterInput')||{}).value === '1';
+    mutateData(d=>{ d.caTracker.shine = { amount: Math.round(v*100)/100, after, date: localYMD(new Date()) }; });
+  }));
+  app.querySelectorAll('[data-save-ca-transfer-settings]').forEach(el=>el.addEventListener('click', ()=>{
+    const f = parseAmountInput((document.getElementById('caFloorInput')||{}).value);
+    const b = parseAmountInput((document.getElementById('caPersoBaseInput')||{}).value);
+    if(!(f >= 0) || !(b >= 0)){ showToast('Réglages invalides'); return; }
+    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); });
+    showToast('Réglages enregistrés');
   }));
   app.querySelectorAll('[data-contribute]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.contribute;
