@@ -590,7 +590,7 @@ function seedData(){
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
-    caTracker: { target:4100, rate:0.375, months:{} },
+    caTracker: { target:4100, rate:0.375, months:{}, perso:{} },
   };
 }
 
@@ -633,8 +633,12 @@ function normalizeData(parsed){
       if(!parsed.caTracker || typeof parsed.caTracker !== 'object') parsed.caTracker = {};
       if(!(Number(parsed.caTracker.target) > 0)) parsed.caTracker.target = 4100;
       if(!(Number(parsed.caTracker.rate) > 0 && Number(parsed.caTracker.rate) <= 1)) parsed.caTracker.rate = 0.375;
-      if(!parsed.caTracker.months || typeof parsed.caTracker.months !== 'object') parsed.caTracker.months = {};
-      Object.keys(parsed.caTracker.months).forEach(k=>{ const v = Number(parsed.caTracker.months[k]); if(!/^\d{4}-\d{2}$/.test(k) || !isFinite(v) || v < 0) delete parsed.caTracker.months[k]; else parsed.caTracker.months[k] = v; });
+      // months : CA des courses Skoot (soumis a la commission) ; perso : courses perso encaissees en entier.
+      ['months','perso'].forEach(f=>{
+        if(!parsed.caTracker[f] || typeof parsed.caTracker[f] !== 'object') parsed.caTracker[f] = {};
+        const o = parsed.caTracker[f];
+        Object.keys(o).forEach(k=>{ const v = Number(o[k]); if(!/^\d{4}-\d{2}$/.test(k) || !isFinite(v) || v < 0) delete o[k]; else o[k] = v; });
+      });
       // Regles creees avant l'ajout de accountId : on reprend le compte de leur derniere transaction liee.
       (parsed.recurring||[]).forEach(r=>{
         if(r.accountId) return;
@@ -2921,21 +2925,28 @@ function workingDaysInMonth(y, m, fromDay = 1){
 const caMonthKey = (y, m) => `${y}-${String(m+1).padStart(2,'0')}`;
 const parseAmountInput = v => { const n = parseFloat(String(v==null?'':v).replace(/\s/g,'').replace(',','.')); return isFinite(n) ? n : NaN; };
 // Chiffres du mois (y,m) pour la carte : CA saisi, reste a faire, jours ouvres restants, rythme, versement attendu.
+// Les courses perso ne paient pas de commission : 1 € perso rapporte autant que 1/rate € de CA Skoot,
+// on les convertit donc en « equivalent CA Skoot » pour suivre l'objectif (exprime en CA Skoot).
 function caMonthStatus(y, m, now = new Date()){
-  const ct = state.data.caTracker || { target:4100, rate:0.375, months:{} };
+  const ct = state.data.caTracker || { target:4100, rate:0.375, months:{}, perso:{} };
   const key = caMonthKey(y, m);
-  const has = Object.prototype.hasOwnProperty.call(ct.months||{}, key);
-  const ca = has ? Number(ct.months[key]) : 0;
+  const own = (o)=> !!o && Object.prototype.hasOwnProperty.call(o, key);
+  const hasSkoot = own(ct.months), hasPerso = own(ct.perso);
+  const has = hasSkoot || hasPerso;
+  const skoot = hasSkoot ? Number(ct.months[key]) : 0;
+  const perso = hasPerso ? Number(ct.perso[key]) : 0;
+  const persoEquiv = ct.rate > 0 ? perso / ct.rate : 0;
+  const ca = skoot + persoEquiv;
   const curY = now.getFullYear(), curM = now.getMonth();
   const when = (y < curY || (y === curY && m < curM)) ? 'past' : (y === curY && m === curM) ? 'current' : 'future';
   // Mois en cours : on compte a partir de demain (le CA saisi couvre la journee d'aujourd'hui).
   const daysLeft = when === 'past' ? 0 : when === 'current' ? workingDaysInMonth(y, m, now.getDate()+1) : workingDaysInMonth(y, m);
   const remaining = Math.max(0, ct.target - ca);
   return {
-    key, has, ca, target: ct.target, rate: ct.rate, when,
+    key, has, hasSkoot, hasPerso, skoot, perso, persoEquiv, ca, target: ct.target, rate: ct.rate, when,
     daysTotal: workingDaysInMonth(y, m), daysLeft, remaining,
     perDay: daysLeft > 0 ? remaining / daysLeft : null,
-    reached: ca >= ct.target, payout: ca * ct.rate,
+    reached: ca >= ct.target, payout: skoot * ct.rate, totalIn: skoot * ct.rate + perso,
   };
 }
 function renderCaCard(){
@@ -2965,11 +2976,14 @@ function renderCaCard(){
       </div>
       <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pct}%; background:${color};"></div></div>
       <div style="font-size:12px; color:var(--paperDim); margin-top:8px; line-height:1.5;">${paceLine}</div>
-      ${s.has ? `<div style="font-size:12px; color:var(--paperDim); margin-top:4px;">Versement attendu début ${nextName} : <span class="mono" style="color:var(--paper);">${fmt0(s.payout)}</span> (${String(Math.round(s.rate*1000)/10).replace('.',',')} % du CA)</div>` : ''}
+      ${s.hasPerso && s.perso > 0 ? `<div style="font-size:12px; color:var(--paperDim); margin-top:4px;">Dont courses perso : <span class="mono" style="color:var(--paper);">${fmt0(s.perso)}</span>, sans commission (comptent pour ${fmt0(s.persoEquiv)} de CA Skoot)</div>` : ''}
+      ${s.has ? `<div style="font-size:12px; color:var(--paperDim); margin-top:4px;">Versement Skoot attendu début ${nextName} : <span class="mono" style="color:var(--paper);">${fmt0(s.payout)}</span> (${String(Math.round(s.rate*1000)/10).replace('.',',')} % de ${fmt0(s.skoot)})${s.perso > 0 ? ` · encaissé au total : <span class="mono" style="color:var(--paper);">${fmt0(s.totalIn)}</span>` : ''}</div>` : ''}
       <div class="goal-form">
-        <input id="caInput" type="text" inputmode="decimal" placeholder="CA du mois à date" value="${s.has ? escapeHtml(String(s.ca).replace('.',',')) : ''}">
+        <input id="caInput" type="text" inputmode="decimal" aria-label="CA Skoot du mois" placeholder="CA Skoot à date" value="${s.hasSkoot ? escapeHtml(String(s.skoot).replace('.',',')) : ''}">
+        <input id="caPersoInput" type="text" inputmode="decimal" aria-label="Courses perso du mois, sans commission" placeholder="Courses perso" value="${s.hasPerso ? escapeHtml(String(s.perso).replace('.',',')) : ''}">
         <button class="add" data-save-ca="${s.key}">Mettre à jour</button>
       </div>
+      <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">CA Skoot (avec commission) · courses perso (sans commission)</div>
       <details style="margin-top:10px;">
         <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Réglages de l'objectif</summary>
         <div class="goal-form" style="margin-top:8px;">
@@ -3671,13 +3685,15 @@ function bindEvents(){
 
   app.querySelectorAll('[data-save-ca]').forEach(el=>el.addEventListener('click', ()=>{
     const key = el.dataset.saveCa;
-    const input = document.getElementById('caInput');
-    const raw = input ? input.value.trim() : '';
-    if(raw === ''){ mutateData(d=>{ delete d.caTracker.months[key]; }); showToast('CA du mois effacé'); return; }
-    const v = parseAmountInput(raw);
-    if(!(v >= 0)){ showToast('Montant de CA invalide'); return; }
-    mutateData(d=>{ d.caTracker.months[key] = Math.round(v*100)/100; });
-    showToast('CA mis à jour');
+    // Champ vide = valeur du mois effacee ; sinon montant >= 0 (virgule ou espaces acceptes).
+    const read = (id)=>{ const inp = document.getElementById(id); const raw = inp ? inp.value.trim() : ''; return raw === '' ? null : parseAmountInput(raw); };
+    const skoot = read('caInput'), perso = read('caPersoInput');
+    if((skoot !== null && !(skoot >= 0)) || (perso !== null && !(perso >= 0))){ showToast('Montant invalide'); return; }
+    mutateData(d=>{
+      if(!d.caTracker.perso) d.caTracker.perso = {};
+      [['months', skoot], ['perso', perso]].forEach(([f, v])=>{ if(v === null) delete d.caTracker[f][key]; else d.caTracker[f][key] = Math.round(v*100)/100; });
+    });
+    showToast(skoot === null && perso === null ? 'CA du mois effacé' : 'CA mis à jour');
   }));
   app.querySelectorAll('[data-save-ca-settings]').forEach(el=>el.addEventListener('click', ()=>{
     const t = parseAmountInput((document.getElementById('caTargetInput')||{}).value);

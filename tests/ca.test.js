@@ -24,7 +24,7 @@ test.describe('Objectif de CA', () => {
   test('CA2 Données anciennes sans réglage : objectif 4 100 € et 37,5 % par défaut', () =>
     withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData() }, async ({ page }) => {
       const ct = await page.evaluate(() => state.data.caTracker);
-      assert.deepEqual(ct, { target:4100, rate:0.375, months:{} });
+      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{} });
     }));
 
   test('CA3 Mois en cours : reste à faire réparti sur les jours ouvrés après aujourd’hui', () =>
@@ -52,6 +52,29 @@ test.describe('Objectif de CA', () => {
       await page.fill('#caInput', '');
       await page.click('[data-save-ca]');
       assert.equal(await page.evaluate(() => '2026-10' in state.data.caTracker.months), false);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('CA6 Courses perso : sans commission, converties en équivalent CA Skoot', () =>
+    withApp({ now:'2026-11-10T19:00:00+01:00', data: baseData() }, async ({ page, errors }) => {
+      await page.click('[data-tab="goals"]');
+      await page.fill('#caInput', '2000');
+      await page.fill('#caPersoInput', '300');
+      await page.click('[data-save-ca]');
+      const s = await page.evaluate(() => caMonthStatus(2026, 10));
+      assert.equal(s.skoot, 2000); assert.equal(s.perso, 300);
+      assert.equal(s.ca, 2800);        // 2000 + 300 / 0,375
+      assert.equal(s.payout, 750);     // la commission ne porte que sur Skoot
+      assert.equal(s.totalIn, 1050);
+      assert.equal(s.remaining, 1300);
+      const txt = await page.textContent('.ca-card');
+      assert.match(txt, /Dont courses perso/);
+      // Vider seulement les courses perso garde le CA Skoot
+      await page.fill('#caPersoInput', '');
+      await page.click('[data-save-ca]');
+      const ct = await page.evaluate(() => state.data.caTracker);
+      assert.equal(ct.months['2026-11'], 2000);
+      assert.equal('2026-11' in ct.perso, false);
       assert.deepEqual(errors, []);
     }));
 
