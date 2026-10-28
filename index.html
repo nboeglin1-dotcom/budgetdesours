@@ -599,6 +599,8 @@ function normalizeData(parsed){
       if(!parsed.customCategories) parsed.customCategories = [];
       if(!parsed.recurring) parsed.recurring = [];
       if(!parsed.security) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
+      // Verrou actif sans code enregistre (fichier modifie a la main) : aucun code ne pourrait l'ouvrir.
+      if(parsed.security.enabled && (typeof parsed.security.pin !== 'string' || !parsed.security.pin)) parsed.security = { enabled:false, pin:null, useBiometric:false, credentialId:null };
       if(!parsed.accounts || !parsed.accounts.length) parsed.accounts = [{ id:'main', name:'Compte principal', color: COLORS.gold }];
       if(!parsed.dashboardSettings) parsed.dashboardSettings = { showBreakdown:true, showTrend:true };
       if(parsed.dashboardSettings.showEnvelopesGauge===undefined) parsed.dashboardSettings.showEnvelopesGauge = true;

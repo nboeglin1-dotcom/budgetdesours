@@ -455,6 +455,12 @@ test.describe('Sauvegardes', () => {
     }
   });
 
+  test('S5c Sauvegarde avec verrou actif mais sans code : appli non verrouillée, aucune erreur', () =>
+    withApp({ now: NOW_SEPT, data: baseData({ security:{ enabled:true, pin:null, useBiometric:false, credentialId:null } }) }, async ({ page, errors }) => {
+      assert.equal(await page.evaluate(() => state.locked), false);
+      assert.deepEqual(errors, []);
+    }));
+
   test('S6 Clé principale absente mais instantanés présents : instantané rechargé', () =>
     withApp({ now: NOW_SEPT, data: null, storage: { [SNAP + '2026-09-14']: JSON.stringify(realData()) } }, async ({ page }) => {
       assert.deepEqual(await page.evaluate(() => state.data.transactions.map(t => t.id)), ['reel1']);
