@@ -590,7 +590,7 @@ function seedData(){
     theme: 'ledger',
     pinnedCategories: ['transport', 'loisirs', 'autres_d'],
     hiddenBudgetCategories: [],
-    caTracker: { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.212, persoBase:153, moto:697, motoEnd:'2027-08', shine:null },
+    caTracker: { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shine:null },
   };
 }
 
@@ -636,7 +636,9 @@ function normalizeData(parsed){
       // Virements du 5 : plancher garde sur Shine, URSSAF + versement liberatoire, part perso, credit moto.
       const ctx = parsed.caTracker;
       if(!(Number(ctx.floor) >= 0)) ctx.floor = 1500;
-      if(!(Number(ctx.urssaf) >= 0 && Number(ctx.urssaf) < 1)) ctx.urssaf = 0.212;
+      // Taux preleve sur le CA : 21,2 % de cotisations (services BIC) + 1,7 % de versement liberatoire
+      // + 0,1 % de CFP = 23 %. Les donnees creees avant le 29/10/2026 avaient 21,2 % seul : on corrige.
+      if(!(Number(ctx.urssaf) >= 0 && Number(ctx.urssaf) < 1) || Number(ctx.urssaf) === 0.212) ctx.urssaf = 0.23;
       if(!(Number(ctx.persoBase) >= 0)) ctx.persoBase = 153;
       if(!(Number(ctx.moto) >= 0)) ctx.moto = 697;
       if(typeof ctx.motoEnd !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.motoEnd)) ctx.motoEnd = '2027-08';
@@ -3068,7 +3070,7 @@ function renderShinePlan(){
   if(p){
     const lines = [`Solde restant Shine le ${savedDate} : ${fmt0(p.amount)}`];
     if(!p.after){
-      lines.push(p.hasCa ? `+ versement Skoot de ${MONTHS[p.caM].toLowerCase()}, net d'URSSAF : ${fmt0(p.payoutNet)} (${fmt0(p.payout)} brut)` : `+ versement Skoot : CA de ${MONTHS[p.caM].toLowerCase()} pas encore saisi, compté 0 €`);
+      lines.push(p.hasCa ? `+ versement Skoot de ${MONTHS[p.caM].toLowerCase()}, net d'URSSAF et d'impôt (${String(Math.round(ct.urssaf*1000)/10).replace('.',',')} %) : ${fmt0(p.payoutNet)} (${fmt0(p.payout)} brut)` : `+ versement Skoot : CA de ${MONTHS[p.caM].toLowerCase()} pas encore saisi, compté 0 €`);
       if(p.motoIn) lines.push(`+ remboursement moto Skoot : ${fmt0(p.motoIn)}`);
     }
     lines.push(`− virement perso : ${fmt0(p.perso)}`, `− plancher gardé sur Shine : ${fmt0(p.floor)}`);
@@ -3113,7 +3115,7 @@ function renderCaCard(){
   const ct = state.data.caTracker || {};
   const pct = s.target > 0 ? Math.min(100, Math.round(s.ca / s.target * 100)) : 0;
   const color = s.reached ? 'var(--sage)' : 'var(--gold)';
-  const net = s.totalIn * (1 - (ct.urssaf ?? 0.212));
+  const net = s.totalIn * (1 - (ct.urssaf ?? 0.23));
   let status;
   if(s.reached) status = `<span style="color:var(--sage); font-weight:600;">${icon('spark',11)} Objectif atteint${s.ca > s.target ? ` · +${fmt0(s.ca - s.target)}` : ''}</span>`;
   else if(s.when === 'past') status = `Il a manqué <span class="mono">${fmt0(s.remaining)}</span> sur ce mois.`;
@@ -3159,6 +3161,10 @@ function renderCaCard(){
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;">
           ${caField('caFloorInput', 'Plancher sur Shine (€)', caNum(ct.floor ?? 1500), '1500')}
           ${caField('caPersoBaseInput', 'Perso hors moto (€)', caNum(ct.persoBase ?? 153), '153')}
+        </div>
+        <div style="margin-top:8px;">
+          ${caField('caUrssafInput', 'URSSAF + impôt prélevés sur le CA (%)', caNum(Math.round((ct.urssaf ?? 0.23)*1000)/10), '23')}
+          <div style="font-size:10.5px; color:var(--paperDim); margin-top:4px;">21,2 % de cotisations + 1,7 % de versement libératoire + 0,1 % de formation</div>
         </div>
         <button class="add" data-save-ca-transfer-settings="1" style="width:100%; margin-top:8px; background:var(--surfaceHi); border:1px solid var(--line); color:var(--paper); border-radius:10px; padding:9px; font-size:12.5px; font-weight:600;">Enregistrer les virements</button>
       </details>
@@ -3912,8 +3918,9 @@ function bindEvents(){
   app.querySelectorAll('[data-save-ca-transfer-settings]').forEach(el=>el.addEventListener('click', ()=>{
     const f = parseAmountInput((document.getElementById('caFloorInput')||{}).value);
     const b = parseAmountInput((document.getElementById('caPersoBaseInput')||{}).value);
-    if(!(f >= 0) || !(b >= 0)){ showToast('Réglages invalides'); return; }
-    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); });
+    const u = parseAmountInput((document.getElementById('caUrssafInput')||{}).value);
+    if(!(f >= 0) || !(b >= 0) || !(u >= 0 && u < 100)){ showToast('Réglages invalides'); return; }
+    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; });
     showToast('Réglages enregistrés');
   }));
   app.querySelectorAll('[data-contribute]').forEach(el=>el.addEventListener('click', ()=>{
