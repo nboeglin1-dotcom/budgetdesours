@@ -3074,7 +3074,7 @@ function shineRecurringRule(d = state.data){
     || rules.find(r=>/shine/i.test(r.note||'') || /shine/i.test(catInfo(r.category).label||''))
     || null;
 }
-// Aligne la recurrence « Virement Shine » sur le montant « Vers le commun » des virements du 5 :
+// Aligne la recurrence « Virement Shine » sur le montant « Vers le LCL commun » des virements du 5 :
 // montant de la regle = virement calcule (mois du virement et suivants) ; rien a virer ce mois-ci =
 // echeance de ce mois ignoree. Seulement quand le CA du mois de reference est saisi.
 function syncShineRecurring(d = state.data){
@@ -3128,7 +3128,7 @@ function renderShinePlan(){
       </div>`;
     body = `
       ${row('Vers le LCL perso', p.motoActive ? `${fmt0(ct.moto)} de crédit moto + ${fmt0(ct.persoBase)}` : 'Crédit moto terminé', p.perso, 'var(--paper)')}
-      ${row('Vers le commun', p.short ? `<span style="color:var(--coral);">Shine passerait ${fmt0(p.short)} sous ton plancher : rien ce mois-ci</span>` : `Il restera ≈ ${fmt0(p.shineAfter)} sur Shine`, p.commun, p.short ? 'var(--coral)' : 'var(--sage)')}
+      ${row('Vers le LCL commun', p.short ? `<span style="color:var(--coral);">Shine passerait ${fmt0(p.short)} sous ton plancher : rien ce mois-ci</span>` : `Il restera ≈ ${fmt0(p.shineAfter)} sur Shine`, p.commun, p.short ? 'var(--coral)' : 'var(--sage)')}
       ${!p.hasCa ? `<div class="alert" style="margin:6px 0 0; font-size:12px;">${icon('alert',13)} <div>Saisis le CA de ${MONTHS[p.caM].toLowerCase()} pour un calcul juste.</div></div>` : ''}
       ${p.hasCa && shineRecurringRule() ? `<div data-shine-sync style="font-size:11px; color:var(--paperDim); margin-top:4px;">${icon('repeat',11)} La récurrence « ${escapeHtml(shineRecurringRule().note || 'Virement Shine')} » du compte commun suit ce montant.</div>` : ''}
       <details style="margin-top:6px;">
