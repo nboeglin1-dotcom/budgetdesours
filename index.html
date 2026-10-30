@@ -3141,7 +3141,7 @@ function renderShinePlan(){
   return `
     <div class="card ca-shine-card">
       <div class="row" style="margin-bottom:4px;">
-        <div class="section-title" style="margin:0; font-size:15px;">${p ? `Virements du 5 ${MONTHS[p.payM].toLowerCase()}` : 'Mes virements du 5'}</div>
+        <div class="section-title" style="margin:0; font-size:15px;">${p ? `Prochains virements · 5 ${MONTHS[p.payM].toLowerCase()}` : 'Mes virements du 5'}</div>
       </div>
       ${p ? `<div style="font-size:11.5px; color:var(--paperDim);">Depuis Shine · solde saisi le ${savedDate}</div>` : ''}
       ${body}
