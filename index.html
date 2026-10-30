@@ -2427,16 +2427,23 @@ function renderBalanceContent(stats, showStats){
   `;
 }
 
+// Jours de sauvegarde : le 5 (apres les virements), le mercredi et le dernier jour du mois.
+function isBackupDay(d = new Date()){
+  const last = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  return d.getDate() === 5 || d.getDay() === 3 || d.getDate() === last;
+}
 function renderExportReminder(){
   const last = state.data.lastExportDate;
   const days = last ? Math.floor((Date.now() - new Date(last).getTime()) / 86400000) : null;
-  if(days!==null && days < 7) return '';
+  const todayKey = localYMD(new Date());
+  const backupDay = isBackupDay() && !(last && localYMD(new Date(last)) === todayKey);
+  if(days!==null && days < 7 && !backupDay) return '';
   const snooze = state.data.exportReminderSnooze;
   if(snooze && localYMD(new Date()) <= snooze) return '';
   if((state.data.transactions||[]).length < 5) return '';
   return `
     <div class="card" style="border:1px solid rgba(212,169,79,.4); background:rgba(212,169,79,.10); padding:12px 14px; margin-bottom:14px;">
-      <div style="font-size:13px; color:var(--paper); line-height:1.45; margin-bottom:10px;">${icon('shield',14)} ${days===null ? "Tu n'as encore jamais sauvegardé tes données hors de l'iPhone." : `Dernière sauvegarde il y a ${days} jours.`} Enregistre-la dans iCloud Drive pour ne rien perdre.</div>
+      <div style="font-size:13px; color:var(--paper); line-height:1.45; margin-bottom:10px;">${icon('shield',14)} ${days===null ? "Tu n'as encore jamais sauvegardé tes données hors de l'iPhone." : (days < 7 ? 'Jour de sauvegarde.' : `Dernière sauvegarde il y a ${days} jours.`)} Enregistre-la dans iCloud Drive (dossier Budget) pour ne rien perdre et recevoir le contrôle du soir.</div>
       <div style="display:flex; gap:8px;">
         <button class="btn-primary" data-export-backup="1" style="flex:1; justify-content:center; font-size:12.5px;">${icon('download',13)} Sauvegarder</button>
         <button class="btn-ghost" data-snooze-export="1" style="font-size:12.5px;">Plus tard</button>
@@ -4624,7 +4631,8 @@ function bindEvents(){
   });
 
   app.querySelectorAll('[data-snooze-export]').forEach(el=>el.addEventListener('click', ()=>{
-    const t = new Date(); t.setDate(t.getDate()+2);
+    // « Plus tard » : masque jusqu'a demain (un jour de sauvegarde suivant le refait apparaitre).
+    const t = new Date(); t.setDate(t.getDate()+(isBackupDay() ? 0 : 2));
     mutateData(d=>{ d.exportReminderSnooze = localYMD(t); });
   }));
   app.querySelectorAll('[data-open-recal]').forEach(el=>el.addEventListener('click', ()=>{

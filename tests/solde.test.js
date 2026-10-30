@@ -1344,3 +1344,28 @@ test.describe('Virement Shine aligné sur « Vers le commun »', () => {
     }));
 });
 
+test.describe('Rappel de sauvegarde les jours de sauvegarde', () => {
+  const many = () => Array.from({length:6}, (_,i)=> tx({ id:'x'+i, amount:10, category:'loisirs', date:D('2026-10-0'+(i+1)) }));
+  const shown = (page) => page.evaluate(() => !!document.querySelector('[data-export-backup]'));
+  const cases = [
+    ['2026-11-05T19:00:00+01:00', true,  'le 5'],
+    ['2026-11-04T19:00:00+01:00', true,  'un mercredi'],
+    ['2026-11-30T19:00:00+01:00', true,  'le dernier jour du mois'],
+    ['2026-11-06T19:00:00+01:00', false, 'un vendredi ordinaire'],
+  ];
+  for(const [now, expected, label] of cases){
+    test(`R1 Sauvegarde de 2 jours : bouton ${expected?'affiché':'masqué'} ${label}`, () =>
+      withApp({ now, data: baseData({ transactions: many(), lastExportDate: new Date(new Date(now).getTime() - 2*86400000).toISOString() }) }, async ({ page, errors }) => {
+        assert.equal(await shown(page), expected);
+        assert.deepEqual(errors, []);
+      }));
+  }
+  test('R2 Déjà sauvegardé aujourd’hui ou « Plus tard » touché : plus de bouton ce jour-là', () =>
+    withApp({ now:'2026-11-05T19:00:00+01:00', data: baseData({ transactions: many(), lastExportDate: '2026-11-05T08:00:00.000Z' }) }, async ({ page }) => {
+      assert.equal(await shown(page), false);
+    }).then(() => withApp({ now:'2026-11-05T19:00:00+01:00', data: baseData({ transactions: many(), lastExportDate: '2026-11-03T08:00:00.000Z' }) }, async ({ page }) => {
+      await page.evaluate(() => document.querySelector('[data-snooze-export]').click());
+      assert.equal(await shown(page), false);
+    })));
+});
+
