@@ -91,7 +91,7 @@ test.describe('Objectif de CA', () => {
       assert.equal(p.payM, 10); // virements du 5 novembre
       assert.ok(p.shineAfter >= 1500);
       const txt = await page.textContent('.ca-shine-card');
-      assert.match(txt, /Virements du 5 novembre/);
+      assert.match(txt, /Prochains virements · 5 novembre/);
       assert.match(txt, /920\s€/);
       assert.deepEqual(errors, []);
     }));
