@@ -1069,11 +1069,11 @@ test.describe('Solde après enveloppes', () => {
     rolloverEnabled:false, lastRolloverCheck:'2026-9',
   }, extra));
 
-  test('E1 Mois en cours (calcul) : Reste moins le reste des enveloppes, dépense connue non comptée deux fois', () =>
+  test('E1 Mois en cours (calcul) : Reste moins les dépenses d’enveloppes attendues d’ici la fin du mois (au prorata), dépense connue non comptée deux fois', () =>
     withApp({ now:NOW_OCT, data: data() }, async ({ page, errors }) => {
       const r = await page.evaluate(() => { _forecastCache=null; const s = computeMonthStats(); return { bal:s.bal, after:s.balAfterEnv }; });
       assert.equal(r.bal, 2700);
-      assert.equal(r.after, 2300);
+      assert.ok(Math.abs(r.after - (2700 - 500*7/31 - 100*7/31)) < 0.01, String(r.after));
       assert.deepEqual(errors, []);
     }));
 
@@ -1083,16 +1083,28 @@ test.describe('Solde après enveloppes', () => {
       tx({ id:'c', amount:700, category:'alimentation', date:D('2026-10-10') }) ] }) }, async ({ page }) => {
       const r = await page.evaluate(() => { _forecastCache=null; const s = computeMonthStats(); return { bal:s.bal, after:s.balAfterEnv }; });
       assert.equal(r.bal, 2300);
-      assert.equal(r.after, 2300 - 100 - 100);
+      assert.ok(Math.abs(r.after - (2300 - 2*100*7/31)) < 0.01, String(r.after));
     }));
 
-  test('E3 Prévisionnel : enveloppes des mois suivants déduites en cumul, pas le reste du mois en cours', () =>
+  test('E3 Prévisionnel : enveloppes des mois suivants en cumul + dépenses attendues du mois en cours au prorata', () =>
     withApp({ now:NOW_OCT, data: data() }, async ({ page }) => {
       const p = await page.evaluate(() => { _forecastCache=null; const f = computeForecast(); return f.points.slice(0,2); });
+      const rest = 600*7/31;
       assert.equal(p[0].value, 3700);
-      assert.equal(p[0].afterEnv, 3700 - 700);
-      assert.equal(p[1].afterEnv, p[1].value - 700 - 700);
+      assert.ok(Math.abs(p[0].afterEnv - (3700 - rest - 700)) < 0.01);
+      assert.ok(Math.abs(p[1].afterEnv - (p[1].value - rest - 700 - 700)) < 0.01);
     }));
+
+  test('E3b Début de mois : les enveloppes du mois en cours pèsent presque entièrement sur les mois suivants ; dernier jour : presque rien', () => (async () => {
+    for(const [now, share] of [['2026-11-01T10:00:00+01:00', 30/30], ['2026-11-30T10:00:00+01:00', 1/30]]){
+      await withApp({ now, data: baseData({ budgets:{ alimentation:600 },
+        transactions:[ tx({ id:'s', type:'income', amount:3000, category:'salaire', date:D('2026-11-01') }) ] }) }, async ({ page }) => {
+        const r = await page.evaluate(() => { _forecastCache=null; const f = computeForecast(); return { v:f.points[0].value, a:f.points[0].afterEnv, now:f.envNow }; });
+        assert.ok(Math.abs(r.now - 600*share) < 0.01, JSON.stringify(r));
+        assert.ok(Math.abs(r.a - (r.v - 600*share - 600)) < 0.01, JSON.stringify(r));
+      });
+    }
+  })());
 
   test('E5 Mois futur : solde de fin = solde au 1er + mois en bref (enveloppes comprises)', () =>
     withApp({ now:NOW_OCT, data: data() }, async ({ page, errors }) => {
@@ -1201,7 +1213,7 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.equal(r.tr.spent, 100);
       assert.equal(r.tr.over, 20);
       assert.equal(r.rem, 300 + 100);
-      assert.equal(r.after, r.bal - 400);
+      assert.ok(Math.abs(r.after - (r.bal - 300 - 100*19/30)) < 0.01, String(r.after));
       assert.ok(r.hasReste && r.hasAfter && r.envCard && r.goal);
       assert.deepEqual(errors, []);
     }));

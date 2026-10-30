@@ -2149,6 +2149,16 @@ function envelopeStatus(y, m){
   return { rows, remaining, committed };
 }
 function envelopeRemainingForMonth(y, m){ return envelopeStatus(y, m).remaining; }
+// Mois en cours : ce qu'on s'attend encore a depenser dans les enveloppes d'ici la fin du mois, au rythme
+// de chaque enveloppe (limite x jours restants / jours du mois, aujourd'hui compris), sans depasser son reste.
+// Le 1er, c'est presque toute l'enveloppe ; le dernier jour, presque rien : le reste non depense en fin de
+// mois ne pese plus sur les mois suivants, et en debut de mois les depenses a venir sont bien comptees.
+function envelopeExpectedRest(now = new Date()){
+  const y = now.getFullYear(), m = now.getMonth();
+  const dim = new Date(y, m+1, 0).getDate();
+  const share = (dim - now.getDate() + 1) / dim;
+  return envelopeStatus(y, m).rows.reduce((a,r)=> a + Math.min(r.left, r.limit * share), 0);
+}
 function computeForecast(){
   if(_forecastCache && _forecastCacheToken === _renderToken) return _forecastCache;
   const today = new Date();
@@ -2200,11 +2210,10 @@ function computeForecast(){
   const startBalance = realBalanceToDate + futureRealThisMonth + recFC.income - recFC.expense;
   const points = [];
   let lastValue = startBalance;
-  // Meme projection, enveloppes des mois suivants deduites (cumul). Pas celles du mois en cours :
-  // le solde de fin de mois affiche ne les deduit pas non plus, sinon le reste non depense du
-  // mois en cours pesait a tort sur tous les mois suivants.
-  const envNow = envelopeRemainingForMonth(today.getFullYear(), today.getMonth());
-  let envCum = 0;
+  // Meme projection, enveloppes deduites en cumul : celles des mois suivants en entier, et pour le mois
+  // en cours seulement ce qu'on s'attend encore a y depenser d'ici la fin du mois (envelopeExpectedRest).
+  const envNow = envelopeExpectedRest(today);
+  let envCum = envNow;
   for(let i=1;i<=24;i++){
     let m = today.getMonth()+i, y = today.getFullYear();
     while(m>11){ m-=12; y++; }
@@ -2389,7 +2398,8 @@ function computeMonthStats(){
   const incomeChange = useIncomeEstimate ? null : pctChange(income, prevIncome);
   const expenseChange = useExpenseEstimate ? null : pctChange(expense, prevExpense);
   // Solde au 1er du mois = solde de fin du mois precedent (reel s'il est passe, estime sinon).
-  const startBal = balanceForViewedMonth(f, py, pm);
+  // Mois suivant le mois en cours : on part de la fin de mois estimee, depenses d'enveloppes attendues comprises.
+  const startBal = monthIndex(py, pm) === curIdx ? f.startBalance - f.envNow : balanceForViewedMonth(f, py, pm);
   const adjustments = tx.filter(t=>t.category==='ajustement').reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
 
   return { startBal, adjustments, isFuture, plannedSaving, f, tx, income, expense, rate, bal, balAfterEnv, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth, netTransfers };
