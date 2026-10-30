@@ -3058,6 +3058,36 @@ function shineTransferPlan(){
     shineAfter: afterIn - perso - Math.max(0, Math.floor(raw / 10) * 10),
   };
 }
+// Recurrence « Virement Shine » du compte commun : celle memorisee, sinon un revenu recurrent dont le nom
+// ou la categorie contient « Shine ».
+function shineRecurringRule(d = state.data){
+  const ct = d.caTracker || {};
+  const rules = (d.recurring||[]).filter(r=>r.type==='income');
+  return rules.find(r=>r.id===ct.shineRuleId)
+    || rules.find(r=>/shine/i.test(r.note||'') || /shine/i.test(catInfo(r.category).label||''))
+    || null;
+}
+// Aligne la recurrence « Virement Shine » sur le montant « Vers le commun » des virements du 5 :
+// montant de la regle = virement calcule (mois du virement et suivants) ; rien a virer ce mois-ci =
+// echeance de ce mois ignoree. Seulement quand le CA du mois de reference est saisi.
+function syncShineRecurring(d = state.data){
+  const p = shineTransferPlan();
+  const rule = shineRecurringRule(d);
+  if(!p || !p.hasCa || !rule) return null;
+  d.caTracker.shineRuleId = rule.id;
+  // Echeance naturelle du mois du virement (exceptions ignorees pour la retrouver meme deja ignoree).
+  const occ = ruleOccurrencesForMonth({ ...rule, exceptions:{} }, p.payY, p.payM)[0];
+  if(!rule.exceptions) rule.exceptions = {};
+  const ex = occ ? rule.exceptions[occ.occKey] : null;
+  if(p.commun > 0){
+    rule.amount = p.commun;
+    if(ex && ex.skip) delete rule.exceptions[occ.occKey];
+    else if(ex && ex.amount != null) delete ex.amount;
+  } else if(occ){
+    rule.exceptions[occ.occKey] = { skip:true };
+  }
+  return p.commun;
+}
 // Petits blocs communs aux deux cartes « activite » (meme style que l'accueil).
 const caTile = (label, value, color = 'var(--paper)', sub = '') => `
   <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;">
@@ -3093,6 +3123,7 @@ function renderShinePlan(){
       ${row('Vers le LCL perso', p.motoActive ? `${fmt0(ct.moto)} de crédit moto + ${fmt0(ct.persoBase)}` : 'Crédit moto terminé', p.perso, 'var(--paper)')}
       ${row('Vers le commun', p.short ? `<span style="color:var(--coral);">Shine passerait ${fmt0(p.short)} sous ton plancher : rien ce mois-ci</span>` : `Il restera ≈ ${fmt0(p.shineAfter)} sur Shine`, p.commun, p.short ? 'var(--coral)' : 'var(--sage)')}
       ${!p.hasCa ? `<div class="alert" style="margin:6px 0 0; font-size:12px;">${icon('alert',13)} <div>Saisis le CA de ${MONTHS[p.caM].toLowerCase()} pour un calcul juste.</div></div>` : ''}
+      ${p.hasCa && shineRecurringRule() ? `<div data-shine-sync style="font-size:11px; color:var(--paperDim); margin-top:4px;">${icon('repeat',11)} La récurrence « ${escapeHtml(shineRecurringRule().note || 'Virement Shine')} » du compte commun suit ce montant.</div>` : ''}
       <details style="margin-top:6px;">
         <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Voir le calcul</summary>
         <div style="font-size:11.5px; color:var(--paperDim); margin-top:6px; line-height:1.6;">${lines.map(escapeHtml).join('<br>')}</div>
@@ -3906,6 +3937,7 @@ function bindEvents(){
     mutateData(d=>{
       if(!d.caTracker.perso) d.caTracker.perso = {};
       [['months', skoot], ['perso', perso]].forEach(([f, v])=>{ if(v === null) delete d.caTracker[f][key]; else d.caTracker[f][key] = Math.round(v*100)/100; });
+      syncShineRecurring(d);
     });
     showToast(skoot === null && perso === null ? 'CA du mois effacé' : 'CA mis à jour');
   }));
@@ -3923,14 +3955,14 @@ function bindEvents(){
     const v = parseAmountInput(raw);
     if(!isFinite(v)){ showToast('Montant invalide'); return; }
     const after = (document.getElementById('shineAfterInput')||{}).value === '1';
-    mutateData(d=>{ d.caTracker.shine = { amount: Math.round(v*100)/100, after, date: localYMD(new Date()) }; });
+    mutateData(d=>{ d.caTracker.shine = { amount: Math.round(v*100)/100, after, date: localYMD(new Date()) }; syncShineRecurring(d); });
   }));
   app.querySelectorAll('[data-save-ca-transfer-settings]').forEach(el=>el.addEventListener('click', ()=>{
     const f = parseAmountInput((document.getElementById('caFloorInput')||{}).value);
     const b = parseAmountInput((document.getElementById('caPersoBaseInput')||{}).value);
     const u = parseAmountInput((document.getElementById('caUrssafInput')||{}).value);
     if(!(f >= 0) || !(b >= 0) || !(u >= 0 && u < 100)){ showToast('Réglages invalides'); return; }
-    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; });
+    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; syncShineRecurring(d); });
     showToast('Réglages enregistrés');
   }));
   app.querySelectorAll('[data-contribute]').forEach(el=>el.addEventListener('click', ()=>{

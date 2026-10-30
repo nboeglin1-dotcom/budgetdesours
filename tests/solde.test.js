@@ -1298,3 +1298,49 @@ test.describe('Mois en bref : épargne prévue', () => {
       assert.deepEqual(errors, []);
     }));
 });
+
+test.describe('Virement Shine aligné sur « Vers le commun »', () => {
+  const NOW = '2026-10-30T11:00:00+01:00';
+  const stored = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('solde-budget-data-v1')));
+  const data = (extra={}) => baseData(Object.assign({
+    customCategories:[ { id:'shc', type:'income', label:'Activité (Shine)', color:'#5FB4C4' } ],
+    recurring:[ rule({ id:'vs', type:'income', category:'shc', note:'Virement Shine', amount:1000, nextDate:D('2026-11-05'), anchorDay:5 }) ],
+    caTracker:{ target:4100, rate:0.375, months:{ '2026-10':4047 }, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shine:null },
+  }, extra));
+  const saveShine = (page, v) => page.evaluate((v) => { state.tab='goals'; rerender();
+    document.getElementById('shineInput').value = v; document.querySelector('[data-save-shine]').click(); }, v);
+
+  test('V1 Solde Shine saisi : la récurrence prend le montant « Vers le commun » ; changer le plancher la recalcule', () =>
+    withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
+      await saveShine(page, '1409');
+      let d = await stored(page);
+      const p = await page.evaluate(() => shineTransferPlan().commun);
+      assert.equal(p, 720);
+      assert.equal(d.recurring[0].amount, 720);
+      assert.equal(d.caTracker.shineRuleId, 'vs');
+      await page.evaluate(() => { state.tab='goals'; rerender(); document.getElementById('caFloorInput').value = '1500'; document.querySelector('[data-save-ca-transfer-settings]').click(); });
+      d = await stored(page);
+      assert.equal(d.recurring[0].amount, 920);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('V2 Rien à virer ce mois-ci : l’échéance du mois est ignorée, la règle garde son montant', () =>
+    withApp({ now:NOW, data: data() }, async ({ page }) => {
+      await saveShine(page, '100');
+      const d = await stored(page);
+      const r = d.recurring[0];
+      assert.equal(r.amount, 1000);
+      assert.equal(r.exceptions[String(new Date(D('2026-11-05')).getTime())].skip, true);
+      await saveShine(page, '1409');
+      const r2 = (await stored(page)).recurring[0];
+      assert.equal(r2.amount, 720);
+      assert.ok(!r2.exceptions[String(new Date(D('2026-11-05')).getTime())]);
+    }));
+
+  test('V3 CA du mois de référence non saisi : la récurrence ne bouge pas', () =>
+    withApp({ now:NOW, data: data({ caTracker:{ target:4100, rate:0.375, months:{}, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shine:null } }) }, async ({ page }) => {
+      await saveShine(page, '1409');
+      assert.equal((await stored(page)).recurring[0].amount, 1000);
+    }));
+});
+
