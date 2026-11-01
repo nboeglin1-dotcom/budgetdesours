@@ -1238,6 +1238,18 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.ok(vals.includes('−20€'), vals.join('|'));
     }));
 
+  test('A1 quater Mes enveloppes : le reste total (limites − dépensé) est affiché en gros', () =>
+    withApp({ now:NOW, data: data() }, async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const e = envelopeStatus(state.viewY, state.viewM);
+        const tot = e.rows.reduce((a,x)=>a+x.limit-x.spent,0);
+        const el = document.querySelector('[data-envelopes] [data-env-total]');
+        return { tot, txt: el && el.textContent.replace(/\s/g,'') };
+      });
+      assert.ok(r.txt, 'total absent');
+      assert.equal(r.txt.replace(/[^0-9−]/g,''), (r.tot<0?'−':'') + String(Math.round(Math.abs(r.tot))));
+    }));
+
   test('A4 Le mois en bref : solde au 1er = fin du mois précédent', () =>
     withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
       budgets:{ alimentation:500 },

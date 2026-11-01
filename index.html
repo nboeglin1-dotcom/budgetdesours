@@ -2510,12 +2510,14 @@ function renderDashboard(){
 
     ${env.rows.length ? `
     <div class="card" data-envelopes>
-      <div class="row" style="margin-bottom:6px;">
+      ${(()=>{ const tl=env.rows.reduce((a,r)=>a+r.limit,0), ts=env.rows.reduce((a,r)=>a+r.spent,0), tot=tl-ts;
+        return `<div class="row" style="margin-bottom:2px; align-items:baseline;">
         <div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div>
-        ${env.remaining>0
-          ? `<button data-allocate-remaining="save" data-remaining-amount="${env.remaining}" style="background:none; border:none; padding:0; font-size:12.5px; color:var(--paperDim); display:flex; align-items:center; gap:4px;">reste <span class="mono" style="font-weight:700; color:var(--mint);">${fmt0(env.remaining)}</span>${icon('chevronR',11)}</button>`
-          : `<span style="font-size:12.5px; color:var(--paperDim);">reste <span class="mono" style="font-weight:700;">0 €</span></span>`}
+        <span data-env-total class="mono" style="font-size:22px; font-weight:800; color:${tot<0?'var(--coral)':(tot>0?'var(--mint)':'var(--paper)')};">${tot<0?`−${fmt0(-tot)}`:fmt0(tot)}</span>
       </div>
+      <div class="row" style="margin:0 0 8px; font-size:12.5px; color:var(--paper); opacity:.72;"><span>${tot<0?'Dépassé au total':'Reste au total'}</span><span class="mono">${fmt0(ts)} / ${fmt0(tl)}</span></div>
+      ${env.remaining>0 ? `<button data-allocate-remaining="save" data-remaining-amount="${env.remaining}" style="background:none; border:none; padding:0 0 6px; font-size:12px; color:var(--paperDim); display:flex; align-items:center; gap:4px;">Mettre de côté ${icon('chevronR',11)}</button>` : ''}
+      <div style="border-top:1px solid var(--line); margin:2px 0 2px;"></div>`; })()}
       ${started.map(r=>{
         const pct = Math.min(100, Math.round(r.spent/r.limit*100));
         const bar = r.over>0 ? 'var(--coral)' : (pct>=80 ? 'var(--amber)' : r.color);
