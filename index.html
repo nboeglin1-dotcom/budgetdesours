@@ -123,7 +123,8 @@
   /* Carte « Mes enveloppes » compacte */
   .env-card{padding:14px 16px 10px;}
   .env-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px;}
-  .env-head-left{font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--paperDim);}
+  .env-head-right{display:flex; align-items:baseline; gap:4px;}
+  .env-head-left{min-width:5ch; text-align:right; white-space:nowrap;}
   .env-row{display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px;}
   .env-main{display:block; min-width:0; width:100%; text-align:left; background:none; border:none; padding:7px 0; color:var(--paper);}
   .env-toggle{display:flex; align-items:center; gap:4px; background:none; border:none; padding:7px 0 7px 8px; color:var(--paperDim);}
@@ -2545,7 +2546,7 @@ function renderDashboard(){
 
     ${env.rows.length ? `
     <div class="card env-card" data-envelopes>
-      <div class="env-head"><div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div><div class="env-head-left" data-env-head-left>Reste</div></div>
+      <div class="env-head"><div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div><div class="env-head-right"><div class="section-title env-head-left" data-env-head-left style="margin:0; font-size:15px;">Reste</div><span class="env-chev" aria-hidden="true" style="visibility:hidden;">${icon('chevronR',13)}</span></div></div>
       ${started.concat(untouched).map(r=>{
         const pct = Math.min(100, Math.round(r.spent/r.limit*100));
         const bar = r.over>0 ? 'var(--coral)' : (pct>=80 ? 'var(--amber)' : r.color);
