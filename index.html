@@ -2569,7 +2569,7 @@ function renderDashboard(){
             ${txs.length ? txs.map(t=>`
               <button class="env-tx" data-view-tx="${t.id}">
                 <span class="env-tx-date">${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit', month:'2-digit'})}</span>
-                <span class="env-tx-note">${escapeHtml(t.note && t.note.trim() ? t.note : 'Sans libellé')}</span>
+                ${t.note && t.note.trim() ? `<span class="env-tx-note">${escapeHtml(t.note)}</span>` : `<span class="env-tx-note" style="color:var(--paperDim);">${escapeHtml(catInfo(t.category).label)}</span>`}
                 <span class="mono env-tx-amt">${fmt2(t.amount)}</span>
               </button>`).join('') : `<div class="env-empty">Aucune dépense ce mois-ci</div>`}
             <button class="env-add" data-quick-tx-cat="${r.id}" data-quick-tx-type="expense">${icon('plus',12)} Ajouter une dépense</button>
@@ -4403,7 +4403,9 @@ function bindEvents(){
   app.querySelectorAll('[data-export-backup]').forEach(el=>el.addEventListener('click', async ()=>{
     const dateStr = localYMD(new Date());
     const filename = `solde-sauvegarde-${dateStr}.json`;
-    const jsonStr = JSON.stringify(state.data, null, 2);
+    // Le verrouillage (empreinte du code, Face ID) reste sur l'appareil : il ne part jamais dans le fichier.
+    const { security: _sec, ...exported } = state.data;
+    const jsonStr = JSON.stringify(exported, null, 2);
     const downloadFallback = ()=>{
       try{
         const blob = new Blob([jsonStr], { type:'application/json' });
@@ -4571,6 +4573,8 @@ function bindEvents(){
           ...Object.keys(parsed.budgets||{}),
         ];
         if(idFields.some(badId)) throw new Error('identifiant invalide');
+        // On garde le verrouillage actuel de l'appareil, même si le fichier (ancien) en contient un.
+        parsed.security = JSON.parse(JSON.stringify(state.data.security || { enabled:false, pin:null, useBiometric:false, credentialId:null }));
         state.backupModalOpen = false;
         replaceDataWithUndo(normalizeData(parsed), 'Sauvegarde restaurée');
       }catch(err){

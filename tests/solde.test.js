@@ -274,6 +274,27 @@ test.describe('Export / import', () => {
       assert.deepEqual(errors, []);
     }));
 
+  test('X1 bis Le verrouillage ne part pas dans la sauvegarde ; un import garde celui de l’appareil', async () => {
+    const locked = { enabled:true, pin:'a'.repeat(64), useBiometric:true, credentialId:'abc' };
+    let text;
+    await withApp({ now: NOW_SEPT, data: Object.assign(exportData(), { security: locked }), shareCapture:true }, async ({ page }) => {
+      await page.evaluate(() => { state.locked = false; rerender(); });
+      text = (await doExport(page)).text;
+    });
+    const parsed = JSON.parse(text);
+    assert.equal('security' in parsed, false);
+    assert.doesNotMatch(text, /aaaaaaaa/);
+    const old = JSON.stringify(Object.assign(exportData(), { security:{ enabled:true, pin:'b'.repeat(64), useBiometric:false, credentialId:null } }));
+    await withApp({ now: NOW_SEPT, data: Object.assign(baseData(), { security: locked }) }, async ({ page, errors }) => {
+      await page.evaluate(() => { state.locked = false; rerender(); });
+      await doImport(page, 'sauvegarde.json', old);
+      const sec = await page.evaluate(() => state.data.security);
+      assert.deepEqual(sec, locked);
+      assert.equal(await page.evaluate(() => state.data.transactions.length), 1);
+      assert.deepEqual(errors, []);
+    });
+  });
+
   test('X2 Aller-retour export → import dans une appli vierge', async () => {
     let text;
     await withApp({ now: NOW_SEPT, data: exportData(), shareCapture:true }, async ({ page }) => { text = (await doExport(page)).text; });
