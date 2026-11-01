@@ -2502,26 +2502,16 @@ function renderDashboard(){
 
     ${env.rows.length ? `
     <div class="card" data-envelopes>
-      ${(()=>{ const tl=env.rows.reduce((a,r)=>a+r.limit,0), ts=env.rows.reduce((a,r)=>a+r.spent,0), tot=tl-ts-(env.committed||0);
-        return `<div class="row" style="margin-bottom:2px; align-items:baseline;">
-        <div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div>
-        <span data-env-total class="mono" style="font-size:22px; font-weight:800; color:${tot<0?'var(--coral)':(tot>0?'var(--mint)':'var(--paper)')};">${tot<0?`−${fmt0(-tot)}`:fmt0(tot)}</span>
-      </div>
-      <div class="row" style="margin:0 0 8px; font-size:12.5px; color:var(--paper); opacity:.72;"><span>${tot<0?'Dépassé au total':'Reste au total'}${env.committed>0?` · ${fmt0(env.committed)} déjà mis de côté`:''}</span><span class="mono">${fmt0(ts)} / ${fmt0(tl)}</span></div>
-      <div style="border-top:1px solid var(--line); margin:2px 0 2px;"></div>`; })()}
-      ${started.map(r=>{
+      <div class="section-title" style="margin:0 0 4px; font-size:15px;">Mes enveloppes</div>
+      ${started.concat(untouched).map(r=>{
         const pct = Math.min(100, Math.round(r.spent/r.limit*100));
         const bar = r.over>0 ? 'var(--coral)' : (pct>=80 ? 'var(--amber)' : r.color);
         return `
         <button data-quick-tx-cat="${r.id}" data-quick-tx-type="expense" style="display:block; width:100%; text-align:left; background:none; border:none; padding:8px 0; color:var(--paper);">
           <div class="row" style="margin:0; align-items:baseline;"><span style="font-size:14px;">${escapeHtml(r.label)}</span><span data-env-left class="mono" style="font-size:17px; font-weight:700; color:${r.over>0?'var(--coral)':(r.left>0?'var(--mint)':'var(--paper)')};">${r.over>0 ? `−${fmt0(r.over)}` : fmt0(r.left)}</span></div>
           <div class="catbar-track" style="margin-top:5px;"><div class="catbar-fill" style="width:${pct}%; background:${bar};"></div></div>
-          <div class="row" style="margin:3px 0 0; font-size:12.5px; color:var(--paper); opacity:.72;"><span>${r.over>0 ? 'Dépassée' : (r.left>0 ? 'Reste à dépenser' : 'Pleine')}</span><span class="mono">${fmt0(r.spent)} / ${fmt0(r.limit)}</span></div>
         </button>`;
       }).join('')}
-      ${untouched.length ? `<div style="font-size:12.5px; color:var(--paper); opacity:.72; margin-top:8px;">Pas encore entamées (reste en entier) :</div>
-        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">${untouched.map(r=>`<button data-quick-tx-cat="${r.id}" data-quick-tx-type="expense" style="font-size:12px; border:1px solid var(--line); background:var(--surface); color:var(--paper); border-radius:999px; padding:5px 10px;"><span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:${r.color}; margin-right:5px;"></span>${escapeHtml(r.label)} <span class="mono" style="color:var(--mint); font-weight:700;">${fmt0(r.limit)}</span></button>`).join('')}</div>` : ''}
-      <div style="font-size:10.5px; color:var(--paperDim); margin-top:10px;">Touche une enveloppe pour y ajouter une dépense.</div>
     </div>` : ''}
 
     <div class="card">

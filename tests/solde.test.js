@@ -1203,16 +1203,17 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.ok(vals.includes('−20€'), vals.join('|'));
     }));
 
-  test('A1 quater Mes enveloppes : le reste total (limites − dépensé) est affiché en gros', () =>
+  test('A1 quater Mes enveloppes : seulement le nom et le reste de chaque enveloppe (ni total, ni libellés, ni dépensé / limite)', () =>
     withApp({ now:NOW, data: data() }, async ({ page }) => {
       const r = await page.evaluate(() => {
+        const card = document.querySelector('[data-envelopes]');
         const e = envelopeStatus(state.viewY, state.viewM);
-        const tot = e.rows.reduce((a,x)=>a+x.limit-x.spent,0);
-        const el = document.querySelector('[data-envelopes] [data-env-total]');
-        return { tot, txt: el && el.textContent.replace(/\s/g,'') };
+        return { txt: card.textContent, n: card.querySelectorAll('[data-env-left]').length, rows: e.rows.length,
+                 total: !!card.querySelector('[data-env-total]') };
       });
-      assert.ok(r.txt, 'total absent');
-      assert.equal(r.txt.replace(/[^0-9−]/g,''), (r.tot<0?'−':'') + String(Math.round(Math.abs(r.tot))));
+      assert.equal(r.n, r.rows);
+      assert.equal(r.total, false);
+      assert.doesNotMatch(r.txt, /Reste au total|Reste à dépenser|Dépassée|Pleine|Pas encore entamées| \/ /);
     }));
 
   test('A1 sexies Mes enveloppes : plus de lien « Mettre de côté » (une seule règle, le dernier jour du mois)', () =>
