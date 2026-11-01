@@ -2417,11 +2417,11 @@ function computeMonthStats(){
   const usingEstimate = useIncomeEstimate || useExpenseEstimate;
   let income, expense;
   if(isCurrentMonth){
-    // Mois en cours : reel deja enregistre + echeances connues pas encore passees.
-    // Pas d'estimation statistique de depenses variables en plus (courses, etc.) - meme
-    // logique que "Reste", pour que les deux chiffres du tableau de bord se recoupent.
+    // Mois en cours : reel deja enregistre + echeances connues pas encore passees + ce qu'on s'attend
+    // encore a depenser dans les enveloppes (comme un mois futur et comme « Fin de mois · estime ») :
+    // solde au 1er + revenus - depenses - epargne = fin de mois estimee.
     income = realIncome + recurThisMonth.income;
-    expense = realExpense + recurThisMonth.expense - plannedSaving;
+    expense = realExpense + recurThisMonth.expense - plannedSaving + f.envNow;
     savedThisMonth += plannedSaving;
   } else if(isFuture){
     // Mois futur : entrees et sorties connues, point barre - meme methode que le mois en

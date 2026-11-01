@@ -1256,6 +1256,19 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.equal(n, 0);
     }));
 
+  test('A4 bis Le mois en bref : même calcul ce mois-ci et le mois prochain (enveloppes comprises)', () =>
+    withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => {
+        const at = (y, m) => { state.viewY = y; state.viewM = m; _forecastCache = null; rerender(); const s = computeMonthStats();
+          return { left: s.startBal + s.income - s.expense - s.savedThisMonth, end: s.isFuture ? s.bal : s.balAfterEnv, env: envelopeStatus(y, m).remaining }; };
+        return { nov: at(2026, 10), dec: at(2026, 11) };
+      });
+      assert.ok(r.nov.env > 0);
+      assert.ok(Math.abs(r.nov.left - r.nov.end) < 1, JSON.stringify(r.nov));
+      assert.ok(Math.abs(r.dec.left - r.dec.end) < 1, JSON.stringify(r.dec));
+      assert.deepEqual(errors, []);
+    }));
+
   test('A4 Le mois en bref : solde au 1er = fin du mois précédent', () =>
     withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
       budgets:{ alimentation:500 },
