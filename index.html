@@ -124,7 +124,19 @@
   .env-card{padding:14px 16px 10px;}
   .env-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px;}
   .env-head-left{font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--paperDim);}
-  .env-row{display:grid; grid-template-columns:1fr auto; align-items:center; gap:14px; width:100%; text-align:left; background:none; border:none; padding:7px 0; color:var(--paper);}
+  .env-row{display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px;}
+  .env-main{display:block; min-width:0; width:100%; text-align:left; background:none; border:none; padding:7px 0; color:var(--paper);}
+  .env-toggle{display:flex; align-items:center; gap:4px; background:none; border:none; padding:7px 0 7px 8px; color:var(--paperDim);}
+  .env-chev{display:flex; transition:transform .2s ease; opacity:.7;}
+  .env-item.open .env-chev{transform:rotate(90deg); opacity:1;}
+  .env-drop{margin:2px 0 8px 14px; padding:4px 10px; background:var(--surfaceHi); border-radius:12px; animation:envDrop .18s ease-out;}
+  @keyframes envDrop{from{opacity:0; transform:translateY(-4px);} to{opacity:1; transform:none;}}
+  .env-tx{display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; width:100%; text-align:left; background:none; border:none; padding:8px 0; color:var(--paper); font-size:13px;}
+  .env-tx-date{font-size:11.5px; color:var(--paperDim); font-variant-numeric:tabular-nums;}
+  .env-tx-note{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .env-tx-amt{font-size:13px; font-weight:600;}
+  .env-empty{font-size:12.5px; color:var(--paperDim); padding:8px 0;}
+  .env-add{display:flex; align-items:center; gap:5px; background:none; border:none; color:var(--gold); font-size:12.5px; font-weight:600; padding:6px 0 7px;}
   .env-name{display:flex; align-items:center; gap:7px; font-size:13.5px; white-space:nowrap; overflow:hidden;}
   .env-dot{width:7px; height:7px; border-radius:50%; flex-shrink:0;}
   .env-track{height:4px; border-radius:99px; background:var(--lineSoft); overflow:hidden; margin:6px 0 0 14px;}
@@ -817,6 +829,7 @@ let state = {
   toast: null,
   txFilter: 'all',
   hidePastTx: true,
+  envOpen: null, // enveloppe dont la liste des dépenses est dépliée sur l'accueil
   expandedBudgetCat: null,
   txQuery: '',
   selectedTx: [],
@@ -2536,14 +2549,32 @@ function renderDashboard(){
       ${started.concat(untouched).map(r=>{
         const pct = Math.min(100, Math.round(r.spent/r.limit*100));
         const bar = r.over>0 ? 'var(--coral)' : (pct>=80 ? 'var(--amber)' : r.color);
+        const open = state.envOpen === r.id;
+        const txs = open ? visibleTransactions()
+          .filter(t=> t.type==='expense' && t.category===r.id && !isTxStrictlyRecurring(t) && sameMonth(t.date, state.viewY, state.viewM))
+          .sort((a,b)=> new Date(b.date) - new Date(a.date)) : [];
         return `
-        <button class="env-row" data-quick-tx-cat="${r.id}" data-quick-tx-type="expense">
-          <div style="min-width:0;">
-            <div class="env-name"><span class="env-dot" style="background:${r.color};"></span><span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.label)}</span></div>
-            <div class="env-track"><div class="catbar-fill" style="width:${pct}%; background:${bar};"></div></div>
+        <div class="env-item${open?' open':''}">
+          <div class="env-row">
+            <button class="env-main" data-quick-tx-cat="${r.id}" data-quick-tx-type="expense">
+              <div class="env-name"><span class="env-dot" style="background:${r.color};"></span><span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.label)}</span></div>
+              <div class="env-track"><div class="catbar-fill" style="width:${pct}%; background:${bar};"></div></div>
+            </button>
+            <button class="env-toggle" data-env-toggle="${r.id}" aria-expanded="${open}" aria-label="Voir les dépenses ${escapeHtml(r.label)}">
+              <span data-env-left class="mono env-left" style="color:${r.over>0?'var(--coral)':(r.left>0?'var(--mint)':'var(--paperDim)')};">${r.over>0 ? `−${fmt0(r.over)}` : fmt0(r.left)}</span>
+              <span class="env-chev">${icon('chevronR',13)}</span>
+            </button>
           </div>
-          <span data-env-left class="mono env-left" style="color:${r.over>0?'var(--coral)':(r.left>0?'var(--mint)':'var(--paperDim)')};">${r.over>0 ? `−${fmt0(r.over)}` : fmt0(r.left)}</span>
-        </button>`;
+          ${open ? `<div class="env-drop" data-env-drop="${r.id}">
+            ${txs.length ? txs.map(t=>`
+              <button class="env-tx" data-view-tx="${t.id}">
+                <span class="env-tx-date">${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit', month:'2-digit'})}</span>
+                <span class="env-tx-note">${escapeHtml(t.note && t.note.trim() ? t.note : 'Sans libellé')}</span>
+                <span class="mono env-tx-amt">${fmt2(t.amount)}</span>
+              </button>`).join('') : `<div class="env-empty">Aucune dépense ce mois-ci</div>`}
+            <button class="env-add" data-quick-tx-cat="${r.id}" data-quick-tx-type="expense">${icon('plus',12)} Ajouter une dépense</button>
+          </div>` : ''}
+        </div>`;
       }).join('')}
     </div>` : ''}
 
@@ -4776,6 +4807,10 @@ function bindEvents(){
     });
   }));
 
+  app.querySelectorAll('[data-env-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.envToggle;
+    setState({ envOpen: state.envOpen === id ? null : id });
+  }));
   app.querySelectorAll('[data-quick-tx-cat]').forEach(el=>el.addEventListener('click', ()=>{
     const catId = el.dataset.quickTxCat;
     const type = el.dataset.quickTxType;

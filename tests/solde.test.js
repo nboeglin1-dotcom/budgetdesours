@@ -1218,6 +1218,17 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.doesNotMatch(r.txt, /Reste au total|Reste à dépenser|Dépassée|Pleine|Pas encore entamées| \/ /);
     }));
 
+  test('A1 septies Mes enveloppes : le menu déroulant liste les dépenses de l’enveloppe (sans les récurrences)', () =>
+    withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
+      assert.equal(await page.$$eval('[data-env-drop]', els => els.length), 0);
+      await page.evaluate(() => document.querySelector('[data-env-toggle="transport"]').click());
+      const ids = await page.$$eval('[data-env-drop="transport"] [data-view-tx]', els => els.map(e => e.dataset.viewTx));
+      assert.deepEqual(ids, ['t']);
+      await page.evaluate(() => document.querySelector('[data-env-toggle="transport"]').click());
+      assert.equal(await page.$$eval('[data-env-drop]', els => els.length), 0);
+      assert.deepEqual(errors, []);
+    }));
+
   test('A1 sexies Mes enveloppes : plus de lien « Mettre de côté » (une seule règle, le dernier jour du mois)', () =>
     withApp({ now:NOW, data: data() }, async ({ page }) => {
       const n = await page.$$eval('[data-envelopes] [data-allocate-remaining]', els => els.length);
