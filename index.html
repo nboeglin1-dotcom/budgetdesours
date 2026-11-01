@@ -2157,7 +2157,31 @@ function envelopeExpectedRest(now = new Date()){
   const y = now.getFullYear(), m = now.getMonth();
   const dim = new Date(y, m+1, 0).getDate();
   const share = (dim - now.getDate() + 1) / dim;
-  return envelopeStatus(y, m).rows.reduce((a,r)=> a + Math.min(r.left, r.limit * share), 0);
+  const e = envelopeStatus(y, m);
+  const paced = e.rows.reduce((a,r)=> a + Math.min(r.left, r.limit * share), 0);
+  // Ce qui a ete mis de cote depuis les enveloppes ne sera plus depense : on ne le compte pas deux fois.
+  return Math.min(paced, Math.max(0, e.rows.reduce((a,r)=>a + r.left, 0) - (e.committed||0)));
+}
+// Coussin a garder sur le compte commun en fin de mois.
+const CUSHION = 500;
+// Plus gros montant a mettre de cote depuis les enveloppes (mois en cours) sans faire passer
+// « Fin de mois · estimé » sous le coussin (ni plus bas qu'aujourd'hui s'il y est deja).
+function maxSaveKeepingCushion(proposed){
+  if(!(proposed > 0)) return 0;
+  const today = new Date();
+  const f = computeForecast();
+  const start = f.startBalance, env = f.envNow;
+  const floor = Math.min(CUSHION, start - env);
+  const y = today.getFullYear(), m = today.getMonth();
+  const dim = new Date(y, m+1, 0).getDate();
+  const share = (dim - today.getDate() + 1) / dim;
+  const e = envelopeStatus(y, m);
+  const paced = e.rows.reduce((a,r)=> a + Math.min(r.left, r.limit * share), 0);
+  const sumLeft = e.rows.reduce((a,r)=>a + r.left, 0);
+  const finAfter = x => start - x - Math.min(paced, Math.max(0, sumLeft - (e.committed||0) - x));
+  let lo = 0, hi = Math.floor(proposed);
+  while(lo < hi){ const mid = Math.ceil((lo+hi)/2); if(finAfter(mid) >= floor - 0.005) lo = mid; else hi = mid - 1; }
+  return lo;
 }
 function computeForecast(){
   if(_forecastCache && _forecastCacheToken === _renderToken) return _forecastCache;
@@ -2510,7 +2534,7 @@ function renderDashboard(){
 
     ${env.rows.length ? `
     <div class="card" data-envelopes>
-      ${(()=>{ const tl=env.rows.reduce((a,r)=>a+r.limit,0), ts=env.rows.reduce((a,r)=>a+r.spent,0), tot=tl-ts-(env.committed||0), toSave=Math.max(0, Math.min(env.remaining, Math.floor(tot)));
+      ${(()=>{ const tl=env.rows.reduce((a,r)=>a+r.limit,0), ts=env.rows.reduce((a,r)=>a+r.spent,0), tot=tl-ts-(env.committed||0), toSave0=Math.max(0, Math.min(env.remaining, Math.floor(tot))), isCur=monthIndex(state.viewY,state.viewM)===monthIndex(new Date().getFullYear(),new Date().getMonth()), toSave=isCur?maxSaveKeepingCushion(toSave0):toSave0;
         return `<div class="row" style="margin-bottom:2px; align-items:baseline;">
         <div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div>
         <span data-env-total class="mono" style="font-size:22px; font-weight:800; color:${tot<0?'var(--coral)':(tot>0?'var(--mint)':'var(--paper)')};">${tot<0?`−${fmt0(-tot)}`:fmt0(tot)}</span>
