@@ -2661,10 +2661,17 @@ function renderTrendCard(){
   for(let i=11;i>=0;i--){
     let m = state.viewM-i, y=state.viewY;
     if(m<0){m+=12;y--;}
-    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m));
-    const inc = txs.filter(t=>t.type==='income' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
-    const exp = txs.filter(t=>t.type==='expense' && isRealIncExp(t)).reduce((s,t)=>s+t.amount,0);
-    const plan = monthIndex(y,m) >= trendCurIdx ? recurringOccurrencesInMonth(y,m) : {income:0, expense:0};
+    // Même règle que la tuile « À venir » des transactions : une opération saisie à une date future
+    // compte dans « à venir », et l'épargne (virements auto vers les objectifs) reste exclue.
+    const endToday = new Date(); endToday.setHours(23,59,59,999);
+    const txs = visibleTransactions().filter(t=>sameMonth(t.date,y,m) && isRealIncExp(t));
+    const done = txs.filter(t=> new Date(t.date) <= endToday), later = txs.filter(t=> new Date(t.date) > endToday);
+    const sum = (arr, type)=> arr.filter(t=>t.type===type).reduce((s,t)=>s+t.amount,0);
+    const inc = sum(done,'income'), exp = sum(done,'expense');
+    const occ = [];
+    if(monthIndex(y,m) >= trendCurIdx) recurringOccurrencesInMonth(y,m,occ);
+    const occReal = occ.filter(o=> isRealIncExp(o));
+    const plan = { income: sum(later,'income') + sum(occReal,'income'), expense: sum(later,'expense') + sum(occReal,'expense') };
     trend.push({ key: y+'-'+m, label: MONTHS_SHORT[m], name: MONTHS[m]+(y!==new Date().getFullYear()?' '+y:''), isView: i===0, inc, exp, incPlan: plan.income, expPlan: plan.expense });
   }
   // On masque les mois vides du debut (avant la premiere donnee), en gardant au moins 3 mois.
