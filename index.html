@@ -2502,7 +2502,7 @@ function renderDashboard(){
 
     ${env.rows.length ? `
     <div class="card" data-envelopes>
-      <div class="row" style="margin:0 0 4px; align-items:baseline;"><div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div><div class="section-title" data-env-head-left style="margin:0; font-size:15px;">Reste</div></div>
+      <div class="row" style="margin:0 0 4px; align-items:baseline;"><div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div><div class="mono" style="font-size:17px; font-weight:700; width:5ch; flex-shrink:0;"><div class="section-title" data-env-head-left style="margin:0; font-size:15px; text-align:left; white-space:nowrap;">Reste</div></div></div>
       ${started.concat(untouched).map(r=>{
         const pct = Math.min(100, Math.round(r.spent/r.limit*100));
         const bar = r.over>0 ? 'var(--coral)' : (pct>=80 ? 'var(--amber)' : r.color);
