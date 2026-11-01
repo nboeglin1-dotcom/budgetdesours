@@ -1218,6 +1218,20 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.deepEqual(errors, []);
     }));
 
+  test('A1 bis « Fin de mois · estimé » affiche le solde enveloppes déduites (mois en cours)', () =>
+    withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => {
+        const s = computeMonthStats(); const f = computeForecast();
+        return { after: s.balAfterEnv, shown: displayedEndOfMonth(f, state.viewY, state.viewM),
+          txt: document.getElementById('balanceNum').textContent };
+      });
+      assert.ok(Math.abs(r.shown - r.after) < 0.01);
+      await page.waitForTimeout(1200);
+      const txt = await page.evaluate(() => document.getElementById('balanceNum').textContent);
+      assert.equal(txt.replace(/\D/g,''), String(Math.round(Math.abs(r.after))));
+      assert.deepEqual(errors, []);
+    }));
+
   test('A4 Le mois en bref : solde au 1er = fin du mois précédent', () =>
     withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
       budgets:{ alimentation:500 },

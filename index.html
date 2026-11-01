@@ -2271,6 +2271,13 @@ function computeCategoryForecast(targetExpense, viewY, viewM){
 }
 function monthIndex(y,m){ return y*12+m; }
 
+// Montant affiche dans « Fin de mois · estimé » : pour le mois en cours, enveloppes deduites
+// (ce qu'on s'attend encore a y depenser), comme pour les mois futurs.
+function displayedEndOfMonth(f, viewY, viewM){
+  const today = new Date();
+  if(monthIndex(viewY, viewM) === monthIndex(today.getFullYear(), today.getMonth())) return f.startBalance - f.envNow;
+  return balanceForViewedMonth(f, viewY, viewM);
+}
 function balanceForViewedMonth(f, viewY, viewM){
   const today = new Date();
   const curIdx = monthIndex(today.getFullYear(), today.getMonth());
@@ -2409,9 +2416,10 @@ function renderBalanceContent(stats, showStats){
   if(showStats===undefined) showStats = true;
   const { bal, rate, usingEstimate, f } = stats;
   const env = envelopeStatus(state.viewY, state.viewM);
+  const shown = displayedEndOfMonth(f, state.viewY, state.viewM);
   return `
       <div class="eyebrow" style="margin-bottom:8px;">Fin de mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
-      <div style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${bal<0?'var(--coral)':'var(--mint)'};">${fmt0(bal)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromRate(rate), 72)}</div></div>
+      <div style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${shown<0?'var(--coral)':'var(--mint)'};">${fmt0(shown)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromRate(rate), 72)}</div></div>
       ${(()=>{
         const td = new Date();
         if(!showStats || state.viewY!==td.getFullYear() || state.viewM!==td.getMonth()) return '';
@@ -4888,7 +4896,7 @@ function bindEvents(){
   const balEl = document.getElementById('balanceNum');
   if(balEl){
     const f0 = computeForecast();
-    const target0 = balanceForViewedMonth(f0, state.viewY, state.viewM);
+    const target0 = displayedEndOfMonth(f0, state.viewY, state.viewM);
     animateBalance(balEl, target0);
   }
 
