@@ -97,6 +97,27 @@
   .tx-note{font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .tx-meta{font-size:11.5px; color:var(--paperDim); margin-top:1px;}
   .tx-amt{font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:500; white-space:nowrap;}
+  /* Liste des transactions : en-têtes de jour sans total, lignes plus aérées */
+  .tx-list-card{padding-top:8px; padding-bottom:8px;}
+  .tx-day{display:flex; align-items:center; gap:10px; padding:16px 2px 6px;}
+  .tx-day:first-child{padding-top:6px;}
+  .tx-day-label{font-size:13px; font-weight:600; color:var(--paper); white-space:nowrap;}
+  .tx-day-label.today{color:var(--gold);}
+  .tx-day-date{font-size:11.5px; color:var(--paperDim); white-space:nowrap;}
+  .tx-day::after{content:''; flex:1; height:1px; background:var(--lineSoft);}
+  .tx-section{display:flex; align-items:center; gap:7px; margin:18px 2px 2px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gold);}
+  .tx-section:first-child{margin-top:6px;}
+  .tx-list-card .txrow{padding:10px 4px; border-bottom:none;}
+  .tx-list-card .swipe-wrap{border-radius:0 !important;}
+  .tx-list-card .swipe-wrap + .swipe-wrap .txrow{border-top:1px solid var(--lineSoft);}
+  .tx-ico{width:36px; height:36px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700;}
+  .tx-ico.pending{background:transparent !important; border:1.5px dashed var(--line);}
+  .tx-list-card .tx-note{font-size:14px; font-weight:500;}
+  .tx-list-card .tx-meta{display:flex; align-items:center; gap:5px; margin-top:2px; white-space:nowrap; overflow:hidden;}
+  .tx-meta .acc-dot{width:6px; height:6px; border-radius:50%; flex-shrink:0;}
+  .tx-tag{font-size:9.5px; font-weight:700; letter-spacing:.05em; color:var(--gold); background:rgba(212,169,79,.12); border-radius:5px; padding:2px 5px; flex-shrink:0;}
+  .tx-list-card .tx-amt{font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; padding-left:10px;}
+  .tx-amt .cts{font-size:11.5px; font-weight:500; opacity:.6;}
   .tx-del{padding:9px; color:var(--coral); opacity:.7; min-width:32px; min-height:32px; display:flex; align-items:center; justify-content:center;}
   .catbar-row{margin-bottom:10px;}
   .catbar-track{height:8px; border-radius:99px; background:var(--lineSoft); overflow:hidden; margin:6px 0;}
@@ -2690,24 +2711,53 @@ function renderMonthPickerModal(){
   `;
 }
 
+// Montant d'une ligne : euros bien lisibles, centimes plus discrets.
+function txAmtHtml(t, color){
+  const s = fmt2(t.amount), i = s.lastIndexOf(',');
+  const sign = t.type==='income' ? '+' : '−';
+  const body = i>0 ? `${s.slice(0,i)}<span class="cts">${s.slice(i)}</span>` : s;
+  return `<div class="tx-amt" style="color:${color || (t.type==='income'?'var(--sage)':'var(--paper)')}">${sign}${body}</div>`;
+}
+// Pastille de catégorie : initiale de la catégorie sur fond teinté (ou la photo du ticket).
+function txIcoHtml(t, info, pending){
+  if(t.photo && !pending) return `<img src="${t.photo}" class="tx-ico" style="object-fit:cover;">`;
+  const letter = escapeHtml(((info.label||'?').trim()[0]||'?').toUpperCase());
+  return `<div class="tx-ico${pending?' pending':''}" style="background:${info.color}24; color:${info.color};">${letter}</div>`;
+}
+// Ligne « compte · catégorie » sous le libellé (le jour est déjà dans l'en-tête).
+function txMetaHtml(t, info){
+  const accounts = state.data.accounts || [];
+  const acc = accounts.length>1 ? accounts.find(a=>a.id===(t.accountId||'main')) : null;
+  return `<div class="tx-meta">${acc ? `<span class="acc-dot" style="background:${acc.color};"></span><span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(acc.name)}</span><span>·</span>` : ''}<span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(info.label)}</span></div>`;
+}
 function txRow(t, delBtn){
   const info = catInfo(t.category);
   const isRecurringTx = t.recurringId || (state.data.recurring||[]).some(r=> r.type===t.type && r.category===t.category && r.amount===t.amount);
-  const content = `
+  const recurIco = isRecurringTx ? `<span style="color:var(--gold); flex-shrink:0; display:flex;" title="Transaction récurrente">${icon('repeat',12)}</span>` : '';
+  if(!delBtn){
+    const content = `
     <div class="tx-left">
       ${t.photo ? `<img src="${t.photo}" style="width:32px; height:32px; border-radius:9px; object-fit:cover; flex-shrink:0;">` : `<div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>`}
       <div style="min-width:0;">
-        <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}${isRecurringTx ? `<span style="color:var(--gold); flex-shrink:0; display:flex;" title="Transaction récurrente">${icon('repeat',12)}</span>` : ''}</div>
+        <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}${recurIco}</div>
         <div class="tx-meta">${escapeHtml(info.label)} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
       </div>
     </div>
     <div style="display:flex; align-items:center; gap:6px;">
-      <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>
-      ${!delBtn ? icon('chevronR',14) : ''}
+      ${txAmtHtml(t)}
+      ${icon('chevronR',14)}
     </div>`;
-  if(!delBtn){
     return `<div class="txrow" data-view-tx="${t.id}" style="cursor:pointer;">${content}</div>`;
   }
+  const content = `
+    <div class="tx-left">
+      ${txIcoHtml(t, info)}
+      <div style="min-width:0;">
+        <div class="tx-note" style="display:flex; align-items:center; gap:5px;"><span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(t.note || info.label)}</span>${recurIco}</div>
+        ${txMetaHtml(t, info)}
+      </div>
+    </div>
+    ${txAmtHtml(t)}`;
   return `
     <div class="swipe-wrap" style="position:relative; overflow:hidden; border-radius:12px;">
       <div class="swipe-actions" style="position:absolute; inset:0; display:flex; align-items:stretch; justify-content:flex-end;">
@@ -2792,19 +2842,21 @@ function renderTransactions(){
         if(diffDays===1) return 'Demain';
         return d.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
       };
-      // Total net du jour a droite de chaque en-tete (hors virements internes et epargne).
-      const dayNet = {};
-      list.forEach(t=>{ if(!isRealIncExp(t)) return; const k = new Date(t.date).toDateString(); dayNet[k] = (dayNet[k]||0) + (t.type==='income' ? t.amount : -t.amount); });
-      let lastKey = null;
+      // En-tête de jour sans total ; une étiquette « À venir » sépare le passé du prévu.
+      const shortDate = d => new Date(d).toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
+      let lastKey = null, upcomingShown = false;
       return list.map(t=>{
         const key = new Date(t.date).toDateString();
+        const isUp = t.isPending || new Date(t.date).getTime() > endToday;
         let header = '';
+        if(isUp && !upcomingShown && pastAndToday.length){
+          header += `<div class="tx-section">À venir</div>`;
+          upcomingShown = true;
+        }
         if(key!==lastKey){
-          const n = dayNet[key] || 0;
-          header = `<div class="row" style="margin:0; padding:${lastKey===null?'2px':'14px'} 2px 6px; ${lastKey===null?'':'border-top:1px solid var(--lineSoft); margin-top:8px;'}">
-            <span style="font-size:11.5px; font-weight:600; color:var(--paperDim); text-transform:uppercase; letter-spacing:.03em;">${dayLabelFor(t.date)}</span>
-            ${Math.abs(n)>=0.005 ? `<span class="mono" style="font-size:11.5px; color:${n>0?'var(--sage)':'var(--paperDim)'};">${n>0?'+':'−'}${fmt2(Math.abs(n))}</span>` : ''}
-          </div>`;
+          const label = dayLabelFor(t.date);
+          const relative = ["Aujourd'hui",'Hier','Demain'].includes(label);
+          header += `<div class="tx-day"><span class="tx-day-label${label==="Aujourd'hui"?' today':''}">${relative ? label : label.charAt(0).toUpperCase()+label.slice(1)}</span>${relative ? `<span class="tx-day-date">${shortDate(t.date)}</span>` : ''}</div>`;
         }
         lastKey = key;
         return header + (t.isPending ? previewTxRow(t) : txRow(t,true));
@@ -2818,20 +2870,20 @@ function previewTxRow(t){
   const rowId = 'pv:' + t.ruleId + ':' + t.occKey + ':' + (t.isGoalTransfer ? 'g' : 't');
   const content = `
     <div class="tx-left">
-      <div class="swatch" style="background:${info.color}22;"><span class="dot" style="background:${info.color};"></span></div>
+      ${txIcoHtml(t, info, true)}
       <div style="min-width:0;">
-        <div class="tx-note" style="display:flex; align-items:center; gap:5px;">${escapeHtml(t.note || info.label)}<span style="color:var(--gold); font-size:10px; font-weight:600; border:1px solid rgba(212,169,79,.4); border-radius:5px; padding:1px 5px;">PRÉVU</span>${t.edited ? `<span style="color:var(--paperDim); flex-shrink:0; display:flex;" title="Modifiée pour cette échéance">${icon('pencil',11)}</span>` : ''}</div>
-        <div class="tx-meta">${escapeHtml(info.label)} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}</div>
+        <div class="tx-note" style="display:flex; align-items:center; gap:6px; color:var(--paperDim);"><span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(t.note || info.label)}</span><span class="tx-tag">PRÉVU</span>${t.edited ? `<span style="color:var(--paperDim); flex-shrink:0; display:flex;" title="Modifiée pour cette échéance">${icon('pencil',11)}</span>` : ''}</div>
+        ${txMetaHtml(t, info)}
       </div>
     </div>
-    <div class="tx-amt" style="color:${t.type==='income'?'var(--sage)':'var(--paper)'}">${t.type==='income'?'+':'−'}${fmt2(t.amount)}</div>`;
+    ${txAmtHtml(t, t.type==='income' ? 'var(--sage)' : 'var(--paperDim)')}`;
   return `
-    <div class="swipe-wrap" style="position:relative; overflow:hidden; border-radius:10px;">
+    <div class="swipe-wrap" style="position:relative; overflow:hidden; border-radius:12px;">
       <div class="swipe-actions" style="position:absolute; inset:0; display:flex; align-items:stretch; justify-content:flex-end;">
         <button data-edit-preview="${rowId}" style="width:56px; background:var(--gold); color:var(--ink); display:flex; align-items:center; justify-content:center;" title="Modifier cette échéance">${icon('pencil',16)}</button>
         <button data-skip-preview="${rowId}" style="width:56px; background:var(--coral); color:var(--ink); display:flex; align-items:center; justify-content:center;" title="Ignorer cette échéance">${icon('trash',16)}</button>
       </div>
-      <div class="txrow swipe-content" data-swipe-row="${rowId}" style="background:var(--surface); border:1px dashed var(--line); position:relative; touch-action:pan-y;"><div style="display:contents; opacity:.6;">${content}</div></div>
+      <div class="txrow swipe-content" data-swipe-row="${rowId}" style="background:var(--surface); position:relative; touch-action:pan-y;">${content}</div>
     </div>`;
 }
 
