@@ -1250,6 +1250,25 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.equal(r.txt.replace(/[^0-9−]/g,''), (r.tot<0?'−':'') + String(Math.round(Math.abs(r.tot))));
     }));
 
+  test('A1 quinquies Mettre de côté : jamais plus que le reste total, et ce qui est déjà mis de côté est retiré', () =>
+    withApp({ now:NOW, data: data() }, async ({ page }) => {
+      const r = await page.evaluate(() => {
+        const e = envelopeStatus(state.viewY, state.viewM);
+        const tot = e.rows.reduce((a,x)=>a+x.limit-x.spent,0) - e.committed;
+        const m = renderDashboard().match(/data-allocate-remaining="save" data-remaining-amount="([^"]+)"/);
+        return { tot, left: e.remaining, prop: m ? Number(m[1]) : 0, anyOver: e.rows.some(x=>x.over>0) };
+      });
+      assert.ok(r.prop <= Math.max(0, r.tot) + 0.01, JSON.stringify(r));
+      assert.ok(r.prop <= r.left + 0.01, JSON.stringify(r));
+      await page.evaluate(() => { mutateData(d=>{ d.envelopeCommitted[state.viewY+'-'+state.viewM] = 100; }); rerender(); });
+      const r2 = await page.evaluate(() => {
+        const e = envelopeStatus(state.viewY, state.viewM);
+        const tot = e.rows.reduce((a,x)=>a+x.limit-x.spent,0) - 100;
+        return { tot, txt: document.querySelector('[data-env-total]').textContent.replace(/\s/g,'') };
+      });
+      assert.equal(r2.txt.replace(/[^0-9−]/g,''), (r2.tot<0?'−':'') + String(Math.round(Math.abs(r2.tot))));
+    }));
+
   test('A4 Le mois en bref : solde au 1er = fin du mois précédent', () =>
     withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
       budgets:{ alimentation:500 },
