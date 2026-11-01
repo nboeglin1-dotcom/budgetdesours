@@ -1213,6 +1213,8 @@ test.describe('Nouvelle page d’accueil', () => {
       });
       assert.equal(r.n, r.rows);
       assert.equal(r.total, false);
+      const head = await page.$eval('[data-envelopes] [data-env-head-left]', el => el.textContent.trim());
+      assert.equal(head, 'Reste');
       assert.doesNotMatch(r.txt, /Reste au total|Reste à dépenser|Dépassée|Pleine|Pas encore entamées| \/ /);
     }));
 
