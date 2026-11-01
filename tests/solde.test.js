@@ -1247,47 +1247,11 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.equal(r.txt.replace(/[^0-9−]/g,''), (r.tot<0?'−':'') + String(Math.round(Math.abs(r.tot))));
     }));
 
-  test('A1 quinquies Mettre de côté : jamais plus que le reste total, et ce qui est déjà mis de côté est retiré', () =>
+  test('A1 sexies Mes enveloppes : plus de lien « Mettre de côté » (une seule règle, le dernier jour du mois)', () =>
     withApp({ now:NOW, data: data() }, async ({ page }) => {
-      const r = await page.evaluate(() => {
-        const e = envelopeStatus(state.viewY, state.viewM);
-        const tot = e.rows.reduce((a,x)=>a+x.limit-x.spent,0) - e.committed;
-        const m = renderDashboard().match(/data-allocate-remaining="save" data-remaining-amount="([^"]+)"/);
-        return { tot, left: e.remaining, prop: m ? Number(m[1]) : 0, anyOver: e.rows.some(x=>x.over>0) };
-      });
-      assert.ok(r.prop <= Math.max(0, r.tot) + 0.01, JSON.stringify(r));
-      assert.ok(r.prop <= r.left + 0.01, JSON.stringify(r));
-      await page.evaluate(() => { mutateData(d=>{ d.envelopeCommitted[state.viewY+'-'+state.viewM] = 100; }); rerender(); });
-      const r2 = await page.evaluate(() => {
-        const e = envelopeStatus(state.viewY, state.viewM);
-        const tot = e.rows.reduce((a,x)=>a+x.limit-x.spent,0) - 100;
-        return { tot, txt: document.querySelector('[data-env-total]').textContent.replace(/\s/g,'') };
-      });
-      assert.equal(r2.txt.replace(/[^0-9−]/g,''), (r2.tot<0?'−':'') + String(Math.round(Math.abs(r2.tot))));
+      const n = await page.$$eval('[data-envelopes] [data-allocate-remaining]', els => els.length);
+      assert.equal(n, 0);
     }));
-
-  for (const when of ['2026-11-03T10:00:00+01:00', '2026-11-29T10:00:00+01:00']) {
-  test('A1 sexies Mettre de côté garde le coussin de 500 € en fin de mois (' + when.slice(0,10) + ')', () =>
-    withApp({ now:when, data: baseData({
-      budgets:{ alimentation:600, loisirs:200 },
-      transactions:[
-        tx({ id:'s', type:'income', amount:1400, category:'salaire', date:D('2026-11-01') }),
-        tx({ id:'a', amount:150, category:'alimentation', date:D('2026-11-02') }),
-      ] }) }, async ({ page }) => {
-      const r = await page.evaluate(() => {
-        mutateData(d=>{ d.goals.push({ id:'g1', name:'Test', target:5000, current:0, color:'#888', accountId:'main' }); });
-        const finBefore = displayedEndOfMonth(computeForecast(), state.viewY, state.viewM);
-        const m = renderDashboard().match(/data-allocate-remaining="save" data-remaining-amount="([^"]+)"/);
-        const prop = m ? Number(m[1]) : 0;
-        if(prop>0){ goalContribute('g1', prop); const key=state.viewY+'-'+state.viewM;
-          mutateData(d=>{ d.envelopeCommitted[key]=(d.envelopeCommitted[key]||0)+prop; d.transactions[0].committedMonth=key; }); }
-        rerender();
-        const finAfter = displayedEndOfMonth(computeForecast(), state.viewY, state.viewM);
-        return { finBefore, finAfter, prop };
-      });
-      assert.ok(r.finAfter >= Math.min(500, r.finBefore) - 0.5, JSON.stringify(r));
-    }));
-  }
 
   test('A4 Le mois en bref : solde au 1er = fin du mois précédent', () =>
     withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
