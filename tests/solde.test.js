@@ -1232,6 +1232,12 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.deepEqual(errors, []);
     }));
 
+  test('A1 ter Mes enveloppes : le reste de chaque enveloppe est le montant mis en avant', () =>
+    withApp({ now:NOW, data: data() }, async ({ page }) => {
+      const vals = await page.$$eval('[data-envelopes] [data-env-left]', els => els.map(e => e.textContent.replace(/\s/g,'')));
+      assert.ok(vals.includes('−20€'), vals.join('|'));
+    }));
+
   test('A4 Le mois en bref : solde au 1er = fin du mois précédent', () =>
     withApp({ now:'2026-11-27T10:00:00+01:00', data: baseData({
       budgets:{ alimentation:500 },
