@@ -1356,20 +1356,20 @@ test.describe('Virement Shine aligné sur « Vers le commun »', () => {
   const data = (extra={}) => baseData(Object.assign({
     customCategories:[ { id:'shc', type:'income', label:'Activité (Shine)', color:'#5FB4C4' } ],
     recurring:[ rule({ id:'vs', type:'income', category:'shc', note:'Virement Shine', amount:1000, nextDate:D('2026-11-05'), anchorDay:5 }) ],
-    caTracker:{ target:4100, rate:0.375, months:{ '2026-10':4047 }, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shine:null },
+    caTracker:{ target:4100, rate:0.375, months:{ '2026-10':4047 }, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shineMonths:{} },
   }, extra));
-  const saveShine = (page, v) => page.evaluate((v) => { state.tab='goals'; rerender();
+  const saveShine = (page, v) => page.evaluate((v) => { state.tab='goals'; state.viewY = 2026; state.viewM = 10; rerender();
     document.getElementById('shineInput').value = v; document.querySelector('[data-save-shine]').click(); }, v);
 
   test('V1 Solde Shine saisi : la récurrence prend le montant « Vers le commun » ; changer le plancher la recalcule', () =>
     withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
       await saveShine(page, '1409');
       let d = await stored(page);
-      const p = await page.evaluate(() => shineTransferPlan().commun);
+      const p = await page.evaluate(() => shineTransferPlan(2026, 10).commun);
       assert.equal(p, 720);
       assert.equal(d.recurring[0].amount, 720);
       assert.equal(d.caTracker.shineRuleId, 'vs');
-      await page.evaluate(() => { state.tab='goals'; rerender(); document.getElementById('caFloorInput').value = '1500'; document.querySelector('[data-save-ca-transfer-settings]').click(); });
+      await page.evaluate(() => { state.tab='goals'; state.viewY = 2026; state.viewM = 10; rerender(); document.getElementById('caFloorInput').value = '1500'; document.querySelector('[data-save-ca-transfer-settings]').click(); });
       d = await stored(page);
       assert.equal(d.recurring[0].amount, 920);
       assert.deepEqual(errors, []);
@@ -1389,9 +1389,18 @@ test.describe('Virement Shine aligné sur « Vers le commun »', () => {
     }));
 
   test('V3 CA du mois de référence non saisi : la récurrence ne bouge pas', () =>
-    withApp({ now:NOW, data: data({ caTracker:{ target:4100, rate:0.375, months:{}, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shine:null } }) }, async ({ page }) => {
+    withApp({ now:NOW, data: data({ caTracker:{ target:4100, rate:0.375, months:{}, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shineMonths:{} } }) }, async ({ page }) => {
       await saveShine(page, '1409');
       assert.equal((await stored(page)).recurring[0].amount, 1000);
+    }));
+
+  test('V5 Solde d’un mois déjà passé ressaisi : le montant de la récurrence pour les mois suivants ne bouge pas', () =>
+    withApp({ now:'2026-12-05T11:00:00+01:00', data: data({ caTracker:{ target:4100, rate:0.375, months:{ '2026-10':4047, '2026-11':4047 }, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shineMonths:{ '2026-12':{ amount:1409, after:false, date:'2026-12-03' } } } }) }, async ({ page, errors }) => {
+      await saveShine(page, '1209');
+      const d = await stored(page);
+      assert.equal(d.recurring[0].amount, 1000);
+      assert.deepEqual(Object.keys(d.caTracker.shineMonths).sort(), ['2026-11', '2026-12']);
+      assert.deepEqual(errors, []);
     }));
 });
 

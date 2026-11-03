@@ -685,8 +685,23 @@ function normalizeData(parsed){
       if(!(Number(ctx.persoBase) >= 0)) ctx.persoBase = 153;
       if(!(Number(ctx.moto) >= 0)) ctx.moto = 697;
       if(typeof ctx.motoEnd !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.motoEnd)) ctx.motoEnd = '2027-08';
-      if(ctx.shine && !(isFinite(Number(ctx.shine.amount)) && typeof ctx.shine.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ctx.shine.date))) ctx.shine = null;
-      if(ctx.shine === undefined) ctx.shine = null;
+      // Solde restant Shine : un par mois de virement (cle AAAA-MM du mois des virements du 5), garde d'un mois sur l'autre.
+      const okSnap = sn => sn && typeof sn === 'object' && isFinite(Number(sn.amount)) && typeof sn.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sn.date);
+      if(!ctx.shineMonths || typeof ctx.shineMonths !== 'object' || Array.isArray(ctx.shineMonths)) ctx.shineMonths = {};
+      Object.keys(ctx.shineMonths).forEach(k=>{
+        const sn = ctx.shineMonths[k];
+        if(!/^\d{4}-\d{2}$/.test(k) || !okSnap(sn)) delete ctx.shineMonths[k];
+        else ctx.shineMonths[k] = { amount: Number(sn.amount), after: !!sn.after, date: sn.date };
+      });
+      // Ancien format (un seul solde, avant le 03/11/2026) : rattache au mois de virement qu'il calculait.
+      if(okSnap(ctx.shine)){
+        const [sy, sm, sd] = ctx.shine.date.split('-').map(Number);
+        let py = sy, pm = sm - 1;
+        if(!ctx.shine.after && sd > 5){ pm++; if(pm > 11){ pm = 0; py++; } }
+        const k = `${py}-${String(pm+1).padStart(2,'0')}`;
+        if(!ctx.shineMonths[k]) ctx.shineMonths[k] = { amount: Number(ctx.shine.amount), after: !!ctx.shine.after, date: ctx.shine.date };
+      }
+      delete ctx.shine;
       // months : CA des courses Skoot (soumis a la commission) ; perso : courses perso encaissees en entier.
       ['months','perso'].forEach(f=>{
         if(!parsed.caTracker[f] || typeof parsed.caTracker[f] !== 'object') parsed.caTracker[f] = {};
@@ -3135,15 +3150,15 @@ function caMonthStatus(y, m, now = new Date()){
 // Virements du 5 depuis Shine, d'apres le « Solde restant » saisi (cotisations deja deduites par Shine).
 // Avant le versement Skoot : on ajoute le versement attendu (net d'URSSAF) et le remboursement moto.
 // Perso = part fixe + credit moto (jusqu'a motoEnd inclus) ; commun = ce qui laisse le plancher sur Shine.
-function shineTransferPlan(){
-  const ct = state.data.caTracker || {};
-  const snap = ct.shine;
-  if(!snap) return null;
-  const [sy, sm, sd] = snap.date.split('-').map(Number);
-  // Mois du virement : celui du saisi si le versement est deja arrive ou arrive le 5 de ce mois-ci.
-  let py = sy, pm = sm - 1;
-  if(!snap.after && sd > 5){ pm++; if(pm > 11){ pm = 0; py++; } }
+// Chaque mois de virement garde son propre solde (caTracker.shineMonths[AAAA-MM]).
+function shineLatestKey(ct = (state.data.caTracker || {})){
+  return Object.keys(ct.shineMonths || {}).sort().pop() || null;
+}
+function shineTransferPlan(py = state.viewY, pm = state.viewM, d = state.data){
+  const ct = d.caTracker || {};
   const payKey = caMonthKey(py, pm);
+  const snap = (ct.shineMonths || {})[payKey];
+  if(!snap) return null;
   const caY = pm === 0 ? py - 1 : py, caM = pm === 0 ? 11 : pm - 1;
   const caKey = caMonthKey(caY, caM);
   const motoActive = payKey <= ct.motoEnd;
@@ -3155,7 +3170,7 @@ function shineTransferPlan(){
   const afterIn = Number(snap.amount) + payoutNet + motoIn;
   const raw = afterIn - perso - ct.floor;
   return {
-    payY: py, payM: pm, caY, caM, hasCa: snap.after || hasCa, after: !!snap.after, date: snap.date,
+    key: payKey, payY: py, payM: pm, caY, caM, hasCa: snap.after || hasCa, after: !!snap.after, date: snap.date,
     amount: Number(snap.amount), payout, payoutNet, motoIn, motoActive, perso, floor: ct.floor,
     commun: Math.max(0, Math.floor(raw / 10) * 10), short: raw < 0 ? -raw : 0,
     shineAfter: afterIn - perso - Math.max(0, Math.floor(raw / 10) * 10),
@@ -3173,8 +3188,12 @@ function shineRecurringRule(d = state.data){
 // Aligne la recurrence « Virement Shine » sur le montant « Vers le LCL commun » des virements du 5 :
 // montant de la regle = virement calcule (mois du virement et suivants) ; rien a virer ce mois-ci =
 // echeance de ce mois ignoree. Seulement quand le CA du mois de reference est saisi.
-function syncShineRecurring(d = state.data){
-  const p = shineTransferPlan();
+function syncShineRecurring(d = state.data, payKey = null){
+  const latest = shineLatestKey(d.caTracker || {});
+  const key = payKey || latest;
+  if(!key) return null;
+  const [ky, km] = key.split('-').map(Number);
+  const p = shineTransferPlan(ky, km - 1, d);
   const rule = shineRecurringRule(d);
   if(!p || !p.hasCa || !rule) return null;
   d.caTracker.shineRuleId = rule.id;
@@ -3182,7 +3201,10 @@ function syncShineRecurring(d = state.data){
   const occ = ruleOccurrencesForMonth({ ...rule, exceptions:{} }, p.payY, p.payM)[0];
   if(!rule.exceptions) rule.exceptions = {};
   const ex = occ ? rule.exceptions[occ.occKey] : null;
-  if(p.commun > 0){
+  if(key !== latest){
+    // Mois deja passe : on fixe seulement son echeance, sans toucher au montant des mois suivants.
+    if(occ) rule.exceptions[occ.occKey] = p.commun > 0 ? { amount: p.commun } : { skip:true };
+  } else if(p.commun > 0){
     rule.amount = p.commun;
     if(ex && ex.skip) delete rule.exceptions[occ.occKey];
     else if(ex && ex.amount != null) delete ex.amount;
@@ -3206,8 +3228,10 @@ const caNum = v => escapeHtml(String(v).replace('.',','));
 
 function renderShinePlan(){
   const ct = state.data.caTracker || {};
-  const snap = ct.shine;
-  const p = shineTransferPlan();
+  const y = state.viewY, m = state.viewM;
+  const snap = (ct.shineMonths || {})[caMonthKey(y, m)];
+  const p = shineTransferPlan(y, m);
+  const prevM = m === 0 ? 11 : m - 1;
   const savedDate = snap ? snap.date.split('-').reverse().slice(0,2).join('/') : '';
   let body;
   if(p){
@@ -3232,12 +3256,16 @@ function renderShinePlan(){
         <div style="font-size:11.5px; color:var(--paperDim); margin-top:6px; line-height:1.6;">${lines.map(escapeHtml).join('<br>')}</div>
       </details>`;
   } else {
-    body = `<div style="font-size:12.5px; color:var(--paperDim); line-height:1.5; margin:2px 0 4px;">Recopie le « Solde restant » affiché par Shine (cotisations déjà déduites) : l'app calcule ce que tu peux virer.</div>`;
+    body = `<div style="font-size:12.5px; color:var(--paperDim); line-height:1.5; margin:2px 0 4px;">Recopie le « Solde restant » affiché par Shine (cotisations déjà déduites) au moment des virements du 5 ${MONTHS[m].toLowerCase()} : l'app calcule ce que tu peux virer avec le CA de ${MONTHS[prevM].toLowerCase()}.</div>`;
   }
+  const hist = Object.keys(ct.shineMonths || {}).sort().reverse().slice(0, 6).map(k=>{
+    const [hy, hm] = k.split('-').map(Number);
+    return `${MONTHS_SHORT[hm-1]} ${hy} : ${fmt0(ct.shineMonths[k].amount)}`;
+  });
   return `
     <div class="card ca-shine-card">
       <div class="row" style="margin-bottom:4px;">
-        <div class="section-title" style="margin:0; font-size:15px;">${p ? `Prochains virements · 5 ${MONTHS[p.payM].toLowerCase()}` : 'Mes virements du 5'}</div>
+        <div class="section-title" style="margin:0; font-size:15px;">Virements du 5 ${MONTHS[m].toLowerCase()}</div>
       </div>
       ${p ? `<div style="font-size:11.5px; color:var(--paperDim);">Depuis Shine · solde saisi le ${savedDate}</div>` : ''}
       ${body}
@@ -3250,7 +3278,8 @@ function renderShinePlan(){
           </select>
         </label>
       </div>
-      <button class="btn-primary" data-save-shine="1" style="width:100%; justify-content:center; margin-top:10px;">Calculer mes virements</button>
+      <button class="btn-primary" data-save-shine="${caMonthKey(y, m)}" style="width:100%; justify-content:center; margin-top:10px;">Calculer mes virements</button>
+      ${hist.length ? `<div class="shine-history" style="font-size:11px; color:var(--paperDim); margin-top:8px; line-height:1.5;">Soldes gardés : ${hist.map(escapeHtml).join(' · ')}</div>` : ''}
     </div>`;
 }
 function renderCaCard(){
@@ -4040,7 +4069,10 @@ function bindEvents(){
     mutateData(d=>{
       if(!d.caTracker.perso) d.caTracker.perso = {};
       [['months', skoot], ['perso', perso]].forEach(([f, v])=>{ if(v === null) delete d.caTracker[f][key]; else d.caTracker[f][key] = Math.round(v*100)/100; });
-      syncShineRecurring(d);
+      // Le CA d'un mois sert aux virements du 5 du mois suivant : on recalcule ce mois-la s'il a un solde.
+      const [cy, cm] = key.split('-').map(Number);
+      const payKey = cm === 12 ? `${cy+1}-01` : `${cy}-${String(cm+1).padStart(2,'0')}`;
+      syncShineRecurring(d, d.caTracker.shineMonths[payKey] ? payKey : null);
     });
     showToast(skoot === null && perso === null ? 'CA du mois effacé' : 'CA mis à jour');
   }));
@@ -4054,11 +4086,12 @@ function bindEvents(){
   app.querySelectorAll('[data-save-shine]').forEach(el=>el.addEventListener('click', ()=>{
     const inp = document.getElementById('shineInput');
     const raw = inp ? inp.value.trim() : '';
-    if(raw === ''){ mutateData(d=>{ d.caTracker.shine = null; }); return; }
+    const key = el.dataset.saveShine;
+    if(raw === ''){ mutateData(d=>{ delete d.caTracker.shineMonths[key]; }); return; }
     const v = parseAmountInput(raw);
     if(!isFinite(v)){ showToast('Montant invalide'); return; }
     const after = (document.getElementById('shineAfterInput')||{}).value === '1';
-    mutateData(d=>{ d.caTracker.shine = { amount: Math.round(v*100)/100, after, date: localYMD(new Date()) }; syncShineRecurring(d); });
+    mutateData(d=>{ d.caTracker.shineMonths[key] = { amount: Math.round(v*100)/100, after, date: localYMD(new Date()) }; syncShineRecurring(d, key); });
   }));
   app.querySelectorAll('[data-save-ca-transfer-settings]').forEach(el=>el.addEventListener('click', ()=>{
     const f = parseAmountInput((document.getElementById('caFloorInput')||{}).value);
