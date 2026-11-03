@@ -1420,3 +1420,31 @@ test.describe('Rappel de sauvegarde les jours de sauvegarde', () => {
     })));
 });
 
+
+test.describe('Enveloppes : prorata de février et menu des dépenses', () => {
+  test('P1 Prorata du mois en cours en février (28 et 29 jours) : 1er, avant-dernier et dernier jour', () => (async () => {
+    const cas = [
+      ['2027-02-01T10:00:00+01:00', 28/28], ['2027-02-28T10:00:00+01:00', 1/28],
+      ['2028-02-01T10:00:00+01:00', 29/29], ['2028-02-28T10:00:00+01:00', 2/29], ['2028-02-29T10:00:00+01:00', 1/29],
+    ];
+    for(const [now, share] of cas){
+      await withApp({ now, data: baseData({ budgets:{ alimentation:600 } }) }, async ({ page, errors }) => {
+        const r = await page.evaluate(() => { _forecastCache=null; return computeForecast().envNow; });
+        assert.ok(Math.abs(r - 600*share) < 0.01, now + ' → ' + r);
+        assert.deepEqual(errors, []);
+      });
+    }
+  })());
+
+  test('P2 Menu d’une enveloppe : une dépense sans libellé affiche sa catégorie, une avec libellé affiche le libellé', () =>
+    withApp({ now:'2026-11-10T10:00:00+01:00', data: baseData({ budgets:{ alimentation:300 },
+      transactions:[ tx({ id:'a', amount:12, category:'alimentation', note:'', date:D('2026-11-05') }),
+                     tx({ id:'b', amount:8, category:'alimentation', note:'Marché fictif', date:D('2026-11-06') }) ] }) }, async ({ page, errors }) => {
+      await page.evaluate(() => { state.envOpen = 'alimentation'; rerender(); });
+      const notes = await page.evaluate(() => [...document.querySelectorAll('.env-tx-note')].map(e => e.textContent.trim()));
+      const lib = await page.evaluate(() => catInfo('alimentation').label);
+      assert.deepEqual(notes.sort(), ['Marché fictif', lib].sort());
+      assert.ok(!notes.includes('Sans libellé'));
+      assert.deepEqual(errors, []);
+    }));
+});
