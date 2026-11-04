@@ -82,7 +82,8 @@ test.describe('Objectif de CA', () => {
   test('CA7 Virements du 5 : avant le versement Skoot, commun = ce qui laisse 1 500 € sur Shine', () =>
     withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData({ caTracker:{ months:{ '2026-10':4048 } } }) }, async ({ page, errors }) => {
       await page.click('[data-tab="goals"]');
-      await page.evaluate(() => { state.viewY = 2026; state.viewM = 10; rerender(); });
+      // Objectifs d'octobre : on y voit les virements du 5 novembre (payés avec le CA d'octobre).
+      await page.evaluate(() => { state.viewY = 2026; state.viewM = 9; rerender(); });
       await page.fill('#shineInput', '1 409,88');
       await page.click('[data-save-shine]');
       const p = await page.evaluate(() => shineTransferPlan(2026, 10));
@@ -141,6 +142,9 @@ test.describe('Objectif de CA', () => {
     withApp({ now:'2026-12-05T12:00:00+01:00', data: baseData({ caTracker:{ months:{ '2026-10':4047, '2026-11':4000 }, shineMonths:{ '2026-11':{ amount:3253.3, after:true, date:'2026-11-03' } } } }) }, async ({ page, errors }) => {
       await page.click('[data-tab="goals"]');
       let txt = await page.textContent('.ca-shine-card');
+      assert.match(txt, /Virements du 5 janvier 2027/);
+      await page.evaluate(() => { state.viewY = 2026; state.viewM = 10; rerender(); });
+      txt = await page.textContent('.ca-shine-card');
       assert.match(txt, /Virements du 5 décembre/);
       assert.equal(await page.inputValue('#shineInput'), '');
       await page.fill('#shineInput', '2 900');
@@ -150,7 +154,7 @@ test.describe('Objectif de CA', () => {
       assert.equal(sm['2026-12'].amount, 2900);
       txt = await page.textContent('.ca-shine-card');
       assert.match(txt, /Soldes gardés : déc\.? 2026/i);
-      await page.evaluate(() => { state.viewY = 2026; state.viewM = 10; rerender(); });
+      await page.evaluate(() => { state.viewY = 2026; state.viewM = 9; rerender(); });
       assert.equal(await page.inputValue('#shineInput'), '3253,3');
       assert.match(await page.textContent('.ca-shine-card'), /Virements du 5 novembre/);
       assert.deepEqual(errors, []);
@@ -168,9 +172,24 @@ test.describe('Objectif de CA', () => {
       assert.deepEqual(Object.keys(await page.evaluate(() => state.data.caTracker.shineMonths)), ['2026-11']);
     }));
 
+  test('CA15 Objectifs de novembre : virements du 5 décembre, calculés avec le CA de novembre', () =>
+    withApp({ now:'2026-11-04T08:00:00+01:00', data: baseData({ caTracker:{ months:{ '2026-10':4047, '2026-11':1200 } } }) }, async ({ page, errors }) => {
+      await page.click('[data-tab="goals"]');
+      let txt = await page.textContent('.ca-shine-card');
+      assert.match(txt, /Virements du 5 décembre/);
+      assert.match(txt, /CA de novembre/);
+      await page.fill('#shineInput', '1 500');
+      await page.click('[data-save-shine]');
+      assert.deepEqual(Object.keys(await page.evaluate(() => state.data.caTracker.shineMonths)), ['2026-12']);
+      await page.evaluate(() => { state.viewY = 2026; state.viewM = 11; rerender(); });
+      assert.match(await page.textContent('.ca-shine-card'), /Virements du 5 janvier 2027/);
+      assert.deepEqual(errors, []);
+    }));
+
   test('CA14 Vider le champ efface seulement le mois affiché', () =>
     withApp({ now:'2026-12-05T12:00:00+01:00', data: baseData({ caTracker:{ shineMonths:{ '2026-11':{ amount:3253.3, after:true, date:'2026-11-03' }, '2026-12':{ amount:2900, after:true, date:'2026-12-05' } } } }) }, async ({ page }) => {
       await page.click('[data-tab="goals"]');
+      await page.evaluate(() => { state.viewY = 2026; state.viewM = 10; rerender(); });
       await page.fill('#shineInput', '');
       await page.click('[data-save-shine]');
       assert.deepEqual(Object.keys(await page.evaluate(() => state.data.caTracker.shineMonths)), ['2026-11']);

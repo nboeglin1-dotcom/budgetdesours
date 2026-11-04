@@ -1358,7 +1358,7 @@ test.describe('Virement Shine aligné sur « Vers le commun »', () => {
     recurring:[ rule({ id:'vs', type:'income', category:'shc', note:'Virement Shine', amount:1000, nextDate:D('2026-11-05'), anchorDay:5 }) ],
     caTracker:{ target:4100, rate:0.375, months:{ '2026-10':4047 }, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shineMonths:{} },
   }, extra));
-  const saveShine = (page, v) => page.evaluate((v) => { state.tab='goals'; state.viewY = 2026; state.viewM = 10; rerender();
+  const saveShine = (page, v) => page.evaluate((v) => { state.tab='goals'; state.viewY = 2026; state.viewM = 9; rerender();
     document.getElementById('shineInput').value = v; document.querySelector('[data-save-shine]').click(); }, v);
 
   test('V1 Solde Shine saisi : la récurrence prend le montant « Vers le commun » ; changer le plancher la recalcule', () =>
