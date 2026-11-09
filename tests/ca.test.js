@@ -79,6 +79,22 @@ test.describe('Objectif de CA', () => {
       assert.deepEqual(errors, []);
     }));
 
+  test('CA6b Bouton + : chaque course perso s’ajoute au total du mois', () =>
+    withApp({ now:'2026-11-10T19:00:00+01:00', data: baseData() }, async ({ page, errors }) => {
+      await page.click('[data-tab="goals"]');
+      await page.fill('#caPersoAddInput', '25');
+      await page.click('[data-add-perso]');
+      await page.fill('#caPersoAddInput', '17,50');
+      await page.click('[data-add-perso]');
+      assert.equal(await page.evaluate(() => state.data.caTracker.perso['2026-11']), 42.5);
+      assert.equal(await page.inputValue('#caPersoInput'), '42,5');
+      assert.equal(await page.inputValue('#caPersoAddInput'), '');
+      await page.fill('#caPersoAddInput', 'abc');
+      await page.click('[data-add-perso]');
+      assert.equal(await page.evaluate(() => state.data.caTracker.perso['2026-11']), 42.5);
+      assert.deepEqual(errors, []);
+    }));
+
   test('CA7 Virements du 5 : avant le versement Skoot, commun = ce qui laisse 1 500 € sur Shine', () =>
     withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData({ caTracker:{ months:{ '2026-10':4048 } } }) }, async ({ page, errors }) => {
       await page.click('[data-tab="goals"]');

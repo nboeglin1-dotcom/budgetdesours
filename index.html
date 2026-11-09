@@ -3325,6 +3325,10 @@ function renderCaCard(){
         ${caField('caInput', 'CA Skoot à date', s.hasSkoot ? caNum(s.skoot) : '', 'avec commission')}
         ${caField('caPersoInput', 'Courses perso', s.hasPerso ? caNum(s.perso) : '', 'sans commission')}
       </div>
+      <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+        <input id="caPersoAddInput" type="text" inputmode="decimal" class="field-input" style="margin-bottom:0; font-size:14px; flex:1; min-width:0;" placeholder="Nouvelle course perso (€)" aria-label="Montant de la course perso à ajouter">
+        <button data-add-perso="${s.key}" aria-label="Ajouter la course perso" style="flex:none; width:44px; height:40px; border-radius:10px; border:1px solid var(--line); background:var(--surfaceHi); color:var(--sage); font-size:22px; font-weight:700; line-height:1;">+</button>
+      </div>
       <button class="btn-primary" data-save-ca="${s.key}" style="width:100%; justify-content:center; margin-top:10px;">Enregistrer le CA</button>
       <details style="margin-top:12px;">
         <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Réglages</summary>
@@ -4077,6 +4081,24 @@ function bindEvents(){
       syncShineRecurring(d, d.caTracker.shineMonths[payKey] ? payKey : null);
     });
     showToast(skoot === null && perso === null ? 'CA du mois effacé' : 'CA mis à jour');
+  }));
+  // « + » : ajoute une course perso au total du mois et enregistre tout de suite.
+  app.querySelectorAll('[data-add-perso]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.dataset.addPerso;
+    const inp = document.getElementById('caPersoAddInput');
+    const v = parseAmountInput(inp ? inp.value.trim() : '');
+    if(!(v > 0)){ showToast('Montant de la course invalide'); return; }
+    let total = 0;
+    mutateData(d=>{
+      if(!d.caTracker.perso) d.caTracker.perso = {};
+      const prev = Number(d.caTracker.perso[key]) || 0;
+      total = Math.round((prev + v)*100)/100;
+      d.caTracker.perso[key] = total;
+      const [cy, cm] = key.split('-').map(Number);
+      const payKey = cm === 12 ? `${cy+1}-01` : `${cy}-${String(cm+1).padStart(2,'0')}`;
+      syncShineRecurring(d, d.caTracker.shineMonths[payKey] ? payKey : null);
+    });
+    showToast(`Course perso ajoutée · total ${fmt0(total)}`);
   }));
   app.querySelectorAll('[data-save-ca-settings]').forEach(el=>el.addEventListener('click', ()=>{
     const t = parseAmountInput((document.getElementById('caTargetInput')||{}).value);
