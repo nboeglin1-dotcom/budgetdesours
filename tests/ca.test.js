@@ -202,6 +202,21 @@ test.describe('Objectif de CA', () => {
       assert.deepEqual(errors, []);
     }));
 
+  test('CA16 Bouton + en décembre : le virement du 5 janvier suivant est resynchronisé (changement d’année)', () =>
+    withApp({ now:'2026-12-10T10:00:00+01:00', data: baseData({
+      caTracker:{ months:{ '2026-12':4000 }, shineMonths:{ '2027-01':{ amount:1500, after:false, date:'2026-12-10' } } },
+      recurring:[{ id:'rs', type:'income', amount:1, category:'autres', note:'Virement Shine', frequency:'monthly', accountId:'main', nextDate:'2027-01-05T00:00:00.000Z' }]
+    }) }, async ({ page, errors }) => {
+      await page.click('[data-tab="goals"]');
+      await page.fill('#caPersoAddInput', '30');
+      await page.click('[data-add-perso]');
+      const r = await page.evaluate(() => ({ perso: state.data.caTracker.perso['2026-12'], amount: state.data.recurring[0].amount, commun: shineTransferPlan(2027, 0).commun }));
+      assert.equal(r.perso, 30);
+      assert.ok(r.commun > 0);
+      assert.equal(r.amount, r.commun);
+      assert.deepEqual(errors, []);
+    }));
+
   test('CA14 Vider le champ efface seulement le mois affiché', () =>
     withApp({ now:'2026-12-05T12:00:00+01:00', data: baseData({ caTracker:{ shineMonths:{ '2026-11':{ amount:3253.3, after:true, date:'2026-11-03' }, '2026-12':{ amount:2900, after:true, date:'2026-12-05' } } } }) }, async ({ page }) => {
       await page.click('[data-tab="goals"]');
