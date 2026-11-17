@@ -1457,3 +1457,78 @@ test.describe('Enveloppes : prorata de février et menu des dépenses', () => {
       assert.deepEqual(errors, []);
     }));
 });
+
+test.describe('Soldes Shine par mois : mois passés, ancien format et changement d’année', () => {
+  const ct = (extra={}) => Object.assign({ target:4100, rate:0.375, months:{}, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shineMonths:{} }, extra);
+  const data = (caTracker, nextDate = D('2026-11-05')) => baseData({
+    customCategories:[ { id:'shc', type:'income', label:'Activité (Shine)', color:'#5FB4C4' } ],
+    recurring:[ rule({ id:'vs', type:'income', category:'shc', note:'Virement Shine', amount:1000, nextDate, anchorDay:5 }) ],
+    caTracker,
+  });
+  const stored = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('solde-budget-data-v1')));
+  const occ = (s) => String(new Date(D(s)).getTime());
+  // y/m : mois du CA affiché dans Objectifs (les virements du 5 sont ceux du mois suivant).
+  const saveShineFor = (page, y, m, v) => page.evaluate(([y, m, v]) => { state.tab='goals'; state.viewY = y; state.viewM = m; rerender();
+    document.getElementById('shineInput').value = v; document.querySelector('[data-save-shine]').click(); }, [y, m, v]);
+
+  test('SH1 Solde du 5 décembre saisi alors que janvier a déjà le sien : seule l’échéance du 5 décembre prend le montant calculé', () =>
+    withApp({ now:'2026-12-02T11:00:00+01:00', data: data(ct({ months:{ '2026-11':4047, '2026-12':4047 }, shineMonths:{ '2027-01':{ amount:1409, after:false, date:'2026-12-02' } } }), D('2026-12-05')) }, async ({ page, errors }) => {
+      await saveShineFor(page, 2026, 10, '1409');
+      const d = await stored(page);
+      const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
+      assert.ok(commun > 0);
+      assert.equal(d.recurring[0].amount, 1000);
+      assert.deepEqual(d.recurring[0].exceptions[occ('2026-12-05')], { amount: commun });
+      assert.ok(!d.recurring[0].exceptions[occ('2027-01-05')]);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('SH2 Mois antérieur au dernier solde, rien à virer : son échéance est ignorée, la règle garde son montant', () =>
+    withApp({ now:'2026-12-02T11:00:00+01:00', data: data(ct({ months:{ '2026-11':4047, '2026-12':4047 }, shineMonths:{ '2027-01':{ amount:1409, after:false, date:'2026-12-02' } } }), D('2026-12-05')) }, async ({ page, errors }) => {
+      await saveShineFor(page, 2026, 10, '100');
+      const r = (await stored(page)).recurring[0];
+      assert.equal(r.amount, 1000);
+      assert.deepEqual(r.exceptions[occ('2026-12-05')], { skip:true });
+      assert.deepEqual(errors, []);
+    }));
+
+  test('SH3 Ancien solde unique saisi le 20 décembre, versement pas reçu : rattaché à janvier de l’année suivante', () =>
+    withApp({ now:'2026-12-20T10:00:00+01:00', data: data(ct({ shineMonths:undefined, shine:{ amount:1500, after:false, date:'2026-12-20' } })) }, async ({ page, errors }) => {
+      const c = await page.evaluate(() => state.data.caTracker);
+      assert.equal('shine' in c, false);
+      assert.deepEqual(c.shineMonths, { '2027-01':{ amount:1500, after:false, date:'2026-12-20' } });
+      assert.deepEqual(errors, []);
+    }));
+
+  test('SH4 Ancien solde : le 5 même ou versement déjà reçu, il reste sur le mois saisi', () => (async () => {
+    for(const [snap, key] of [
+      [{ amount:1200, after:false, date:'2026-12-05' }, '2026-12'],
+      [{ amount:1200, after:true,  date:'2026-12-28' }, '2026-12'],
+      [{ amount:1200, after:false, date:'2026-12-31' }, '2027-01'],
+    ]){
+      await withApp({ now:'2027-01-02T10:00:00+01:00', data: data(ct({ shineMonths:undefined, shine:snap })) }, async ({ page, errors }) => {
+        assert.deepEqual(Object.keys(await page.evaluate(() => state.data.caTracker.shineMonths)), [key], snap.date);
+        assert.deepEqual(errors, []);
+      });
+    }
+  })());
+
+  test('SH5 29 février 2028 : ancien solde rattaché à mars, calcul de mars avec le CA de février', () =>
+    withApp({ now:'2028-02-29T21:00:00+01:00', data: data(ct({ months:{ '2028-02':4000 }, motoEnd:'2027-08', shineMonths:undefined, shine:{ amount:1800, after:false, date:'2028-02-29' } })) }, async ({ page, errors }) => {
+      const r = await page.evaluate(() => { const p = shineTransferPlan(2028, 2); return { keys:Object.keys(state.data.caTracker.shineMonths), key:p.key, caY:p.caY, caM:p.caM, hasCa:p.hasCa, moto:p.motoActive }; });
+      assert.deepEqual(r, { keys:['2028-03'], key:'2028-03', caY:2028, caM:1, hasCa:true, moto:false });
+      assert.deepEqual(errors, []);
+    }));
+
+  test('SH6 CA de décembre enregistré : le virement du 5 janvier suivant est recalculé (changement d’année)', () =>
+    withApp({ now:'2026-12-31T22:00:00+01:00', data: data(ct({ months:{ '2026-11':4047 }, shineMonths:{ '2026-12':{ amount:1409, after:false, date:'2026-12-03' }, '2027-01':{ amount:1500, after:false, date:'2026-12-31' } } })) }, async ({ page, errors }) => {
+      await page.evaluate(() => { state.tab='goals'; state.viewY = 2026; state.viewM = 11; rerender();
+        document.getElementById('caInput').value = '4000'; document.querySelector('[data-save-ca]').click(); });
+      const d = await stored(page);
+      const commun = await page.evaluate(() => shineTransferPlan(2027, 0).commun);
+      assert.equal(d.caTracker.months['2026-12'], 4000);
+      assert.ok(commun > 0);
+      assert.equal(d.recurring[0].amount, commun);
+      assert.deepEqual(errors, []);
+    }));
+});
