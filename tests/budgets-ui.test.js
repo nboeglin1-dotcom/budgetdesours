@@ -37,3 +37,30 @@ test('B1 Budgets : total avec tuiles, limite modifiable, détail et ajout rapide
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('B2 Budgets : ni épargne ni charge prévue sans limite dans les cartes et le total', async () => {
+  const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({
+    budgets:{ alimentation:750, loisirs:150 }, lastRolloverCheck:'2026-10',
+    recurring:[{ id:'tf', type:'expense', amount:178, category:'logement', note:'Taxe test', frequency:'monthly', accountId:'main', nextDate:'2026-12-15T00:00:00.000Z' }],
+    transactions:[
+      tx({ amount:417, category:'alimentation', date:D('2026-11-05') }),
+      tx({ amount:108, category:'loisirs', date:D('2026-11-08') }),
+      tx({ amount:1000, category:'epargne', date:D('2026-11-03'), note:'Virement auto' }),
+      tx({ amount:228, category:'logement', date:D('2026-11-20'), note:'Impôts' }),
+      tx({ amount:100, category:'shopping', date:D('2026-11-21'), note:'Cadeau' }),
+    ],
+  }) });
+  const { page, errors } = app;
+  try{
+    await page.click('[data-tab="budgets"]');
+    const total = await page.textContent('.budgets-total-card');
+    assert.match(total, /525\s€/);                 // 417 + 108, sans épargne, impôts ni cadeau hors enveloppe
+    assert.match(total, /sur 900\s€/);
+    assert.match(total, /Reste\s*375\s€/);
+    assert.match(total, /0 \/ 2/);
+    assert.equal(await page.$('[data-toggle-budget-detail="epargne"]'), null);
+    assert.equal(await page.$('[data-toggle-budget-detail="logement"]'), null);
+    assert.ok(await page.$('[data-toggle-budget-detail="shopping"]'));   // dépense hors enveloppe : visible, pas comptée
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
