@@ -1473,7 +1473,7 @@ test.describe('Soldes Shine par mois : mois passés, ancien format et changement
 
   test('SH1 Solde du 5 décembre saisi alors que janvier a déjà le sien : seule l’échéance du 5 décembre prend le montant calculé', () =>
     withApp({ now:'2026-12-02T11:00:00+01:00', data: data(ct({ months:{ '2026-11':4047, '2026-12':4047 }, shineMonths:{ '2027-01':{ amount:1409, after:false, date:'2026-12-02' } } }), D('2026-12-05')) }, async ({ page, errors }) => {
-      await saveShineFor(page, 2026, 10, '1409');
+      await saveShineFor(page, 2026, 10, '2409');
       const d = await stored(page);
       const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
       assert.ok(commun > 0);

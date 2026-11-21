@@ -24,7 +24,7 @@ test.describe('Objectif de CA', () => {
   test('CA2 Données anciennes sans réglage : objectif 4 100 € et 37,5 % par défaut', () =>
     withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData() }, async ({ page }) => {
       const ct = await page.evaluate(() => state.data.caTracker);
-      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shineMonths:{} });
+      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', bitstackDca:450, fuelPerDay:15, bitstackFrom:'2026-12', shineMonths:{} });
     }));
 
   test('CA3 Mois en cours : reste à faire réparti sur les jours ouvrés après aujourd’hui', () =>
@@ -120,7 +120,8 @@ test.describe('Objectif de CA', () => {
       assert.equal(p.payM, 11);
       assert.equal(p.perso, 850);
       assert.equal(p.commun, 0);
-      assert.equal(p.short, 350);
+      // 2 000 − 850 − Bitstack (450 + 22 jours × 15 = 780) − 1 500 = −1 130
+      assert.equal(p.short, 1130);
     }));
 
   test('CA9 Après la fin du crédit moto (août 2027) : perso 153 €, sans remboursement moto', () =>
@@ -129,8 +130,36 @@ test.describe('Objectif de CA', () => {
       assert.equal(p.motoActive, false);
       assert.equal(p.perso, 153);
       assert.equal(p.motoIn, 0);
-      // 1 500 + 1 500 × 0,77 − 153 − 1 500 = 1 002 → 1 000
-      assert.equal(p.commun, 1000);
+      // 1 500 + 1 500 × 0,77 − 153 − Bitstack (450 + 22 jours × 15 = 780) − 1 500 = 222 → 220
+      assert.equal(p.commun, 220);
+    }));
+
+  test('CA9b Virement Bitstack du 5 : DCA + essence × jours ouvrés, à partir de décembre 2026', () =>
+    withApp({ now:'2026-12-02T12:00:00+01:00', data: baseData({ caTracker:{ floor:1600, months:{ '2026-10':4000, '2026-11':4000 }, shineMonths:{ '2026-11':{ amount:1500, after:false, date:'2026-11-02' }, '2026-12':{ amount:1500, after:false, date:'2026-12-02' } } } }) }, async ({ page, errors }) => {
+      const nov = await page.evaluate(() => shineTransferPlan(2026, 10));
+      assert.equal(nov.bitstackActive, false);
+      assert.equal(nov.bitstack, 0);
+      const dec = await page.evaluate(() => shineTransferPlan(2026, 11));
+      assert.equal(dec.fuelDays, 22); // décembre 2026 : 23 jours de semaine moins Noël
+      assert.equal(dec.fuel, 330);
+      assert.equal(dec.dca, 450);
+      assert.equal(dec.bitstack, 780);
+      // 1 500 + 1 500 × 0,77 + 697 − 850 − 780 − 1 600 = 122 → 120
+      assert.equal(dec.commun, 120);
+      assert.ok(dec.shineAfter >= 1600);
+      await page.click('[data-tab="goals"]');
+      await page.evaluate(() => { state.viewY = 2026; state.viewM = 10; rerender(); });
+      const txt = await page.textContent('.ca-shine-card');
+      assert.match(txt, /Vers Bitstack\s*780\s€/);
+      assert.match(txt, /DCA 450\s€ \+ essence 330\s€ \(22 jours × 15\s€\)/);
+      // Réglages : DCA à 500 €, essence à 16 €/jour
+      await page.evaluate(() => document.querySelector('.ca-card details').open = true);
+      await page.fill('#caDcaInput', '500');
+      await page.fill('#caFuelInput', '16');
+      await page.click('[data-save-ca-transfer-settings]');
+      const after = await page.evaluate(() => shineTransferPlan(2026, 11));
+      assert.equal(after.bitstack, 500 + 22 * 16);
+      assert.deepEqual(errors, []);
     }));
 
   test('CA10 Ancien taux de 21,2 % enregistré : corrigé à 23 % (cotisations + versement libératoire + CFP)', () =>
