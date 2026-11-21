@@ -33,3 +33,31 @@ test('T1 Transactions : tuiles du mois justes même passées masquées, recherch
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('T2 Dépenses du mois : même total sur l’accueil, dans Transactions et sur le graphique', async () => {
+  const D = (s) => new Date(s + 'T00:00:00.000Z').toISOString();
+  const app = await openApp({ now:'2026-11-15T10:00:00+01:00', data: baseData({
+    budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10',
+    recurring:[{ id:'r1', type:'expense', amount:100, category:'abonnements', note:'Abo test', frequency:'monthly', accountId:'main', nextDate:'2026-11-25T00:00:00.000Z' }],
+    transactions:[
+      { id:'i1', type:'income', amount:3000, category:'salaire', note:'', accountId:'main', date:D('2026-11-01') },
+      { id:'e1', type:'expense', amount:200, category:'alimentation', note:'', accountId:'main', date:D('2026-11-05') },
+      { id:'s1', type:'expense', amount:500, category:'epargne', note:'Épargne', accountId:'main', date:D('2026-11-09') },
+    ],
+  }) });
+  const { page, errors } = app;
+  const num = s => Number(String(s).replace(/[^\d]/g, ''));
+  try{
+    const stats = await page.evaluate(() => { const s = computeMonthStats(); return { expense: Math.round(s.expense), up: Math.round(s.expenseUpcoming) }; });
+    const bref = await page.evaluate(() => [...document.querySelectorAll('.card')].find(c=>/Le mois en bref/.test(c.innerText)).innerText);
+    assert.match(bref, new RegExp(`dont ${stats.up.toLocaleString('fr-FR').replace(/\s/g,'\\s')}\\s€ à venir`));
+    await page.click('[data-tab="transactions"]');
+    const tiles = await page.$$eval('.tx-summary-card .mono', els => els.map(e => e.textContent));
+    const paid = num(tiles[1]), up = num(tiles[2]);
+    assert.equal(paid, 200);                                  // l'épargne n'est pas une dépense
+    assert.equal(paid + up, stats.expense);                   // payé + à venir = dépenses de l'accueil
+    const chart = await page.textContent('.trend-summary');
+    assert.match(chart, new RegExp(`Dépenses\\s*${stats.expense.toLocaleString('fr-FR').replace(/\s/g,'\\s')}\\s€`));
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

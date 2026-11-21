@@ -2217,6 +2217,15 @@ function envelopeStatus(y, m){
   return { rows, remaining, committed };
 }
 function envelopeRemainingForMonth(y, m){ return envelopeStatus(y, m).remaining; }
+// Ce qu'on s'attend encore a depenser dans les enveloppes pour un mois : mois en cours = au rythme
+// des enveloppes d'ici la fin du mois, mois futur = enveloppes entieres, mois passe = 0. Meme regle
+// que « Fin de mois · estime » : les ecrans qui affichent les depenses du mois l'utilisent tous.
+function envelopeRestForMonth(y, m){
+  const today = new Date();
+  const d = monthIndex(y, m) - monthIndex(today.getFullYear(), today.getMonth());
+  if(d < 0) return 0;
+  return d === 0 ? computeForecast().envNow : envelopeRemainingForMonth(y, m);
+}
 // Mois en cours : ce qu'on s'attend encore a depenser dans les enveloppes d'ici la fin du mois, au rythme
 // de chaque enveloppe (limite x jours restants / jours du mois, aujourd'hui compris), sans depasser son reste.
 // Le 1er, c'est presque toute l'enveloppe ; le dernier jour, presque rien : le reste non depense en fin de
@@ -2460,6 +2469,13 @@ function computeMonthStats(){
     income = realIncome;
     expense = realExpense;
   }
+  // Part des depenses du mois pas encore payee : operations datees plus tard, echeances, enveloppes.
+  let expenseUpcoming = 0;
+  if(isCurrentMonth || isFuture){
+    const endToday = new Date(); endToday.setHours(23,59,59,999);
+    expenseUpcoming = tx.filter(t=>t.type==='expense' && isRealIncExp(t) && new Date(t.date) > endToday).reduce((s,t)=>s+t.amount,0)
+      + recurThisMonth.expense - plannedSaving + (isCurrentMonth ? f.envNow : envelopeRemainingForMonth(state.viewY, state.viewM));
+  }
   const savings = income - expense;
   const rate = income>0 ? Math.max(0, Math.round(savings/income*100)) : 0;
   const bal = balanceForViewedMonth(f, state.viewY, state.viewM);
@@ -2480,7 +2496,7 @@ function computeMonthStats(){
   const startBal = monthIndex(py, pm) === curIdx ? f.startBalance - f.envNow : balanceForViewedMonth(f, py, pm);
   const adjustments = tx.filter(t=>t.category==='ajustement').reduce((s,t)=> s + (t.type==='income'?t.amount:-t.amount), 0);
 
-  return { startBal, adjustments, isFuture, plannedSaving, f, tx, income, expense, rate, bal, balAfterEnv, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth, netTransfers };
+  return { startBal, adjustments, isFuture, plannedSaving, f, tx, income, expense, rate, bal, balAfterEnv, usingEstimate, useIncomeEstimate, useExpenseEstimate, incomeChange, expenseChange, savedThisMonth, netTransfers, expenseUpcoming };
 }
 
 function renderBalanceContent(stats, showStats){
@@ -2610,8 +2626,8 @@ function renderDashboard(){
     <div class="card">
       <div class="section-title" style="margin:0 0 10px; font-size:15px;">Le mois en bref</div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
-        ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)'], [savedThisMonth>=0 ? (stats.isFuture || stats.plannedSaving>0 ? 'Épargne prévue' : 'Épargné') : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c])=>`
-          <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">${l}</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${c};">${fmt0(v)}</div></div>`).join('')}
+        ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)', stats.expenseUpcoming >= 1 ? `dont ${fmt0(stats.expenseUpcoming)} à venir` : ''], [savedThisMonth>=0 ? (stats.isFuture || stats.plannedSaving>0 ? 'Épargne prévue' : 'Épargné') : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c,sub])=>`
+          <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">${l}</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${c};">${fmt0(v)}</div>${sub ? `<div style="font-size:10.5px; color:var(--paperDim); margin-top:2px;">${sub}</div>` : ''}</div>`).join('')}
       </div>
       <div data-month-start style="font-size:12px; color:var(--paperDim); margin-top:10px;">Solde au 1er ${MONTHS[state.viewM].toLowerCase()} : <span class="mono" style="color:${stats.startBal<0?'var(--coral)':'var(--paper)'};">${fmt0(stats.startBal)}</span>${Math.abs(stats.adjustments)>=0.5 ? ` · ajustements <span class="mono">${stats.adjustments>0?'+':'−'}${fmt0(Math.abs(stats.adjustments))}</span>` : ''}</div>
     </div>
@@ -2700,7 +2716,7 @@ function renderTrendCard(){
     const occ = [];
     if(monthIndex(y,m) >= trendCurIdx) recurringOccurrencesInMonth(y,m,occ);
     const occReal = occ.filter(o=> isRealIncExp(o));
-    const plan = { income: sum(later,'income') + sum(occReal,'income'), expense: sum(later,'expense') + sum(occReal,'expense') };
+    const plan = { income: sum(later,'income') + sum(occReal,'income'), expense: sum(later,'expense') + sum(occReal,'expense') + envelopeRestForMonth(y, m) };
     trend.push({ key: y+'-'+m, label: MONTHS_SHORT[m], name: MONTHS[m]+(y!==new Date().getFullYear()?' '+y:''), isView: i===0, inc, exp, incPlan: plan.income, expPlan: plan.expense });
   }
   // On masque les mois vides du debut (avant la premiere donnee), en gardant au moins 3 mois.
@@ -2716,7 +2732,7 @@ function renderTrendCard(){
         <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
         <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
       </div>
-      <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · touchez un mois pour le détail</div>
+      <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · à venir = échéances et reste des enveloppes · touchez un mois pour le détail</div>
       <div class="trend-scroll">
         <div class="chart-bars">
           ${trend.map(t=>`
@@ -2875,8 +2891,12 @@ function renderTransactions(){
   const upPart = [...monthReal.filter(t=> new Date(t.date) > endToday), ...recurringPreviewForMonth(state.viewY, state.viewM).filter(match)];
   const sumOf = (arr, type)=> arr.filter(t=>t.type===type && isRealIncExp(t)).reduce((a,t)=>a+t.amount,0);
   const inDone = sumOf(donePart,'income'), outDone = sumOf(donePart,'expense');
-  const upNet = sumOf(upPart,'income') - sumOf(upPart,'expense');
   const filtered = !!q || state.txFilter!=='all';
+  // Sans recherche, « À venir » compte aussi le reste probable des enveloppes : Payé + À venir = dépenses
+  // du mois, le même chiffre que l'accueil et le graphique.
+  const envRest = (!q && state.txFilter!=='income') ? envelopeRestForMonth(state.viewY, state.viewM) : 0;
+  const upNet = sumOf(upPart,'income') - sumOf(upPart,'expense') - envRest;
+  const upCount = upPart.length;
 
   return `
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
@@ -2894,7 +2914,7 @@ function renderTransactions(){
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
         ${caTile('Entrées', fmt0(inDone), 'var(--sage)', "à ce jour")}
         ${caTile('Sorties', fmt0(outDone), 'var(--coral)', "à ce jour")}
-        ${caTile('À venir', upPart.length ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', `${upPart.length} prévue${upPart.length>1?'s':''}`)}
+        ${caTile('À venir', (upCount || envRest >= 1) ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', envRest >= 1 ? `${upCount} prévue${upCount>1?'s':''} + enveloppes` : `${upCount} prévue${upCount>1?'s':''}`)}
       </div>
       <div class="search-wrap" style="position:relative; margin-top:12px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>
       <div class="row" style="margin:10px 0 0; gap:8px;">
