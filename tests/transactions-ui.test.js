@@ -61,3 +61,22 @@ test('T2 Dépenses du mois : même total sur l’accueil, dans Transactions et s
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('T3 Onglet Accueil : revient toujours au mois en cours, en haut, enveloppes refermées', async () => {
+  const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({ budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10',
+    transactions:[{ id:'e1', type:'expense', amount:200, category:'alimentation', note:'', accountId:'main', date:D('2026-11-05') }] }) });
+  const { page, errors } = app;
+  try{
+    await page.evaluate(() => { state.viewY = 2027; state.viewM = 2; state.envOpen = 'alimentation'; rerender(); window.scrollTo(0, 400); });
+    await page.click('.tabbar [data-tab="dashboard"]');                 // déjà sur l'accueil
+    await page.waitForTimeout(800);                                         // défilement doux vers le haut
+    let st = await page.evaluate(() => ({ y: state.viewY, m: state.viewM, env: state.envOpen, sy: window.scrollY }));
+    assert.deepEqual(st, { y:2026, m:10, env:null, sy:0 });
+    await page.click('.tabbar [data-tab="budgets"]');
+    await page.evaluate(() => { state.viewM = 0; state.viewY = 2027; rerender(); });
+    await page.click('.tabbar [data-tab="dashboard"]');
+    st = await page.evaluate(() => ({ tab: state.tab, y: state.viewY, m: state.viewM }));
+    assert.deepEqual(st, { tab:'dashboard', y:2026, m:10 });
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

@@ -3871,6 +3871,14 @@ function bindEvents(){
   if(headerEl) document.documentElement.style.setProperty('--header-h', headerEl.offsetHeight + 'px');
 
   app.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click', ()=>{
+    // Accueil : toujours la vue de depart, meme si on y est deja (mois en cours, haut de page,
+    // enveloppes refermees).
+    if(el.dataset.tab === 'dashboard'){
+      const now = new Date();
+      setState({ tab:'dashboard', viewY: now.getFullYear(), viewM: now.getMonth(), envOpen: null });
+      window.scrollTo({ top:0, behavior:'instant' });
+      return;
+    }
     if(el.dataset.tab === state.tab) return;
     setState({tab: el.dataset.tab});
     window.scrollTo(0,0);
