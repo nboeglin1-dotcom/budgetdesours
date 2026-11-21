@@ -67,7 +67,9 @@ test('T3 Onglet Accueil : revient toujours au mois en cours, en haut, enveloppes
     transactions:[{ id:'e1', type:'expense', amount:200, category:'alimentation', note:'', accountId:'main', date:D('2026-11-05') }] }) });
   const { page, errors } = app;
   try{
-    await page.evaluate(() => { state.viewY = 2027; state.viewM = 2; state.envOpen = 'alimentation'; rerender(); window.scrollTo(0, 400); });
+    await page.evaluate(() => { state.viewY = 2027; state.viewM = 2; state.envOpen = 'alimentation'; rerender(); window.scrollTo({ top:400, behavior:'instant' }); });
+    await page.waitForTimeout(300);
+    assert.ok(await page.evaluate(() => window.scrollY) > 0);            // on part bien d'une page défilée
     await page.click('.tabbar [data-tab="dashboard"]');                 // déjà sur l'accueil
     await page.waitForTimeout(800);                                         // défilement doux vers le haut
     let st = await page.evaluate(() => ({ y: state.viewY, m: state.viewM, env: state.envOpen, sy: window.scrollY }));
