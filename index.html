@@ -2404,22 +2404,6 @@ function pctChange(current, previous){
   if(!previous || previous<=0) return null;
   return Math.round((current-previous)/previous*100);
 }
-function changeBadge(pct, goodDirection){
-  if(pct===null || pct===undefined) return '';
-  const isUp = pct>0;
-  const isFlat = pct===0;
-  const isGood = goodDirection==='up' ? isUp : !isUp;
-  const color = isFlat ? 'var(--paperDim)' : (isGood ? 'var(--sage)' : 'var(--coral)');
-  const arrow = isFlat ? '' : (isUp ? '↑' : '↓');
-  return ` <span class="mono" style="font-size:10.5px; color:${color};">${arrow}${Math.abs(pct)}%</span>`;
-}
-function prevMonthCatSpend(catId){
-  let m = state.viewM - 1, y = state.viewY;
-  if(m<0){ m = 11; y--; }
-  return visibleTransactions()
-    .filter(t=>t.type==='expense' && t.category===catId && sameMonth(t.date, y, m))
-    .reduce((s,t)=>s+t.amount, 0);
-}
 function computeMonthStats(){
   const today = new Date();
   const curIdx = monthIndex(today.getFullYear(), today.getMonth());
@@ -3078,7 +3062,7 @@ function renderBudgets(){
                 : `<span class="mono" style="font-size:13.5px;">${fmt0(spent)}</span>`}
             </div>
             <div class="catbar-track" style="margin-top:8px;"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>
-            <div class="row" style="margin:4px 0 0; font-size:12.5px; color:var(--paper); opacity:.72;"><span>${foot}</span><span class="mono">${limit>0 ? `${fmt0(spent)} / ${fmt0(limit)} · ${pct}%` : ''}${changeBadge(pctChange(spent, prevMonthCatSpend(cat.id)),'down')}</span></div>
+            <div class="row" style="margin:4px 0 0; font-size:12.5px; color:var(--paper); opacity:.72;"><span>${foot}</span><span class="mono">${limit>0 ? `${fmt0(spent)} / ${fmt0(limit)} · ${pct}%` : ''}</span></div>
           </button>
           ${editing ? `
             <div style="display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:12px; align-items:end;">
