@@ -685,8 +685,8 @@ function normalizeData(parsed){
       if(!(Number(ctx.persoBase) >= 0)) ctx.persoBase = 153;
       if(!(Number(ctx.moto) >= 0)) ctx.moto = 697;
       if(typeof ctx.motoEnd !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.motoEnd)) ctx.motoEnd = '2027-08';
-      // Bitstack paie le DCA et l'essence. Depuis Shine (a partir de decembre 2026) : l'essence seulement (prix par jour
-      // roule x jours ouvres). Le DCA (bitstackDca) est verse depuis le LCL perso : rappele sur la carte, pas deduit de Shine.
+      // Bitstack paie le DCA et l'essence, tout vire depuis Shine (a partir de decembre 2026) : DCA + prix par jour roule
+      // x jours ouvres. Le virement perso baisse d'autant que le DCA (le perso ne le paie plus).
       if(!(Number(ctx.bitstackDca) >= 0)) ctx.bitstackDca = 450;
       if(!(Number(ctx.fuelPerDay) >= 0)) ctx.fuelPerDay = 15;
       if(typeof ctx.bitstackFrom !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.bitstackFrom)) ctx.bitstackFrom = '2026-12';
@@ -3172,23 +3172,26 @@ function shineTransferPlan(py = state.viewY, pm = state.viewM, d = state.data){
   const caY = pm === 0 ? py - 1 : py, caM = pm === 0 ? 11 : pm - 1;
   const caKey = caMonthKey(caY, caM);
   const motoActive = payKey <= ct.motoEnd;
-  const perso = ct.persoBase + (motoActive ? ct.moto : 0);
+  let perso = ct.persoBase + (motoActive ? ct.moto : 0);
   const hasCa = Object.prototype.hasOwnProperty.call(ct.months||{}, caKey);
   const payout = snap.after ? 0 : (hasCa ? Number(ct.months[caKey]) : 0) * ct.rate;
   const payoutNet = payout * (1 - ct.urssaf);
   const motoIn = (!snap.after && motoActive) ? ct.moto : 0;
   const afterIn = Number(snap.amount) + payoutNet + motoIn;
-  // Bitstack depuis Shine : essence du mois des virements (jours ouvres, hors feries). Le DCA part du perso.
+  // Bitstack depuis Shine : DCA + essence du mois des virements (jours ouvres, hors feries).
+  // Le DCA etait paye par le perso : le virement perso baisse d'autant (jamais sous 0).
   const bitstackActive = payKey >= (ct.bitstackFrom || '2026-12');
   const fuelDays = bitstackActive ? workingDaysInMonth(py, pm) : 0;
   const fuel = bitstackActive ? Math.round(fuelDays * (Number(ct.fuelPerDay) || 0)) : 0;
   const dca = bitstackActive ? Math.round(Number(ct.bitstackDca) || 0) : 0;
-  const bitstack = fuel;
+  const bitstack = dca + fuel;
+  const persoFull = perso;
+  if(bitstackActive) perso = Math.max(0, perso - dca);
   const raw = afterIn - perso - bitstack - ct.floor;
   return {
     key: payKey, payY: py, payM: pm, caY, caM, hasCa: snap.after || hasCa, after: !!snap.after, date: snap.date,
     amount: Number(snap.amount), payout, payoutNet, motoIn, motoActive, perso, floor: ct.floor,
-    bitstackActive, bitstack, dca, fuel, fuelDays,
+    bitstackActive, bitstack, dca, fuel, fuelDays, persoFull,
     commun: Math.max(0, Math.floor(raw / 10) * 10), short: raw < 0 ? -raw : 0,
     shineAfter: afterIn - perso - bitstack - Math.max(0, Math.floor(raw / 10) * 10),
   };
@@ -3260,7 +3263,7 @@ function renderShinePlan(){
       if(p.motoIn) lines.push(`+ remboursement moto Skoot : ${fmt0(p.motoIn)}`);
     }
     lines.push(`− virement perso : ${fmt0(p.perso)}`);
-    if(p.bitstackActive) lines.push(`− virement Bitstack (essence) : ${fmt0(p.bitstack)}`);
+    if(p.bitstackActive) lines.push(`− virement Bitstack : ${fmt0(p.bitstack)} (DCA ${fmt0(p.dca)} + essence ${fmt0(p.fuel)})`);
     lines.push(`− plancher gardé sur Shine : ${fmt0(p.floor)}`);
     const row = (label, sub, amount, color) => `
       <div style="padding:8px 0;">
@@ -3268,8 +3271,8 @@ function renderShinePlan(){
         <div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${sub}</div>
       </div>`;
     body = `
-      ${row('Vers le LCL perso', p.motoActive ? `${fmt0(ct.moto)} de crédit moto + ${fmt0(ct.persoBase)}` : 'Crédit moto terminé', p.perso, 'var(--paper)')}
-      ${p.bitstackActive ? row('Vers Bitstack', `Essence : ${p.fuelDays} jours × ${fmt0(ct.fuelPerDay)}${p.dca ? ` · le DCA (${fmt0(p.dca)}) part du LCL perso le 8` : ''}`, p.bitstack, 'var(--gold)') : ''}
+      ${row('Vers le LCL perso', (p.motoActive ? `${fmt0(ct.moto)} de crédit moto + ${fmt0(ct.persoBase)}` : 'Crédit moto terminé') + (p.bitstackActive && p.dca ? ` − ${fmt0(p.persoFull - p.perso)} de DCA, payé depuis Shine` : ''), p.perso, 'var(--paper)')}
+      ${p.bitstackActive ? row('Vers Bitstack', `DCA ${fmt0(p.dca)} + essence ${fmt0(p.fuel)} (${p.fuelDays} jours × ${fmt0(ct.fuelPerDay)})`, p.bitstack, 'var(--gold)') : ''}
       ${row('Vers le LCL commun', p.short ? `<span style="color:var(--coral);">Shine passerait ${fmt0(p.short)} sous ton plancher : rien ce mois-ci</span>` : `Il restera ≈ ${fmt0(p.shineAfter)} sur Shine`, p.commun, p.short ? 'var(--coral)' : 'var(--sage)')}
       ${!p.hasCa ? `<div class="alert" style="margin:6px 0 0; font-size:12px;">${icon('alert',13)} <div>Saisis le CA de ${MONTHS[p.caM].toLowerCase()} pour un calcul juste.</div></div>` : ''}
       ${p.hasCa && shineRecurringRule() ? `<div data-shine-sync style="font-size:11px; color:var(--paperDim); margin-top:4px;">${icon('repeat',11)} La récurrence « ${escapeHtml(shineRecurringRule().note || 'Virement Shine')} » du compte commun suit ce montant.</div>` : ''}
@@ -3360,7 +3363,7 @@ function renderCaCard(){
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;">
           ${caField('caFloorInput', 'Plancher sur Shine (€)', caNum(ct.floor ?? 1500), '1500')}
           ${caField('caPersoBaseInput', 'Perso hors moto (€)', caNum(ct.persoBase ?? 153), '153')}
-          ${caField('caDcaInput', 'DCA Bitstack depuis le perso (€)', caNum(ct.bitstackDca ?? 450), '450')}
+          ${caField('caDcaInput', 'DCA Bitstack par mois (€)', caNum(ct.bitstackDca ?? 450), '450')}
           ${caField('caFuelInput', 'Essence par jour roulé (€)', caNum(ct.fuelPerDay ?? 15), '15')}
         </div>
         <div style="margin-top:8px;">
