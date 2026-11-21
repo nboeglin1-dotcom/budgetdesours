@@ -1532,6 +1532,16 @@ function clearAppBadgeOnce(){
 }
 
 /* ---------------- render root ---------------- */
+// Remonte en haut de page d'un coup. Le html a « scroll-behavior:smooth » : sans le couper le temps du
+// saut, Safari anime le defilement et peut s'arreter en chemin (et l'option behavior:'instant' n'existe
+// pas sur tous les iOS).
+function jumpToTop(){
+  const h = document.documentElement;
+  const prev = h.style.scrollBehavior;
+  h.style.scrollBehavior = 'auto';
+  window.scrollTo(0, 0);
+  requestAnimationFrame(()=>{ window.scrollTo(0, 0); h.style.scrollBehavior = prev; });
+}
 function rerender(){
   const active = document.activeElement;
   const activeId = active && active.id;
@@ -3875,13 +3885,15 @@ function bindEvents(){
     // enveloppes refermees).
     if(el.dataset.tab === 'dashboard'){
       const now = new Date();
+      const h = document.documentElement; h.style.scrollBehavior = 'auto';
       setState({ tab:'dashboard', viewY: now.getFullYear(), viewM: now.getMonth(), envOpen: null });
-      window.scrollTo({ top:0, behavior:'instant' });
+      h.style.scrollBehavior = '';
+      jumpToTop();
       return;
     }
     if(el.dataset.tab === state.tab) return;
     setState({tab: el.dataset.tab});
-    window.scrollTo(0,0);
+    jumpToTop();
   }));
   app.querySelectorAll('[data-move]').forEach(el=>el.addEventListener('click', ()=> moveMonth(Number(el.dataset.move))));
   app.querySelectorAll('[data-toggle-banner]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.bannerCollapsed = !d.bannerCollapsed; }); }));
