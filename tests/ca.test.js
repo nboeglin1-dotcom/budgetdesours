@@ -24,7 +24,7 @@ test.describe('Objectif de CA', () => {
   test('CA2 Données anciennes sans réglage : objectif 4 100 € et 37,5 % par défaut', () =>
     withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData() }, async ({ page }) => {
       const ct = await page.evaluate(() => state.data.caTracker);
-      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', bitstackDca:450, fuelPerDay:15, bitstackFrom:'2026-12', shineMonths:{} });
+      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', bitstackDca:450, fuelPerDay:15, bitstackFrom:'2026-12', augustReserve:150, augustReserveFrom:'2027-01', shineMonths:{} });
     }));
 
   test('CA3 Mois en cours : reste à faire réparti sur les jours ouvrés après aujourd’hui', () =>
@@ -132,6 +132,35 @@ test.describe('Objectif de CA', () => {
       assert.equal(p.motoIn, 0);
       // 1 500 + 1 500 × 0,77 − 0 − Bitstack (450 + 22 jours × 15 = 780) − 1 500 = 375 → 370
       assert.equal(p.commun, 370);
+    }));
+
+  test('CA9c Réserve d’août : +150 € gardés sur Shine par mois de janvier à août, libérés le 5 septembre', () =>
+    withApp({ now:'2027-03-02T12:00:00+01:00', data: baseData({ caTracker:{ floor:1600, months:{ '2026-12':4000, '2027-02':4000, '2027-07':4000, '2027-08':0 }, shineMonths:{
+      '2027-01':{ amount:1600, after:false, date:'2027-01-02' }, '2027-03':{ amount:1900, after:false, date:'2027-03-02' },
+      '2027-08':{ amount:2650, after:false, date:'2027-08-02' }, '2027-09':{ amount:2800, after:false, date:'2027-09-02' } } } }) }, async ({ page, errors }) => {
+      const jan = await page.evaluate(() => shineTransferPlan(2027, 0));
+      assert.equal(jan.reserve, 150);
+      assert.equal(jan.reserveTarget, 1200);
+      const mar = await page.evaluate(() => shineTransferPlan(2027, 2));
+      assert.equal(mar.reserve, 450);
+      const noRes = await page.evaluate(() => { const ct = state.data.caTracker; const o = ct.augustReserve; ct.augustReserve = 0; const p = shineTransferPlan(2027, 2); ct.augustReserve = o; return p; });
+      assert.equal(noRes.commun - mar.commun, 450);
+      assert.ok(mar.shineAfter >= 1600 + 450);
+      const aug = await page.evaluate(() => shineTransferPlan(2027, 7));
+      assert.equal(aug.reserve, 1200);
+      const sep = await page.evaluate(() => shineTransferPlan(2027, 8));
+      assert.equal(sep.reserve, 0);
+      assert.equal(sep.reserveReleased, 1200);
+      // Septembre : CA d'août à 0, crédit moto fini → 2 800 − 0 − 780 (450 + 22 × 15) − 1 600 = 420
+      assert.equal(sep.commun, 420);
+      await page.click('[data-tab="goals"]');
+      await page.evaluate(() => { state.viewY = 2027; state.viewM = 1; rerender(); });
+      const txt = await page.textContent('.ca-shine-card');
+      assert.match(txt, /Mis de côté pour août\s*150\s€/);
+      assert.match(txt, /réserve 450\s€ sur 1\s200\s€/);
+      await page.evaluate(() => { state.viewY = 2027; state.viewM = 7; rerender(); });
+      assert.match(await page.textContent('.ca-shine-card'), /Réserve d'août libérée/);
+      assert.deepEqual(errors, []);
     }));
 
   test('CA9b Virement Bitstack du 5 : DCA + essence × jours ouvrés, le perso baisse du DCA, à partir de décembre 2026', () =>

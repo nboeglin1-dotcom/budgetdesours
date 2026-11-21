@@ -690,6 +690,10 @@ function normalizeData(parsed){
       if(!(Number(ctx.bitstackDca) >= 0)) ctx.bitstackDca = 450;
       if(!(Number(ctx.fuelPerDay) >= 0)) ctx.fuelPerDay = 15;
       if(typeof ctx.bitstackFrom !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.bitstackFrom)) ctx.bitstackFrom = '2026-12';
+      // Reserve d'aout : chaque virement du 5 de janvier a aout garde augustReserve € de plus sur Shine (le plancher monte
+      // d'autant). Aout n'est pas roule : le 5 septembre, la reserve est liberee et paie les virements. Chaque annee.
+      if(!(Number(ctx.augustReserve) >= 0)) ctx.augustReserve = 150;
+      if(typeof ctx.augustReserveFrom !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.augustReserveFrom)) ctx.augustReserveFrom = '2027-01';
       // Solde restant Shine : un par mois de virement (cle AAAA-MM du mois des virements du 5), garde d'un mois sur l'autre.
       const okSnap = sn => sn && typeof sn === 'object' && isFinite(Number(sn.amount)) && typeof sn.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sn.date);
       if(!ctx.shineMonths || typeof ctx.shineMonths !== 'object' || Array.isArray(ctx.shineMonths)) ctx.shineMonths = {};
@@ -3187,11 +3191,20 @@ function shineTransferPlan(py = state.viewY, pm = state.viewM, d = state.data){
   const bitstack = dca + fuel;
   const persoFull = perso;
   if(bitstackActive) perso = Math.max(0, perso - dca);
-  const raw = afterIn - perso - bitstack - ct.floor;
+  // Reserve d'aout : cumul garde sur Shine a ce virement (janvier → aout), liberee le 5 septembre.
+  const rsvPer = Math.max(0, Math.round(Number(ct.augustReserve) || 0));
+  const rsvFrom = ct.augustReserveFrom || '2027-01';
+  const rsvYear = Number(payKey.slice(0, 4)), rsvMonth = Number(payKey.slice(5));
+  const rsvFirst = rsvYear === Number(rsvFrom.slice(0, 4)) ? Number(rsvFrom.slice(5)) : 1;
+  const rsvMonths = m => (rsvPer > 0 && rsvYear >= Number(rsvFrom.slice(0, 4)) && rsvFirst <= 8) ? Math.max(0, Math.min(m, 8) - rsvFirst + 1) : 0;
+  const reserve = rsvMonth <= 8 ? rsvPer * rsvMonths(rsvMonth) : 0;
+  const reserveReleased = rsvMonth === 9 ? rsvPer * rsvMonths(8) : 0;
+  const raw = afterIn - perso - bitstack - ct.floor - reserve;
   return {
     key: payKey, payY: py, payM: pm, caY, caM, hasCa: snap.after || hasCa, after: !!snap.after, date: snap.date,
     amount: Number(snap.amount), payout, payoutNet, motoIn, motoActive, perso, floor: ct.floor,
     bitstackActive, bitstack, dca, fuel, fuelDays, persoFull,
+    reserve, reserveAdded: reserve > 0 ? rsvPer : 0, reserveTarget: rsvPer * rsvMonths(8), reserveReleased,
     commun: Math.max(0, Math.floor(raw / 10) * 10), short: raw < 0 ? -raw : 0,
     shineAfter: afterIn - perso - bitstack - Math.max(0, Math.floor(raw / 10) * 10),
   };
@@ -3265,6 +3278,8 @@ function renderShinePlan(){
     lines.push(`− virement perso : ${fmt0(p.perso)}`);
     if(p.bitstackActive) lines.push(`− virement Bitstack : ${fmt0(p.bitstack)} (DCA ${fmt0(p.dca)} + essence ${fmt0(p.fuel)})`);
     lines.push(`− plancher gardé sur Shine : ${fmt0(p.floor)}`);
+    if(p.reserve) lines.push(`− réserve d'août gardée sur Shine : ${fmt0(p.reserve)}`);
+    if(p.reserveReleased) lines.push(`(réserve d'août de ${fmt0(p.reserveReleased)} libérée : elle est dans le solde)`);
     const row = (label, sub, amount, color) => `
       <div style="padding:8px 0;">
         <div class="row" style="margin:0; font-size:13.5px;"><span>${label}</span><strong class="mono" style="font-size:16px; color:${color};">${fmt0(amount)}</strong></div>
@@ -3273,6 +3288,8 @@ function renderShinePlan(){
     body = `
       ${row('Vers le LCL perso', (p.motoActive ? `${fmt0(ct.moto)} de crédit moto + ${fmt0(ct.persoBase)}` : 'Crédit moto terminé') + (p.bitstackActive && p.dca ? ` − ${fmt0(p.persoFull - p.perso)} de DCA, payé depuis Shine` : ''), p.perso, 'var(--paper)')}
       ${p.bitstackActive ? row('Vers Bitstack', `DCA ${fmt0(p.dca)} + essence ${fmt0(p.fuel)} (${p.fuelDays} jours × ${fmt0(ct.fuelPerDay)})`, p.bitstack, 'var(--gold)') : ''}
+      ${p.reserve ? row('Mis de côté pour août', `Reste sur Shine · réserve ${fmt0(p.reserve)} sur ${fmt0(p.reserveTarget)}, libérée le 5 septembre`, p.reserveAdded, 'var(--paperDim)') : ''}
+      ${p.reserveReleased ? `<div style="font-size:11.5px; color:var(--sage); padding:4px 0;">${icon('spark',11)} Réserve d'août libérée : les ${fmt0(p.reserveReleased)} gardés depuis janvier paient ces virements.</div>` : ''}
       ${row('Vers le LCL commun', p.short ? `<span style="color:var(--coral);">Shine passerait ${fmt0(p.short)} sous ton plancher : rien ce mois-ci</span>` : `Il restera ≈ ${fmt0(p.shineAfter)} sur Shine`, p.commun, p.short ? 'var(--coral)' : 'var(--sage)')}
       ${!p.hasCa ? `<div class="alert" style="margin:6px 0 0; font-size:12px;">${icon('alert',13)} <div>Saisis le CA de ${MONTHS[p.caM].toLowerCase()} pour un calcul juste.</div></div>` : ''}
       ${p.hasCa && shineRecurringRule() ? `<div data-shine-sync style="font-size:11px; color:var(--paperDim); margin-top:4px;">${icon('repeat',11)} La récurrence « ${escapeHtml(shineRecurringRule().note || 'Virement Shine')} » du compte commun suit ce montant.</div>` : ''}
@@ -3365,6 +3382,7 @@ function renderCaCard(){
           ${caField('caPersoBaseInput', 'Perso hors moto (€)', caNum(ct.persoBase ?? 153), '153')}
           ${caField('caDcaInput', 'DCA Bitstack par mois (€)', caNum(ct.bitstackDca ?? 450), '450')}
           ${caField('caFuelInput', 'Essence par jour roulé (€)', caNum(ct.fuelPerDay ?? 15), '15')}
+          ${caField('caReserveInput', 'Réserve d\'août par mois (€)', caNum(ct.augustReserve ?? 150), '150')}
         </div>
         <div style="margin-top:8px;">
           ${caField('caUrssafInput', 'URSSAF + impôt prélevés sur le CA (%)', caNum(Math.round((ct.urssaf ?? 0.23)*1000)/10), '23')}
@@ -4149,8 +4167,9 @@ function bindEvents(){
     const u = parseAmountInput((document.getElementById('caUrssafInput')||{}).value);
     const dca = parseAmountInput((document.getElementById('caDcaInput')||{}).value);
     const fu = parseAmountInput((document.getElementById('caFuelInput')||{}).value);
-    if(!(f >= 0) || !(b >= 0) || !(u >= 0 && u < 100) || !(dca >= 0) || !(fu >= 0)){ showToast('Réglages invalides'); return; }
-    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; syncShineRecurring(d); });
+    const rs = parseAmountInput((document.getElementById('caReserveInput')||{}).value);
+    if(!(f >= 0) || !(b >= 0) || !(u >= 0 && u < 100) || !(dca >= 0) || !(fu >= 0) || !(rs >= 0)){ showToast('Réglages invalides'); return; }
+    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; d.caTracker.augustReserve = Math.round(rs); syncShineRecurring(d); });
     showToast('Réglages enregistrés');
   }));
   app.querySelectorAll('[data-contribute]').forEach(el=>el.addEventListener('click', ()=>{
