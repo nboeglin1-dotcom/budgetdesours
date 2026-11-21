@@ -10,7 +10,7 @@ const goals = [
   { id:'g2', name:'Réserve test', target:3000, current:3000, color:'#7FB685', accountId:'main' },
 ];
 
-test('G1 Cartes d’épargne : total, virements auto par mois, ajout et retrait', async () => {
+test('G1 Cartes d’épargne : total, virements auto par mois, sans ajout ni retrait', async () => {
   const app = await openApp({ now:'2026-10-28T10:00:00+01:00', data: baseData({
     goals, goalTransfers:[{ goalId:'g1', amount:500, frequency:'monthly', nextDate:'2026-11-09T00:00:00.000Z' }],
   }) });
@@ -21,12 +21,11 @@ test('G1 Cartes d’épargne : total, virements auto par mois, ajout et retrait'
     assert.match(total, /4\s250\s€/);
     assert.match(total, /Auto \/ mois\s*500\s€/);
     assert.match(total, /1 \/ 2/);
-    await page.fill('#goalAmount-g1', '100');
-    await page.click('[data-contribute="g1"]');
-    assert.equal(await page.evaluate(() => state.data.goals.find(g=>g.id==='g1').current), 1350);
-    await page.fill('#goalAmount-g1', '50');
-    await page.click('[data-withdraw="g1"]');
-    assert.equal(await page.evaluate(() => state.data.goals.find(g=>g.id==='g1').current), 1300);
+    // Plus d'ajout ni de retrait sur les cartes : ça passe par les boutons − / + de l'accueil.
+    assert.equal(await page.$('#goalAmount-g1'), null);
+    assert.equal(await page.$('[data-contribute="g1"]'), null);
+    assert.equal(await page.$('[data-withdraw="g1"]'), null);
+    assert.ok(await page.$('[data-del-goal="g1"]'));
     await page.click('[data-open-goaltransfer="g1"]');
     assert.equal(await page.evaluate(() => state.editingGoalTransferId), 'g1');
     assert.deepEqual(errors, []);

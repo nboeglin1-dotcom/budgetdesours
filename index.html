@@ -3502,13 +3502,8 @@ function renderGoals(){
           <div>${deadlineLine}</div>
           ${transfer ? `<button data-stop-goaltransfer="${g.id}" style="font-size:11px; color:var(--coral); background:none; border:none; padding:0; flex-shrink:0;">Arrêter le virement</button>` : ''}
         </div>
-        <label style="display:block; margin-top:12px;"><span class="field-label">Montant</span>
-          <input id="goalAmount-${g.id}" type="number" inputmode="decimal" class="field-input" style="margin-bottom:0; font-size:14px;" placeholder="ex : 100">
-        </label>
-        <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:8px; margin-top:8px;">
-          <button class="btn-primary" data-contribute="${g.id}" style="justify-content:center;">${icon('plus',13)} Ajouter</button>
-          <button data-withdraw="${g.id}" style="background:transparent; border:1px solid var(--coral); color:var(--coral); font-weight:600; font-size:13px; border-radius:12px;">Retirer</button>
-          <button data-del-goal="${g.id}" aria-label="Supprimer l'objectif" style="background:none; border:1px solid var(--line); color:var(--paperDim); border-radius:12px; padding:0 12px;">${icon('trash',14)}</button>
+        <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+          <button data-del-goal="${g.id}" aria-label="Supprimer l'objectif" style="background:none; border:1px solid var(--line); color:var(--paperDim); border-radius:12px; padding:8px 12px;">${icon('trash',14)}</button>
         </div>
       </div>`;
     }).join('')}
@@ -4171,18 +4166,6 @@ function bindEvents(){
     if(!(f >= 0) || !(b >= 0) || !(u >= 0 && u < 100) || !(dca >= 0) || !(fu >= 0) || !(rs >= 0)){ showToast('Réglages invalides'); return; }
     mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; d.caTracker.augustReserve = Math.round(rs); syncShineRecurring(d); });
     showToast('Réglages enregistrés');
-  }));
-  app.querySelectorAll('[data-contribute]').forEach(el=>el.addEventListener('click', ()=>{
-    const id = el.dataset.contribute;
-    const input = document.getElementById('goalAmount-'+id);
-    const amt = Number(input.value);
-    if(amt>0) goalContribute(id, amt);
-  }));
-  app.querySelectorAll('[data-withdraw]').forEach(el=>el.addEventListener('click', ()=>{
-    const id = el.dataset.withdraw;
-    const input = document.getElementById('goalAmount-'+id);
-    const amt = Number(input.value);
-    if(amt>0) goalWithdraw(id, amt);
   }));
   app.querySelectorAll('[data-del-goal]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Objectif supprimé', d=>{ d.goals = d.goals.filter(g=>g.id!==el.dataset.delGoal); }); }));
 
