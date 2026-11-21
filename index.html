@@ -3087,8 +3087,7 @@ function renderBudgets(){
               </label>
               <button class="btn-primary" data-save-budget="${cat.id}" style="justify-content:center; height:44px;">OK</button>
             </div>` : `
-            <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:8px; margin-top:12px;">
-              <button data-quick-tx-cat="${cat.id}" data-quick-tx-type="expense" style="${actBtn}">${icon('plus',12)} Dépense</button>
+            <div style="display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:12px;">
               <button data-edit-budget="${cat.id}" style="${actBtn}">Limite <span class="mono" style="color:var(--gold);">${fmt0(limit)}</span></button>
               <button data-hide-budgetcat="${cat.id}" aria-label="Masquer cette catégorie" title="Masquer cette catégorie" style="${actBtn} color:var(--paperDim); padding:8px 11px;">${icon('x',12)}</button>
             </div>`}

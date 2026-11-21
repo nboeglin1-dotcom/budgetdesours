@@ -7,7 +7,7 @@ test.after(closeBrowser);
 const D = (s) => new Date(s + 'T00:00:00.000Z').toISOString();
 const tx = (o) => Object.assign({ id:Math.random().toString(36).slice(2), type:'expense', accountId:'main', note:'' }, o);
 
-test('B1 Budgets : total avec tuiles, limite modifiable, détail et ajout rapide', async () => {
+test('B1 Budgets : total avec tuiles, limite modifiable, détail, sans bouton Dépense', async () => {
   const app = await openApp({ now:'2026-10-21T10:00:00+02:00', data: baseData({
     budgets:{ alimentation:300, loisirs:100 }, lastRolloverCheck:'2026-9',
     transactions:[
@@ -32,8 +32,8 @@ test('B1 Budgets : total avec tuiles, limite modifiable, détail et ajout rapide
     assert.equal(await page.evaluate(() => state.data.budgets.alimentation), 350);
     await page.click('[data-toggle-budget-detail="loisirs"]');
     assert.equal(await page.evaluate(() => state.expandedBudgetCat), 'loisirs');
-    await page.click('.budget-card [data-quick-tx-cat="alimentation"]');
-    assert.equal(await page.evaluate(() => !!state.quickTxOpen), true);
+    // Plus de bouton « Dépense » sur les cartes : l'ajout passe par l'accueil et le bouton +.
+    assert.equal(await page.$('.budget-card [data-quick-tx-cat]'), null);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
