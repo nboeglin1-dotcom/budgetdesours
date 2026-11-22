@@ -38,7 +38,7 @@ test('B1 Budgets : total avec tuiles, limite modifiable, détail, sans bouton D�
   } finally { await app.close(); }
 });
 
-test('B2 Budgets : cartes = enveloppes, dépenses sans limite dans « Dépenses ponctuelles », épargne exclue', async () => {
+test('B2 Budgets : cartes = enveloppes, rien d’autre, onglet « Enveloppes »', async () => {
   const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({
     budgets:{ alimentation:750, loisirs:150 }, lastRolloverCheck:'2026-10',
     recurring:[{ id:'tf', type:'expense', amount:178, category:'logement', note:'Taxe test', frequency:'monthly', accountId:'main', nextDate:'2026-12-15T00:00:00.000Z' }],
@@ -61,12 +61,8 @@ test('B2 Budgets : cartes = enveloppes, dépenses sans limite dans « Dépenses 
     assert.equal(await page.$('[data-toggle-budget-detail="epargne"]'), null);
     assert.equal(await page.$('[data-toggle-budget-detail="logement"]'), null);
     assert.equal(await page.$('[data-toggle-budget-detail="shopping"]'), null);
-    // Hors enveloppes : impôts (catégorie avec récurrence) et cadeau, sans l'épargne, non comptés dans le total.
-    const off = (await page.textContent('.budgets-offenv-card')).replace(/\s+/g,' ');
-    assert.match(off, /Dépenses ponctuelles 328\s€/);
-    assert.match(off, /228\s€/);
-    assert.match(off, /100\s€/);
-    assert.doesNotMatch(off, /1\s000\s€/);
+    assert.equal(await page.$('.budgets-offenv-card'), null);              // plus de carte « Dépenses ponctuelles »
+    assert.match(await page.textContent('.tabbar'), /Enveloppes/);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
