@@ -3018,50 +3018,65 @@ function renderBudgets(){
   const isCur = state.viewY===today.getFullYear() && state.viewM===today.getMonth();
   const isPast = state.viewY<today.getFullYear() || (state.viewY===today.getFullYear() && state.viewM<today.getMonth());
   const daysLeft = isPast ? 0 : isCur ? daysInMonth - today.getDate() + 1 : daysInMonth;
+  const envListActive = state.envListFilter || null;   // null = detail replie
 
   return `
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
       ${monthNav()}
     </div>
-    <div class="row" style="margin-bottom:12px;">
-      <div class="section-title" style="margin:0;">Mes enveloppes</div>
-      <div style="display:flex; align-items:center; gap:6px;">
-        ${hiddenCount ? `<button data-open-hiddencat="1" style="${pillBtn}" title="Catégories masquées">${icon('x',11)} ${hiddenCount} masquée${hiddenCount>1?'s':''}</button>` : ''}
-        <button data-open-managecat="1" style="${pillBtn}" title="Gérer les catégories">${icon('tag',13)} Catégories</button>
-      </div>
-    </div>
     ${(()=>{
-      // Total = enveloppes seulement (categories avec une limite), comparees a la somme de leurs limites.
+      // Carte resume plein ecran (comme Transactions) ; le detail des enveloppes s'ouvre avec les boutons du bas.
       const totalLimit = allExpenseCats.reduce((s,c)=> s + effectiveLimit(c.id), 0);
-      const totalSpent = allExpenseCats.filter(c=> effectiveLimit(c.id) > 0).reduce((s,c)=> s + (byCat[c.id]||0), 0);
-      if(totalLimit<=0) return '';
-      const pctTotal = Math.min(100, Math.round(totalSpent/totalLimit*100));
+      const totalSpent = allExpenseCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
+      const pctTotal = totalLimit>0 ? Math.min(100, Math.round(totalSpent/totalLimit*100)) : 0;
       const overTotal = totalSpent > totalLimit;
       const left = totalLimit - totalSpent;
-      const withLimit = allExpenseCats.filter(c=> effectiveLimit(c.id) > 0);
-      const overCount = withLimit.filter(c=> (byCat[c.id]||0) > effectiveLimit(c.id)).length;
-      return `<div class="card budgets-total-card">
-        <div class="row" style="margin-bottom:8px;">
-          <div class="section-title" style="margin:0; font-size:15px;">Total du mois</div>
+      const overCount = allExpenseCats.filter(c=> (byCat[c.id]||0) > effectiveLimit(c.id)).length;
+      const iconBtn = 'display:inline-flex; align-items:center; justify-content:center; gap:4px; min-width:32px; height:32px; padding:0 8px; border-radius:10px; background:none; border:1px solid var(--line); color:var(--paperDim); font-size:11.5px;';
+      const envBtn = (id, label) => `<button data-envlist="${id}" class="${envListActive===id ? 'active' : ''}">${label}</button>`;
+      return `<div class="card budgets-total-card" style="display:flex; flex-direction:column; min-height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 212px - env(safe-area-inset-bottom)); margin-bottom:14px;">
+        <div class="row" style="margin-bottom:10px; flex-wrap:nowrap;">
+          <div><div class="section-title" style="margin:0; font-size:15px;">Le mois en enveloppes</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${allExpenseCats.length} enveloppe${allExpenseCats.length>1?'s':''}</div></div>
+          <div style="display:flex; gap:6px;">
+            ${hiddenCount ? `<button data-open-hiddencat="1" aria-label="Catégories masquées" style="${iconBtn}">${icon('x',11)} ${hiddenCount}</button>` : ''}
+            <button data-open-managecat="1" aria-label="Catégories" style="${iconBtn}">${icon('tag',14)}</button>
+          </div>
         </div>
+        ${totalLimit<=0 ? `
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px;">
+            ${bearMascot('sleepy', 52)}
+            <div style="font-size:13.5px; color:var(--paperDim); margin-top:12px;">Aucune enveloppe pour l'instant. Touche + pour en créer une, avec une limite.</div>
+          </div>` : `
         <div class="row" style="align-items:baseline; margin-bottom:0;">
-          <div class="mono" style="font-size:28px; font-weight:700; color:${overTotal?'var(--coral)':'var(--paper)'};">${fmt0(totalSpent)}</div>
+          <div class="mono" style="font-size:26px; font-weight:700; color:${overTotal?'var(--coral)':'var(--paper)'};">${fmt0(totalSpent)}</div>
           <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(totalLimit)}</div>
         </div>
         <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pctTotal}%; background:${overTotal?'var(--coral)':'var(--gold)'};"></div></div>
         <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px;">
           ${left>=0 ? caTile('Reste', fmt0(left), 'var(--mint)') : caTile('Dépassé', fmt0(-left), 'var(--coral)')}
           ${caTile('Par jour', left>0 && daysLeft>0 ? `≈ ${fmt0(left/daysLeft)}` : '—', 'var(--paper)', daysLeft>0 ? `${daysLeft} jour${daysLeft>1?'s':''}` : 'mois terminé')}
-          ${caTile('Dépassées', `${overCount} / ${withLimit.length}`, overCount ? 'var(--coral)' : 'var(--sage)')}
+          ${caTile('Dépassées', `${overCount} / ${allExpenseCats.length}`, overCount ? 'var(--coral)' : 'var(--sage)')}
         </div>
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:14px; margin-top:16px;">
+          ${allExpenseCats.map(c=>{
+            const lim = effectiveLimit(c.id), sp = byCat[c.id]||0, p = Math.min(100, Math.round(sp/lim*100)), ov = sp > lim;
+            const bar = ov ? 'var(--coral)' : (p>=80 ? 'var(--amber)' : c.color);
+            return `<div>
+              <div class="row" style="margin:0; font-size:13.5px;"><span style="display:flex; align-items:center; gap:8px;"><span style="width:8px; height:8px; border-radius:50%; background:${c.color};"></span>${escapeHtml(c.label)}</span><span class="mono" style="font-weight:700; color:${ov?'var(--coral)':(lim-sp>0?'var(--mint)':'var(--paperDim)')};">${ov ? `−${fmt0(sp-lim)}` : fmt0(lim-sp)}</span></div>
+              <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${p}%; background:${bar};"></div></div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:16px; width:100%;">
+          ${envBtn('all', 'Toutes')}${envBtn('watch', 'À surveiller')}${envBtn('over', 'Dépassées')}
+        </div>`}
       </div>`;
     })()}
-    ${allExpenseCats.length===0 ? `
-      <div class="card" style="padding:30px 20px; text-align:center;">
-        ${bearMascot('sleepy', 52)}
-        <div style="font-size:13.5px; color:var(--paperDim); margin-top:12px;">Aucune enveloppe pour l'instant. Touche + pour en créer une, avec une limite.</div>
-      </div>
-    ` : allExpenseCats.map(cat=>{
+    ${!envListActive ? '' : (()=>{ const shown = allExpenseCats.filter(c=>{
+        const lim = effectiveLimit(c.id), sp = byCat[c.id]||0;
+        return envListActive==='all' ? true : envListActive==='over' ? sp > lim : sp >= lim*0.8;
+      });
+      return shown.length===0 ? `<div class="card budget-empty" style="padding:22px; text-align:center; font-size:13.5px; color:var(--paperDim);">${envListActive==='over' ? 'Aucune enveloppe dépassée 👍' : 'Rien à surveiller pour l’instant 👍'}</div>` : shown.map(cat=>{
       const limit = effectiveLimit(cat.id);
       const spent = byCat[cat.id] || 0;
       const pct = limit>0 ? Math.min(100, Math.round(spent/limit*100)) : 0;
@@ -3107,7 +3122,7 @@ function renderBudgets(){
           ` : ''}
         </div>
       `;
-    }).join('')}
+    }).join(''); })()}
   `;
 }
 
@@ -4119,6 +4134,13 @@ function bindEvents(){
     if(cur === id){ setState({ txListOpen:false }); return; }
     setState({ txListOpen:true, txFilter: id==='upcoming' ? 'all' : id, hidePastTx: id==='upcoming' });
     const card = document.querySelector('.tx-list-card');
+    if(card){ const top = card.getBoundingClientRect().top + window.scrollY - (document.querySelector('.header')?.offsetHeight||0) - 70; window.scrollTo({ top: Math.max(0, top), behavior:'smooth' }); }
+  }));
+  app.querySelectorAll('[data-envlist]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.envlist;
+    if(state.envListFilter === id){ setState({ envListFilter:null }); return; }
+    setState({ envListFilter:id });
+    const card = document.querySelector('.budget-card, .budget-empty');
     if(card){ const top = card.getBoundingClientRect().top + window.scrollY - (document.querySelector('.header')?.offsetHeight||0) - 70; window.scrollTo({ top: Math.max(0, top), behavior:'smooth' }); }
   }));
   app.querySelectorAll('[data-toggle-txsearch]').forEach(el=>el.addEventListener('click', ()=>{

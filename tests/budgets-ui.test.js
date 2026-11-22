@@ -24,6 +24,8 @@ test('B1 Budgets : total avec tuiles, limite modifiable, détail, sans bouton D�
     assert.match(total, /Reste\s*150\s€/);
     assert.match(total, /≈ 14\s€\s*11 jours/);        // 150 € sur 11 jours (21 → 31 oct.)
     assert.match(total, /1 \/ 2/);                       // loisirs dépassé
+    assert.equal(await page.$('.budget-card'), null);                 // détail replié par défaut
+    await page.click('[data-envlist="all"]');
     const cards = await page.$$eval('.budget-card', els => els.map(e => e.textContent));
     assert.ok(cards.some(t => /Dépassée de 30\s€/.test(t)));
     await page.click('[data-edit-budget="alimentation"]');
@@ -58,6 +60,8 @@ test('B2 Budgets : cartes = enveloppes, rien d’autre, onglet « Enveloppes »'
     assert.match(total, /sur 900\s€/);
     assert.match(total, /Reste\s*375\s€/);
     assert.match(total, /0 \/ 2/);
+    await page.click('[data-envlist="all"]');
+    assert.equal(await page.$$eval('.budget-card', els => els.length), 2);
     assert.equal(await page.$('[data-toggle-budget-detail="epargne"]'), null);
     assert.equal(await page.$('[data-toggle-budget-detail="logement"]'), null);
     assert.equal(await page.$('[data-toggle-budget-detail="shopping"]'), null);
@@ -139,6 +143,30 @@ test('B5 Fenêtre Catégories : Dépenses / Revenus, toucher une ligne pour la m
     await page.click('[data-open-catedit="cad"]');
     await page.click('[data-del-cat="cad"]');
     assert.equal(await page.evaluate(() => state.data.customCategories.some(c=>c.id==='cad')), false);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
+
+test('B6 Enveloppes : boutons Toutes / À surveiller / Dépassées', async () => {
+  const app = await openApp({ now:'2026-10-21T10:00:00+02:00', data: baseData({
+    budgets:{ alimentation:300, loisirs:100, transport:100 }, lastRolloverCheck:'2026-9',
+    transactions:[
+      tx({ amount:120, category:'alimentation', date:D('2026-10-05') }),   // 40 %
+      tx({ amount:130, category:'loisirs', date:D('2026-10-08') }),        // dépassée
+      tx({ amount:85, category:'transport', date:D('2026-10-09') }),       // 85 % : à surveiller
+    ] }) });
+  const { page, errors } = app;
+  try{
+    await page.click('[data-tab="budgets"]');
+    const ids = () => page.$$eval('[data-toggle-budget-detail]', els => els.map(e => e.dataset.toggleBudgetDetail).sort());
+    await page.click('[data-envlist="over"]');
+    assert.deepEqual(await ids(), ['loisirs']);
+    await page.click('[data-envlist="watch"]');
+    assert.deepEqual(await ids(), ['loisirs', 'transport']);
+    await page.click('[data-envlist="all"]');
+    assert.equal((await ids()).length, 3);
+    await page.click('[data-envlist="all"]');
+    assert.deepEqual(await ids(), []);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
