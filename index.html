@@ -930,8 +930,12 @@ function processRecurring(){
           note: (ex && ex.note!=null) ? ex.note : rule.note,
           date: effDate.toISOString(),
           accountId: rule.accountId || 'main',
+          ...(rule.goalId && (state.data.goals||[]).some(g=>g.id===rule.goalId) && ((ex && ex.category) || rule.category)==='epargne' ? { goalId: rule.goalId } : {}),
           recurringId: rule.id
         });
+        // Depot sur epargne rattache a un objectif : l'objectif monte d'autant.
+        const tNew = state.data.transactions[0];
+        if(tNew.goalId){ const g = state.data.goals.find(g=>g.id===tNew.goalId); if(g) g.current += tNew.amount; }
       }
       if(ex){ delete rule.exceptions[occKey]; }
       next = addPeriod(next, rule.frequency, rule.anchorDay);
@@ -3361,6 +3365,13 @@ function goalForecast(g, d = state.data, now = new Date()){
       else x = new Date(x.getFullYear(), x.getMonth()+1, x.getDate());
     }
   });
+  (d.recurring||[]).filter(r=>r.goalId===g.id && r.category==='epargne' && r.type==='expense' && r.amount>0 && r.nextDate).forEach(r=>{
+    let x = new Date(r.nextDate), guard = 0;
+    while(x <= dl && guard++ < 600){
+      if(x >= new Date(now.getFullYear(), now.getMonth(), now.getDate())) auto += Number(r.amount);
+      x = addPeriod(x, r.frequency, r.anchorDay);
+    }
+  });
   const planned = (g.planned||[]).filter(p=>p.ym >= nowYm && p.ym <= dlYm).reduce((a,p)=>a+(Number(p.amount)||0), 0);
   const projected = g.current + auto + planned;
   const gap = projected - g.target;
@@ -3646,7 +3657,8 @@ function renderGoals(){
   const totalTarget = goals.reduce((s,g)=>s+g.target,0);
   const ids = new Set(goals.map(g=>g.id));
   const perMonth = (state.data.goalTransfers||[]).filter(t=>ids.has(t.goalId))
-    .reduce((a,t)=> a + t.amount * occurrencesPerMonth(t.frequency), 0);
+    .reduce((a,t)=> a + t.amount * occurrencesPerMonth(t.frequency), 0)
+    + (state.data.recurring||[]).filter(r=>r.goalId && ids.has(r.goalId) && r.category==='epargne').reduce((a,r)=> a + r.amount * occurrencesPerMonth(r.frequency), 0);
   const pctAll = totalTarget>0 ? Math.min(100, Math.round(totalSaved/totalTarget*100)) : 0;
   const doneCount = goals.filter(g=>g.target>0 && g.current>=g.target).length;
   const pill = 'display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid var(--line); color:var(--paper); border-radius:999px; padding:7px 10px; font-size:11px; white-space:nowrap;';
@@ -3990,6 +4002,15 @@ function renderAddTxModal(){
             }).join('')}
           </div>`;
         })()}
+
+        ${txFormState.category==='epargne' && !txFormState.editingId && !txFormState.previewException && (state.data.goals||[]).length ? `
+          <label class="field-label">Pour quel objectif ?</label>
+          <div class="cat-grid" style="margin-bottom:13px;">
+            ${[{ id:'', name:'Aucun', color:'var(--slate, #7C89A6)' }, ...state.data.goals].map(g=>`
+              <button data-tx-goal="${g.id}" class="cat-opt" style="border-color:${(txFormState.goalId||'')===g.id ? g.color : 'var(--line)'};">
+                <span class="dot" style="background:${g.color}"></span><span>${escapeHtml(g.name)}</span>
+              </button>`).join('')}
+          </div>` : ''}
 
         <button data-toggle-tx-advanced="1" class="btn-ghost" style="width:100%; justify-content:center; margin-bottom:${advOpen?'14px':'4px'};">
           ${advOpen ? 'Masquer les options avancées' : 'Plus d’options (note, photo, compte, récurrence)'} ${icon(advOpen?'chevronL':'chevronR',13)}
@@ -4501,6 +4522,7 @@ function bindEvents(){
     txFormState.category = txCategorySelect.value;
   });
   app.querySelectorAll('[data-tx-cat-quick]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.category = el.dataset.txCatQuick; rerender(); }));
+  app.querySelectorAll('[data-tx-goal]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.goalId = el.dataset.txGoal || null; rerender(); }));
   app.querySelectorAll('[data-tx-account]').forEach(el=>el.addEventListener('click', ()=>{ txFormState.accountId = el.dataset.txAccount; rerender(); }));
   app.querySelectorAll('[data-toggle-tx-advanced]').forEach(el=>el.addEventListener('click', ()=>{ state.txAdvancedOpen = !state.txAdvancedOpen; rerender(); }));
   const txAmountInput = app.querySelector('#txAmount');
@@ -4581,15 +4603,18 @@ function bindEvents(){
     }
     mutateData(d=>{
       const newTxId = uid();
+      // Depot sur epargne rattache a un objectif : l'objectif monte avec la depense (et redescend si on la supprime).
+      const goal = txFormState.category==='epargne' && txFormState.goalId ? (d.goals||[]).find(g=>g.id===txFormState.goalId) : null;
       if(txFormState.recurring){
         const newRuleId = uid();
         // Premiere echeance dans le futur : elle reste PRÉVU jusqu'a sa date (comme les autres recurrences),
         // et devient une vraie transaction ce jour-la.
         const future = new Date(isoDate) > new Date(new Date().setHours(23,59,59,999));
-        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: future ? isoDate : addPeriod(isoDate, txFormState.frequency).toISOString(), anchorDay: new Date(isoDate).getUTCDate() });
-        if(!future) d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId, recurringId:newRuleId });
+        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: future ? isoDate : addPeriod(isoDate, txFormState.frequency).toISOString(), anchorDay: new Date(isoDate).getUTCDate(), ...(goal ? { goalId: goal.id } : {}) });
+        if(!future){ d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId, recurringId:newRuleId, ...(goal ? { goalId: goal.id } : {}) }); if(goal) goal.current += amount; }
       } else {
-        d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId });
+        d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId, ...(goal ? { goalId: goal.id } : {}) });
+        if(goal) goal.current += amount;
       }
     });
     state.txDuplicateWarning = false;

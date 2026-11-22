@@ -185,3 +185,31 @@ test('G8 Objectifs de même couleur : couleurs différentes au chargement, et la
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('G9 Dépôt sur épargne récurrent rattaché à un objectif (arrondis) : PRÉVU, puis l’objectif monte à sa date ; compté dans la prévision', async () => {
+  const goals = [{ id:'g1', name:'Voyage au Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main', deadline:'2027-08-31T00:00:00.000Z' }];
+  let app = await openApp({ now:'2026-11-22T21:00:00+01:00', data: baseData({ goals }) });
+  try{
+    const { page } = app;
+    const before = await page.evaluate(() => goalForecast(state.data.goals[0]).projected);
+    await page.evaluate(() => { txFormState = { type:'expense', category:'epargne', date:'2026-11-30', recurring:true, frequency:'monthly', note:'Arrondis LCL', amount:'', editingId:null, photo:null, accountId:'main' }; state.txAdvancedOpen = true; setState({ modal:'addTx' }); });
+    await page.click('[data-tx-goal="g1"]');
+    await page.evaluate(() => { txFormState.amount = 15; });
+    await page.fill('#txAmount', '15').catch(()=>{});
+    await page.evaluate(() => document.querySelector('[data-submit-tx]').click());
+    const r = await page.evaluate(() => ({ rule: state.data.recurring.find(r=>r.goalId==='g1'), cur: state.data.goals[0].current, tx: state.data.transactions.filter(t=>t.goalId==='g1').length }));
+    assert.ok(r.rule, 'règle rattachée');
+    assert.equal(r.rule.nextDate.slice(0,10), '2026-11-30');
+    assert.equal(r.cur, 1515);                 // pas encore passé
+    assert.equal(r.tx, 0);
+    const after = await page.evaluate(() => goalForecast(state.data.goals[0]).projected);
+    assert.equal(after - before, 15 * 10);     // 30 nov → 30 août : 10 échéances
+    assert.deepEqual(app.errors, []);
+    const data = await page.evaluate(() => state.data);
+    await app.close();
+    app = await openApp({ now:'2026-11-30T21:00:00+01:00', data });
+    const r2 = await app.page.evaluate(() => ({ cur: state.data.goals[0].current, tx: state.data.transactions.filter(t=>t.goalId==='g1').length }));
+    assert.deepEqual(r2, { cur:1530, tx:1 });
+    assert.deepEqual(app.errors, []);
+  } finally { await app.close(); }
+});
