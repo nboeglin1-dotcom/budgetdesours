@@ -38,7 +38,7 @@ test('B1 Budgets : total avec tuiles, limite modifiable, détail, sans bouton D�
   } finally { await app.close(); }
 });
 
-test('B2 Budgets : ni épargne ni charge prévue sans limite dans les cartes et le total', async () => {
+test('B2 Budgets : cartes = enveloppes, dépenses sans limite dans « Hors enveloppes », épargne exclue', async () => {
   const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({
     budgets:{ alimentation:750, loisirs:150 }, lastRolloverCheck:'2026-10',
     recurring:[{ id:'tf', type:'expense', amount:178, category:'logement', note:'Taxe test', frequency:'monthly', accountId:'main', nextDate:'2026-12-15T00:00:00.000Z' }],
@@ -60,7 +60,13 @@ test('B2 Budgets : ni épargne ni charge prévue sans limite dans les cartes et 
     assert.match(total, /0 \/ 2/);
     assert.equal(await page.$('[data-toggle-budget-detail="epargne"]'), null);
     assert.equal(await page.$('[data-toggle-budget-detail="logement"]'), null);
-    assert.ok(await page.$('[data-toggle-budget-detail="shopping"]'));   // dépense hors enveloppe : visible, pas comptée
+    assert.equal(await page.$('[data-toggle-budget-detail="shopping"]'), null);
+    // Hors enveloppes : impôts (catégorie avec récurrence) et cadeau, sans l'épargne, non comptés dans le total.
+    const off = (await page.textContent('.budgets-offenv-card')).replace(/\s+/g,' ');
+    assert.match(off, /Hors enveloppes 328\s€/);
+    assert.match(off, /228\s€/);
+    assert.match(off, /100\s€/);
+    assert.doesNotMatch(off, /1\s000\s€/);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });

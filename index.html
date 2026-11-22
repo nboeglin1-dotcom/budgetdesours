@@ -2989,11 +2989,13 @@ function renderBudgets(){
   const hidden = state.data.hiddenBudgetCategories||[];
   const hiddenCount = hidden.length;
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
-  // Pas de carte pour l'epargne et les virements (ce ne sont pas des depenses a surveiller), ni pour une
-  // charge prevue sans limite (categorie liee a une recurrence, ex. impots) : elles faussaient le total.
-  const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id) && (byCat[c.id]||0)>0
-    && !NOT_INC_EXP_CATS.has(c.id) && !(recurringCatIds.has(c.id) && effectiveLimit(c.id) <= 0))
-    .sort((a,b)=>a.label.localeCompare(b.label,'fr'));
+  // Une carte par enveloppe (categorie avec une limite). Les depenses ponctuelles sans limite (cadeaux, copro,
+  // impots…) sont regroupees dans « Hors enveloppes », sans compter dans le total. L'epargne et les
+  // virements n'apparaissent pas : ce ne sont pas des depenses.
+  const spentCats = catsForType('expense').filter(c=>!hidden.includes(c.id) && (byCat[c.id]||0)>0 && !NOT_INC_EXP_CATS.has(c.id));
+  const allExpenseCats = spentCats.filter(c=> effectiveLimit(c.id) > 0).sort((a,b)=>a.label.localeCompare(b.label,'fr'));
+  const offEnvCats = spentCats.filter(c=> effectiveLimit(c.id) <= 0).sort((a,b)=>(byCat[b.id]||0)-(byCat[a.id]||0));
+  const offEnvTotal = offEnvCats.reduce((s,c)=> s + (byCat[c.id]||0), 0);
   const pillBtn = 'display:flex; align-items:center; gap:5px; background:none; border:1px solid var(--line); color:var(--paper); border-radius:999px; padding:6px 11px; font-size:12px;';
 
   // Jours restants du mois affiche (aujourd'hui compris) pour le rythme « par jour ».
@@ -3092,6 +3094,19 @@ function renderBudgets(){
         </div>
       `;
     }).join('')}
+    ${offEnvCats.length ? `
+      <div class="card budgets-offenv-card">
+        <div class="row" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0; font-size:15px;">Hors enveloppes</div>
+          <span class="mono" style="font-size:15px; font-weight:600; color:var(--paper);">${fmt0(offEnvTotal)}</span>
+        </div>
+        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:6px;">Dépenses ponctuelles sans limite, non comptées dans le total du mois.</div>
+        ${offEnvCats.map(c=>`
+          <div class="row" style="margin:0; padding:8px 0; border-top:1px solid var(--lineSoft);">
+            <div style="display:flex; align-items:center; gap:8px; font-size:13.5px;"><span style="width:8px; height:8px; border-radius:50%; background:${c.color}; flex-shrink:0;"></span>${escapeHtml(c.label)}</div>
+            <span class="mono" style="font-size:13.5px; color:var(--paper);">${fmt0(byCat[c.id]||0)}</span>
+          </div>`).join('')}
+      </div>` : ''}
   `;
 }
 
