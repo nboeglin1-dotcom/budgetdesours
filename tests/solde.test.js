@@ -397,7 +397,7 @@ test.describe('Sauvegardes', () => {
 
   test('S2 Suppression d’une catégorie, d’une récurrence ou d’un compte : « Annuler » disponible', async () => {
     const cases = [
-      { open: () => { state.manageCatOpen = true; rerender(); }, sel:'[data-del-cat="c1"]', check: d => d.customCategories.length === 1 },
+      { open: () => { const c = state.data.customCategories.find(x=>x.id==='c1'); newCatFormState = { color:c.color, type:c.type, label:c.label, editingId:'c1', builtin:false }; state.manageCatOpen = true; state.categoryModalOpen = true; rerender(); }, sel:'[data-del-cat="c1"]', check: d => d.customCategories.length === 1 },
       { open: () => { state.recurringModalOpen = true; rerender(); }, sel:'[data-del-recur="r1"]', check: d => d.recurring.length === 1 },
       { open: () => { state.accountsModalOpen = true; state.editingAccountId = 'b'; rerender(); }, sel:'[data-del-account="b"]',
         check: d => d.accounts.length === 2 },

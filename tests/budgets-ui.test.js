@@ -113,3 +113,32 @@ test('B4 Bouton + flottant : nouvelle transaction dans Transactions, nouvelle ca
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('B5 Fenêtre Catégories : Dépenses / Revenus, toucher une ligne pour la modifier (limite, couleur, suppression)', async () => {
+  const app = await openApp({ now:'2026-11-22T10:00:00+01:00', data: baseData({ budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10',
+    customCategories:[{ id:'cad', label:'Cadeaux', color:'#7C89A6', type:'expense' }, { id:'rem', label:'Remboursement', color:'#8B7FD6', type:'income' }] }) });
+  const { page, errors } = app;
+  try{
+    await page.click('.tabbar [data-tab="budgets"]');
+    await page.click('[data-open-managecat]');
+    let txt = await page.textContent('.modal-sheet');
+    assert.match(txt, /Alimentation\s*Enveloppe\s*600\s€/);
+    assert.match(txt, /Cadeaux/);
+    assert.doesNotMatch(txt, /Remboursement|Dépôt sur épargne|Virement entre comptes/);
+    await page.click('[data-managecat-type="income"]');
+    assert.match(await page.textContent('.modal-sheet'), /Remboursement/);
+    await page.click('[data-managecat-type="expense"]');
+    // Catégorie de base : nom non modifiable, limite modifiable
+    await page.click('[data-open-catedit="alimentation"]');
+    assert.equal(await page.$('#newCatLabel[type="hidden"]') !== null, true);
+    assert.equal(await page.$('[data-del-cat]'), null);
+    await page.fill('#newCatLimit', '800');
+    await page.click('[data-submit-newcat]');
+    assert.equal(await page.evaluate(() => state.data.budgets.alimentation), 800);
+    // Catégorie perso : bouton supprimer
+    await page.click('[data-open-catedit="cad"]');
+    await page.click('[data-del-cat="cad"]');
+    assert.equal(await page.evaluate(() => state.data.customCategories.some(c=>c.id==='cad')), false);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
