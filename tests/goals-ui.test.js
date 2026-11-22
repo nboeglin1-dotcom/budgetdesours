@@ -167,3 +167,21 @@ test('G7 « Le 5 » : « Rien ce mois-ci » valide l’étape, pas de liste avan
   app = await openApp({ now:'2026-12-05T10:00:00+01:00', data: baseData({}) });
   try{ assert.equal(await app.page.$('.day5-card'), null); } finally { await app.close(); }
 });
+
+test('G8 Objectifs de même couleur : couleurs différentes au chargement, et la pastille permet d’en choisir une', async () => {
+  const app = await openApp({ now:'2026-11-22T10:00:00+01:00', data: baseData({
+    goals:[{ id:'g1', name:'Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main' },
+           { id:'g2', name:'Précaution', target:5000, current:1947, color:'#6FA287', accountId:'main' }] }) });
+  const { page, errors } = app;
+  try{
+    const cols = await page.evaluate(() => state.data.goals.map(g=>g.color));
+    assert.notEqual(cols[0].toLowerCase(), cols[1].toLowerCase());
+    await page.click('[data-tab="goals"]');
+    await page.click('[data-goalcolor-open="g2"]');
+    await page.click('[data-goalcolor-set="g2"][data-color="#D6829F"]');
+    assert.equal(await page.evaluate(() => state.data.goals[1].color), '#D6829F');
+    await page.reload();
+    assert.equal(await page.evaluate(() => state.data.goals[1].color), '#D6829F');   // pas de réattribution
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
