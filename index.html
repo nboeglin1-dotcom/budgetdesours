@@ -3341,6 +3341,13 @@ function renderShinePlan(){
       ${hist.length ? `<div class="shine-history" style="font-size:11px; color:var(--paperDim); margin-top:8px; line-height:1.5;">Soldes gardés : ${hist.map(escapeHtml).join(' · ')}</div>` : ''}
     </div>`;
 }
+// Suivi d'activite (chiffre d'affaires et virements du 5) : seulement pour qui a une activite. Il apparait
+// des qu'un CA a ete saisi, ou si on l'active ; sinon l'onglet Objectifs ne montre que l'epargne.
+function hasCaActivity(){
+  const ct = state.data.caTracker || {};
+  const any = o => Object.values(o||{}).some(v => Number(v) > 0);
+  return !!ct.enabled || any(ct.months) || any(ct.perso) || Object.keys(ct.shineMonths||{}).length > 0;
+}
 function renderCaCard(){
   const y = state.viewY, m = state.viewM;
   const s = caMonthStatus(y, m);
@@ -3462,7 +3469,7 @@ function renderGoals(){
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
       ${monthNav()}
     </div>
-    ${renderCaCard()}
+    ${hasCaActivity() ? renderCaCard() : ''}
     <div class="card goals-total-card">
       <div class="row" style="margin-bottom:14px;">
         <div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div>
@@ -3487,6 +3494,7 @@ function renderGoals(){
         </div>
         ${goals.map(goalRow).join('')}`}
     </div>
+    ${hasCaActivity() ? '' : `<button data-enable-ca="1" style="display:block; margin:6px auto 0; background:none; border:none; color:var(--paperDim); font-size:12px; text-decoration:underline;">Suivre une activité (chiffre d'affaires et virements)</button>`}
   `;
 }
 
@@ -4297,6 +4305,7 @@ function bindEvents(){
     newCatFormState = { color: COLORS.slate, type: state.manageCatOpen && state.manageCatType==='income' ? 'income' : 'expense', label:'', editingId:null, builtin:false };
     state.categoryModalOpen = true; rerender();
   }));
+  app.querySelectorAll('[data-enable-ca]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.caTracker = d.caTracker || {}; d.caTracker.enabled = true; }); }));
   app.querySelectorAll('[data-managecat-type]').forEach(el=>el.addEventListener('click', ()=>{ state.manageCatType = el.dataset.managecatType; rerender(); }));
   app.querySelectorAll('[data-open-catedit]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.openCatedit;

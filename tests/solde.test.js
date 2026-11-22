@@ -1387,7 +1387,7 @@ test.describe('Virement Shine aligné sur « Vers le commun »', () => {
     }));
 
   test('V3 CA du mois de référence non saisi : la récurrence ne bouge pas', () =>
-    withApp({ now:NOW, data: data({ caTracker:{ target:4100, rate:0.375, months:{}, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shineMonths:{} } }) }, async ({ page }) => {
+    withApp({ now:NOW, data: data({ caTracker:{ enabled:true, target:4100, rate:0.375, months:{}, perso:{}, floor:1700, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', shineMonths:{} } }) }, async ({ page }) => {
       await saveShine(page, '1409');
       assert.equal((await stored(page)).recurring[0].amount, 1000);
     }));

@@ -39,7 +39,7 @@ test.describe('Objectif de CA', () => {
     }));
 
   test('CA4 Saisie depuis l’onglet Objectifs : virgule acceptée, versement affiché', () =>
-    withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData() }, async ({ page, errors }) => {
+    withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData({ caTracker:{ enabled:true } }) }, async ({ page, errors }) => {
       await page.click('[data-tab="goals"]');
       await page.fill('#caInput', '4 048,50');
       await page.click('[data-save-ca]');
@@ -57,7 +57,7 @@ test.describe('Objectif de CA', () => {
     }));
 
   test('CA6 Courses perso : sans commission, converties en équivalent CA Skoot', () =>
-    withApp({ now:'2026-11-10T19:00:00+01:00', data: baseData() }, async ({ page, errors }) => {
+    withApp({ now:'2026-11-10T19:00:00+01:00', data: baseData({ caTracker:{ enabled:true } }) }, async ({ page, errors }) => {
       await page.click('[data-tab="goals"]');
       await page.fill('#caInput', '2000');
       await page.fill('#caPersoInput', '300');
@@ -184,7 +184,7 @@ test.describe('Objectif de CA', () => {
     }));
 
   test('CA5 Réglages : objectif et pourcentage modifiables, valeurs invalides refusées', () =>
-    withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData() }, async ({ page }) => {
+    withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData({ caTracker:{ enabled:true } }) }, async ({ page }) => {
       await page.click('[data-tab="goals"]');
       await page.click('.ca-card summary');
       await page.fill('#caTargetInput', '4200');
@@ -271,4 +271,17 @@ test.describe('Objectif de CA', () => {
       assert.deepEqual(Object.keys(await page.evaluate(() => state.data.caTracker.shineMonths)), ['2026-11']);
     }));
 
+});
+
+test.describe('Suivi d’activité optionnel', () => {
+  test('CA20 Sans CA saisi : pas de cartes CA ni virements dans Objectifs, lien pour activer', () =>
+    withApp({ now:'2026-11-22T10:00:00+01:00', data: baseData() }, async ({ page, errors }) => {
+      await page.click('[data-tab="goals"]');
+      assert.equal(await page.$('.ca-card'), null);
+      assert.equal(await page.$('.ca-shine-card'), null);
+      await page.click('[data-enable-ca]');
+      assert.ok(await page.$('.ca-card'));
+      assert.equal(await page.$('[data-enable-ca]'), null);
+      assert.deepEqual(errors, []);
+    }));
 });
