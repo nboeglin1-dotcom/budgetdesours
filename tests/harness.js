@@ -54,7 +54,7 @@ async function openApp({ now, data, shareCapture = false, storage = null, raw = 
       if(json) localStorage.setItem(KEY, json);
       if(storage) for(const k in storage) localStorage.setItem(k, storage[k]);
       // Sections dépliées par défaut dans les tests (préférence d'affichage de l'appareil).
-      if(!localStorage.getItem('solde-ui-prefs')) localStorage.setItem('solde-ui-prefs', JSON.stringify({ shinePlan:true, goalsDetail:true }));
+      if(!localStorage.getItem('solde-ui-prefs')) localStorage.setItem('solde-ui-prefs', JSON.stringify({ shinePlan:true, goalsDetail:true, caPanel:true }));
       sessionStorage.setItem('__seeded', '1');
     }
     // Pastille d'icône (App Badging API) : on enregistre les appels.

@@ -3414,9 +3414,7 @@ function renderCaCard(){
         ${caField('caPersoInput', 'Courses perso', s.hasPerso ? caNum(s.perso) : '', 'sans commission')}
       </div>
       <button class="btn-primary" data-save-ca="${s.key}" style="width:100%; justify-content:center; margin-top:10px;">Enregistrer le CA</button>
-      <div style="position:relative; margin-top:10px;">
-      <button data-toggle-shineplan="1" aria-expanded="${uiPref('shinePlan')}" style="position:absolute; top:-4px; right:0; z-index:1; display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid ${uiPref('shinePlan') ? 'var(--gold)' : 'var(--line)'}; color:${uiPref('shinePlan') ? 'var(--gold)' : 'var(--paper)'}; border-radius:999px; padding:5px 11px; font-size:12px;">Virements <span style="display:inline-flex; transform:rotate(${uiPref('shinePlan') ? 90 : 0}deg);">${icon('chevronR',11)}</span></button>
-      <details>
+      <details style="margin-top:12px;">
         <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Réglages</summary>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
           ${caField('caTargetInput', 'Objectif par mois (€)', caNum(s.target), '4100')}
@@ -3436,9 +3434,7 @@ function renderCaCard(){
         </div>
         <button class="add" data-save-ca-transfer-settings="1" style="width:100%; margin-top:8px; background:var(--surfaceHi); border:1px solid var(--line); color:var(--paper); border-radius:10px; padding:9px; font-size:12.5px; font-weight:600;">Enregistrer les virements</button>
       </details>
-      </div>
-    </div>
-    ${uiPref('shinePlan') ? renderShinePlan() : ''}`;
+    </div>`;
 }
 
 function renderGoals(){
@@ -3497,18 +3493,30 @@ function renderGoals(){
         </div>
       </div>`;
   };
+  // Carte resume plein ecran (comme Transactions et Enveloppes) ; le detail s'ouvre avec les boutons du bas.
+  const act = hasCaActivity();
+  const ca = act ? caMonthStatus(state.viewY, state.viewM) : null;
+  const caColor = ca && ca.reached ? 'var(--sage)' : 'var(--gold)';
+  const caPct = ca && ca.target > 0 ? Math.min(100, Math.round(ca.ca / ca.target * 100)) : 0;
+  const objBtn = (id, label, on) => `<button data-objpanel="${id}" class="${on ? 'active' : ''}">${label}</button>`;
+  const iconBtn = 'display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:10px; background:none; border:1px solid var(--line); color:var(--paperDim);';
   return `
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
       ${monthNav()}
     </div>
-    ${hasCaActivity() ? renderCaCard() : ''}
-    <div class="card goals-total-card">
-      <div class="row" style="margin-bottom:8px;">
-        <div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div>
-        <button data-open="addGoal" style="${pill}">${icon('plus',12)} Nouvel objectif</button>
+    <div class="card goals-total-card" style="display:flex; flex-direction:column; min-height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 152px - env(safe-area-inset-bottom)); margin-bottom:14px;">
+      <div class="row" style="margin-bottom:10px; flex-wrap:nowrap;">
+        <div><div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${goals.length} objectif${goals.length>1?'s':''} d'épargne${act ? ' · activité' : ''}</div></div>
+        <button data-open="addGoal" aria-label="Nouvel objectif" style="${iconBtn}">${icon('plus',14)}</button>
       </div>
+      ${act ? `
+        <div style="background:var(--surfaceHi); border-radius:12px; padding:10px 12px; margin-bottom:12px;">
+          <div class="row" style="margin:0; flex-wrap:nowrap; font-size:12px; color:var(--paperDim);"><span>Chiffre d'affaires</span><span>${ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`}</span></div>
+          <div class="row" style="margin:2px 0 0; align-items:baseline;"><span class="mono" style="font-size:18px; font-weight:700; color:${ca.has ? caColor : 'var(--paperDim)'};">${fmt0(ca.ca)}</span><span style="font-size:12px; color:var(--paperDim);">sur ${fmt0(ca.target)}</span></div>
+          <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${caPct}%; background:${caColor};"></div></div>
+        </div>` : ''}
       ${goals.length===0 ? `
-        <div style="padding:18px 6px 6px; text-align:center;">
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:12px 6px;">
           ${bearMascot('content', 52)}
           <div style="font-size:14px; color:var(--paper); font-weight:600; margin:12px 0 4px;">Pas encore d'objectif</div>
           <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:16px; line-height:1.5;">Un voyage, un imprévu, un projet — commence par te fixer un cap.</div>
@@ -3519,16 +3527,31 @@ function renderGoals(){
           <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(totalTarget)}</div>
         </div>
         <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pctAll}%; background:var(--gold);"></div></div>
-        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:10px 0 8px;">
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px;">
           ${caTile('Reste à mettre', fmt0(Math.max(0, totalTarget-totalSaved)))}
           ${caTile('Auto / mois', perMonth ? fmt0(perMonth) : '—', perMonth ? 'var(--gold)' : 'var(--paperDim)')}
           ${caTile('Atteints', `${doneCount} / ${goals.length}`, doneCount ? 'var(--sage)' : 'var(--paper)')}
         </div>
-        <button data-toggle-goaldetail="1" aria-expanded="${uiPref('goalsDetail')}" style="display:flex; align-items:center; justify-content:center; gap:6px; width:100%; margin-top:4px; background:none; border:1px solid ${uiPref('goalsDetail') ? 'var(--gold)' : 'var(--line)'}; color:${uiPref('goalsDetail') ? 'var(--gold)' : 'var(--paper)'}; border-radius:12px; padding:9px; font-size:12.5px;">${uiPref('goalsDetail') ? 'Masquer mes objectifs' : `Voir mes ${goals.length} objectif${goals.length>1?'s':''}`} <span style="display:inline-flex; transform:rotate(${uiPref('goalsDetail') ? 90 : 0}deg);">${icon('chevronR',11)}</span></button>
-        ${uiPref('goalsDetail') ? `<div style="margin-top:8px;">${goals.map(goalRow).join('')}</div>` : ''}`}
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:14px; margin-top:16px;">
+          ${goals.map(g=>{
+            const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
+            return `<div>
+              <div class="row" style="margin:0; font-size:13.5px; flex-wrap:nowrap;"><span style="display:flex; align-items:center; gap:8px; min-width:0;"><span style="width:8px; height:8px; border-radius:50%; background:${g.color}; flex-shrink:0;"></span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(g.name)}</span></span><span style="flex-shrink:0;"><span class="mono" style="font-weight:700; color:${g.color};">${fmt0(g.current)}</span> <span class="mono" style="font-size:11.5px; color:var(--paperDim);">/ ${fmt0(g.target)}</span></span></div>
+              <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${p}%; background:${g.color};"></div></div>
+            </div>`;
+          }).join('')}
+        </div>`}
+      ${(goals.length || act) ? `
+      <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:16px; width:100%;">
+        ${act ? objBtn('ca', 'Activité', uiPref('caPanel')) + objBtn('virements', 'Virements', uiPref('shinePlan')) : ''}${goals.length ? objBtn('goals', 'Objectifs', uiPref('goalsDetail')) : ''}
+      </div>` : ''}
     </div>
-    ${hasCaActivity() ? '' : `<button data-enable-ca="1" style="display:block; margin:6px auto 0; background:none; border:none; color:var(--paperDim); font-size:12px; text-decoration:underline;">Suivre une activité (chiffre d'affaires et virements)</button>`}
+    ${act && uiPref('caPanel') ? renderCaCard() : ''}
+    ${act && uiPref('shinePlan') ? renderShinePlan() : ''}
+    ${goals.length && uiPref('goalsDetail') ? `<div class="card goals-detail-card" style="padding-top:4px;">${goals.map(goalRow).join('').replace('border-top:1px solid var(--line);', '')}</div>` : ''}
+    ${act ? '' : `<button data-enable-ca="1" style="display:block; margin:6px auto 0; background:none; border:none; color:var(--paperDim); font-size:12px; text-decoration:underline;">Suivre une activité (chiffre d'affaires et virements)</button>`}
   `;
+
 }
 
 function renderRecalModal(){
@@ -4365,8 +4388,16 @@ function bindEvents(){
     newCatFormState = { color: COLORS.slate, type: state.manageCatOpen && state.manageCatType==='income' ? 'income' : 'expense', label:'', editingId:null, builtin:false };
     state.categoryModalOpen = true; rerender();
   }));
-  app.querySelectorAll('[data-toggle-shineplan]').forEach(el=>el.addEventListener('click', ()=>{ setUiPref('shinePlan', !uiPref('shinePlan')); rerender(); }));
-  app.querySelectorAll('[data-toggle-goaldetail]').forEach(el=>el.addEventListener('click', ()=>{ setUiPref('goalsDetail', !uiPref('goalsDetail')); rerender(); }));
+  // Objectifs : boutons du bas qui ouvrent / referment le detail (memorise sur l'appareil).
+  app.querySelectorAll('[data-objpanel]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = { ca:'caPanel', virements:'shinePlan', goals:'goalsDetail' }[el.dataset.objpanel];
+    const open = !uiPref(key);
+    setUiPref(key, open); rerender();
+    if(open){
+      const target = document.querySelector({ caPanel:'.ca-card', shinePlan:'.ca-shine-card', goalsDetail:'.goals-detail-card' }[key]);
+      if(target){ const top = target.getBoundingClientRect().top + window.scrollY - (document.querySelector('.header')?.offsetHeight||0) - 70; window.scrollTo({ top: Math.max(0, top), behavior:'smooth' }); }
+    }
+  }));
   app.querySelectorAll('[data-enable-ca]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.caTracker = d.caTracker || {}; d.caTracker.enabled = true; }); }));
   app.querySelectorAll('[data-managecat-type]').forEach(el=>el.addEventListener('click', ()=>{ state.manageCatType = el.dataset.managecatType; rerender(); }));
   app.querySelectorAll('[data-open-catedit]').forEach(el=>el.addEventListener('click', ()=>{
