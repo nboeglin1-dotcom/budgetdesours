@@ -94,6 +94,7 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     await page.fill('#goalPlanMonth', '2027-07');
     await page.click('[data-add-goalplan="g1"]');
     assert.equal(await page.evaluate(() => state.data.goals[0].planned.length), 2);
+    assert.match(await page.textContent('#goalDeadlinePreview'), /auto 4\s000\s€ \+ prévus 1\s600\s€/);
     await page.evaluate(() => setState({ goalDeadlineModalId:null }));
     card = await page.textContent('.goals-total-card');
     assert.match(card, /manque 2\s885\s€/);

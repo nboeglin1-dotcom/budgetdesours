@@ -3508,7 +3508,7 @@ function renderGoals(){
       const dl = new Date(g.deadline), now = new Date();
       const overdue = dl < now;
       const monthsLeft = Math.max(1, Math.round((dl - now) / (1000*60*60*24*30.44)));
-      deadline = `<button data-open-goaldeadline="${g.id}" style="${pill}${overdue?' color:var(--coral); border-color:var(--coral);':''}">${icon('target',11)} ${overdue ? 'Échéance dépassée' : `${dl.toLocaleDateString('fr-FR',{month:'short',year:'numeric'})} · <span class="mono">≈ ${fmt0(remaining/monthsLeft)}</span>/mois`}</button>`;
+      deadline = `<button data-open-goaldeadline="${g.id}" style="${pill}${overdue?' color:var(--coral); border-color:var(--coral);':''}">${icon('target',11)} ${overdue ? 'Échéance dépassée' : `Échéance ${dl.toLocaleDateString('fr-FR',{month:'short',year:'numeric'})}${(g.planned||[]).length ? ` · ${g.planned.length} prévu${g.planned.length>1?'s':''}` : ''}`}</button>`;
     } else if(!done){
       deadline = `<button data-open-goaldeadline="${g.id}" style="${pill} color:var(--paperDim);">${icon('target',11)} Échéance</button>`;
     } else deadline = '';
@@ -3673,7 +3673,7 @@ function renderGoalDeadlineModal(){
     <div class="modal-overlay" data-close-goaldeadline="1">
       <div class="modal-sheet" onclick="event.stopPropagation()">
         <div class="modal-head"><div class="modal-title ledger">Échéance — ${escapeHtml(g.name)}</div><button data-close-x-goaldeadline="1">${icon('x',18)}</button></div>
-        <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">Il te reste ${fmt0(remaining)} à épargner. Choisis une date et l'appli calculera le rythme mensuel nécessaire.</div>
+        <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:14px; line-height:1.5;">Il te reste ${fmt0(remaining)} à épargner. Choisis une date : l'appli compte tes virements auto et les versements prévus ci-dessous.</div>
         <label class="field-label">Date cible</label>
         <input id="goalDeadlineInput" type="date" class="field-input mono" value="${g.deadline ? localYMD(new Date(g.deadline)) : ''}">
         <div id="goalDeadlinePreview" style="font-size:12.5px; color:var(--paperDim); margin:10px 0 16px; min-height:18px;"></div>
@@ -4612,9 +4612,11 @@ function bindEvents(){
       const dl = new Date(goalDeadlineInput.value);
       const now = new Date();
       const monthsLeft = Math.max(1, Math.round((dl - now) / (1000*60*60*24*30.44)));
-      const remaining = Math.max(0, g.target - g.current);
-      const perMonth = remaining / monthsLeft;
-      preview.innerHTML = dl < now ? '<span style="color:var(--coral);">Cette date est déjà passée</span>' : `Soit environ <strong style="color:var(--paper);">${fmt0(perMonth)}</strong>/mois sur ${monthsLeft} mois`;
+      // Prevision a cette date : virements auto + versements prevus deja comptes.
+      const f = goalForecast({ ...g, deadline: dl.toISOString() });
+      preview.innerHTML = dl < now ? '<span style="color:var(--coral);">Cette date est déjà passée</span>'
+        : `Prévu à cette date : <strong style="color:var(--paper);">${fmt0(f.projected)}</strong> (auto ${fmt0(f.auto)}${f.planned ? ` + prévus ${fmt0(f.planned)}` : ''}) · `
+          + (f.gap >= 0 ? `<span style="color:var(--sage);">dans les temps</span>` : `<span style="color:var(--coral);">manque ${fmt0(-f.gap)}</span>, ≈ ${fmt0(f.perMonthMore)}/mois de plus sur ${f.monthsLeft} mois`);
     };
     goalDeadlineInput.addEventListener('input', updatePreview);
     updatePreview();
