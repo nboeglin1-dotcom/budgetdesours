@@ -3640,7 +3640,7 @@ function renderGoals(){
       <div class="goal-card" style="padding:18px 0 16px; border-top:1px solid var(--line);">
         <div class="row" style="margin:0; align-items:baseline;">
           <div style="display:flex; align-items:center; gap:8px; min-width:0; font-size:14px; font-weight:600;"><span style="width:8px; height:8px; border-radius:50%; background:${g.color}; flex-shrink:0;"></span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(g.name)}</span></div>
-          <div style="flex-shrink:0;"><span class="mono" style="font-size:15px; font-weight:700; color:${g.color};">${fmt0(g.current)}</span> <span class="mono" style="font-size:11.5px; color:var(--paperDim);">/ ${fmt0(g.target)}</span></div>
+          <div style="flex-shrink:0;"><span class="mono" style="font-size:15px; font-weight:700; color:var(--paper);">${fmt0(g.current)}</span> <span class="mono" style="font-size:11.5px; color:var(--paperDim);">/ ${fmt0(g.target)}</span></div>
         </div>
         ${showAccBadge ? `<div style="display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:${goalAcc.color}; margin-top:3px;"><span style="width:6px;height:6px;border-radius:50%;background:${goalAcc.color};display:inline-block;"></span>${escapeHtml(goalAcc.name)}</div>` : ''}
         <div class="catbar-track" style="margin-top:10px;"><div class="catbar-fill" style="width:${pct}%; background:${g.color};"></div></div>
@@ -3684,7 +3684,7 @@ function renderGoals(){
       ${act ? `
         <div>
           ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint${ca.ca > ca.target ? ` · +${fmt0(ca.ca - ca.target)}` : ''}</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
-          ${bigLine(fmt0(ca.ca), ca.has ? caColor : 'var(--paperDim)', ca.target, caPct, caColor)}
+          ${bigLine(fmt0(ca.ca), ca.has ? 'var(--paper)' : 'var(--paperDim)', ca.target, caPct, caColor)}
           ${paidSurplus ? `<div class="surplus-box" style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;"><span style="color:var(--sage);">${icon('spark',10)} Surplus versé</span> : <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(paidSurplus.amount)}</span> vers ${escapeHtml((goals.find(g=>g.id===paidSurplus.goalId)||{}).name || 'un objectif')} le ${new Date(paidSurplus.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})}. <button data-undo-surplus="${nextPlan.key}" style="background:none; border:none; color:var(--paperDim); text-decoration:underline; font-size:12px; padding:0;">Annuler</button></div>`
             : surplus >= 10 ? `<div class="surplus-box" style="margin-top:10px; padding:10px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus ≈ <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}. : le commun reçoit ${fmt0(nextPlan.commun)} pour un besoin de ${fmt0(ctr.communNeed ?? 370)}.${goals.length ? `<div style="font-size:11.5px; margin-top:5px;">À verser le 5 depuis la liste « Le 5 » de l'Accueil.</div>` : ''}</div>` : ''}
         </div>` : ''}
@@ -3701,7 +3701,7 @@ function renderGoals(){
           ${goals.map(g=>{
             const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
             return `<div>
-              <div class="row" style="margin:0; font-size:13.5px; flex-wrap:nowrap;"><span style="display:flex; align-items:center; gap:8px; min-width:0;"><span style="width:8px; height:8px; border-radius:50%; background:${g.color}; flex-shrink:0;"></span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(g.name)}</span></span><span style="flex-shrink:0;"><span class="mono" style="font-weight:700; color:${g.color};">${fmt0(g.current)}</span> <span class="mono" style="font-size:11.5px; color:var(--paperDim);">/ ${fmt0(g.target)}</span></span></div>
+              <div class="row" style="margin:0; font-size:13.5px; flex-wrap:nowrap;"><span style="display:flex; align-items:center; gap:8px; min-width:0;"><span style="width:8px; height:8px; border-radius:50%; background:${g.color}; flex-shrink:0;"></span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(g.name)}</span></span><span style="flex-shrink:0;"><span class="mono" style="font-weight:700; color:var(--paper);">${fmt0(g.current)}</span> <span class="mono" style="font-size:11.5px; color:var(--paperDim);">/ ${fmt0(g.target)}</span></span></div>
               <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${p}%; background:${g.color};"></div></div>
               <div style="font-size:12px; color:var(--paperDim); margin-top:6px;">${goalForecastLine(g)}</div>
             </div>`;
