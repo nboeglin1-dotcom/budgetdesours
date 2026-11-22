@@ -585,6 +585,10 @@ const sameMonth = (iso,y,m) => { const d=new Date(iso); return d.getFullYear()==
 const localYMD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 const STORAGE_KEY = 'solde-budget-data-v1';
+// Preferences d'affichage de cet appareil (sections depliees) : hors donnees budgetaires et hors sauvegardes.
+const UI_PREFS_KEY = 'solde-ui-prefs';
+function uiPref(k){ try{ return !!JSON.parse(localStorage.getItem(UI_PREFS_KEY) || '{}')[k]; }catch(e){ return false; } }
+function setUiPref(k, v){ try{ const o = JSON.parse(localStorage.getItem(UI_PREFS_KEY) || '{}'); o[k] = !!v; localStorage.setItem(UI_PREFS_KEY, JSON.stringify(o)); }catch(e){} }
 const AUTOBACKUP_PREFIX = 'solde-autobackup-';
 const AUTOBACKUP_DAYS = 7;
 
@@ -3385,7 +3389,9 @@ function renderCaCard(){
         ${caField('caPersoInput', 'Courses perso', s.hasPerso ? caNum(s.perso) : '', 'sans commission')}
       </div>
       <button class="btn-primary" data-save-ca="${s.key}" style="width:100%; justify-content:center; margin-top:10px;">Enregistrer le CA</button>
-      <details style="margin-top:12px;">
+      <div style="position:relative; margin-top:12px;">
+      <button data-toggle-shineplan="1" aria-expanded="${uiPref('shinePlan')}" style="position:absolute; top:-4px; right:0; z-index:1; display:inline-flex; align-items:center; gap:5px; background:none; border:1px solid ${uiPref('shinePlan') ? 'var(--gold)' : 'var(--line)'}; color:${uiPref('shinePlan') ? 'var(--gold)' : 'var(--paper)'}; border-radius:999px; padding:5px 11px; font-size:12px;">Virements <span style="display:inline-flex; transform:rotate(${uiPref('shinePlan') ? 90 : 0}deg);">${icon('chevronR',11)}</span></button>
+      <details>
         <summary style="font-size:11.5px; color:var(--paperDim); cursor:pointer;">Réglages</summary>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
           ${caField('caTargetInput', 'Objectif par mois (€)', caNum(s.target), '4100')}
@@ -3405,8 +3411,9 @@ function renderCaCard(){
         </div>
         <button class="add" data-save-ca-transfer-settings="1" style="width:100%; margin-top:8px; background:var(--surfaceHi); border:1px solid var(--line); color:var(--paper); border-radius:10px; padding:9px; font-size:12.5px; font-weight:600;">Enregistrer les virements</button>
       </details>
+      </div>
     </div>
-    ${renderShinePlan()}`;
+    ${uiPref('shinePlan') ? renderShinePlan() : ''}`;
 }
 
 function renderGoals(){
@@ -3492,7 +3499,8 @@ function renderGoals(){
           ${caTile('Auto / mois', perMonth ? fmt0(perMonth) : '—', perMonth ? 'var(--gold)' : 'var(--paperDim)', 'virements')}
           ${caTile('Atteints', `${doneCount} / ${goals.length}`, doneCount ? 'var(--sage)' : 'var(--paper)')}
         </div>
-        ${goals.map(goalRow).join('')}`}
+        <button data-toggle-goaldetail="1" aria-expanded="${uiPref('goalsDetail')}" style="display:flex; align-items:center; justify-content:center; gap:6px; width:100%; margin-top:4px; background:none; border:1px solid ${uiPref('goalsDetail') ? 'var(--gold)' : 'var(--line)'}; color:${uiPref('goalsDetail') ? 'var(--gold)' : 'var(--paper)'}; border-radius:12px; padding:9px; font-size:12.5px;">${uiPref('goalsDetail') ? 'Masquer mes objectifs' : `Voir mes ${goals.length} objectif${goals.length>1?'s':''}`} <span style="display:inline-flex; transform:rotate(${uiPref('goalsDetail') ? 90 : 0}deg);">${icon('chevronR',11)}</span></button>
+        ${uiPref('goalsDetail') ? `<div style="margin-top:8px;">${goals.map(goalRow).join('')}</div>` : ''}`}
     </div>
     ${hasCaActivity() ? '' : `<button data-enable-ca="1" style="display:block; margin:6px auto 0; background:none; border:none; color:var(--paperDim); font-size:12px; text-decoration:underline;">Suivre une activité (chiffre d'affaires et virements)</button>`}
   `;
@@ -4305,6 +4313,8 @@ function bindEvents(){
     newCatFormState = { color: COLORS.slate, type: state.manageCatOpen && state.manageCatType==='income' ? 'income' : 'expense', label:'', editingId:null, builtin:false };
     state.categoryModalOpen = true; rerender();
   }));
+  app.querySelectorAll('[data-toggle-shineplan]').forEach(el=>el.addEventListener('click', ()=>{ setUiPref('shinePlan', !uiPref('shinePlan')); rerender(); }));
+  app.querySelectorAll('[data-toggle-goaldetail]').forEach(el=>el.addEventListener('click', ()=>{ setUiPref('goalsDetail', !uiPref('goalsDetail')); rerender(); }));
   app.querySelectorAll('[data-enable-ca]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.caTracker = d.caTracker || {}; d.caTracker.enabled = true; }); }));
   app.querySelectorAll('[data-managecat-type]').forEach(el=>el.addEventListener('click', ()=>{ state.manageCatType = el.dataset.managecatType; rerender(); }));
   app.querySelectorAll('[data-open-catedit]').forEach(el=>el.addEventListener('click', ()=>{

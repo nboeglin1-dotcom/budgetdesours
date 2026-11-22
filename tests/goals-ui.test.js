@@ -31,3 +31,26 @@ test('G1 Cartes d’épargne : total, virements auto par mois, sans ajout ni ret
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('G2 Objectifs : « Virements » et « Voir mes objectifs » déplient leurs sections, et s’en souviennent', async () => {
+  const app = await openApp({ now:'2026-11-22T10:00:00+01:00', storage:{ 'solde-ui-prefs':'{}' }, data: baseData({
+    caTracker:{ months:{ '2026-11':4000 }, shineMonths:{ '2026-12':{ amount:1600, after:false, date:'2026-11-21' } } },
+    goals:[{ id:'g1', name:'Pérou', target:10000, current:1500, color:'#6FA287', accountId:'main' }] }) });
+  const { page, errors } = app;
+  try{
+    await page.click('[data-tab="goals"]');
+    assert.equal(await page.$('.ca-shine-card'), null);
+    assert.equal(await page.$('.goal-card'), null);
+    await page.click('[data-toggle-shineplan]');
+    assert.ok(await page.$('.ca-shine-card'));
+    await page.click('[data-toggle-goaldetail]');
+    assert.ok(await page.$('.goal-card'));
+    await page.reload();
+    await page.click('[data-tab="goals"]');
+    assert.ok(await page.$('.ca-shine-card'));            // l'appareil garde le choix
+    assert.ok(await page.$('.goal-card'));
+    await page.click('[data-toggle-shineplan]');
+    assert.equal(await page.$('.ca-shine-card'), null);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
