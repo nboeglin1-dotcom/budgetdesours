@@ -46,9 +46,10 @@ test.describe('Objectif de CA', () => {
       const v = await page.evaluate(() => state.data.caTracker.months['2026-10']);
       assert.equal(v, 4048.5);
       const txt = await page.textContent('.ca-card');
-      assert.match(txt, /Reste 52\s€ · 2 jours ouvrés restants/);
+      assert.match(txt, /Reste 52\s€/);
+      assert.match(txt, /≈ 26\s€\s*2 j\. ouvrés/);   // 52 € sur 2 jours ouvrés
       assert.match(txt, /1\s518/); // 4 048,50 × 0,375 ≈ 1 518 €
-      assert.match(txt, /Net encaissé\s*≈ 1\s169\s€\s*1\s518\s€ avant URSSAF/); // visible même sans courses perso
+      assert.match(txt, /Net encaissé\s*≈ 1\s169\s€\s*brut 1\s518\s€/); // visible même sans courses perso
       // Champ vidé = mois effacé
       await page.fill('#caInput', '');
       await page.click('[data-save-ca]');
