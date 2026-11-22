@@ -24,7 +24,7 @@ test.describe('Objectif de CA', () => {
   test('CA2 Données anciennes sans réglage : objectif 4 100 € et 37,5 % par défaut', () =>
     withApp({ now:'2026-10-28T10:00:00+01:00', data: baseData() }, async ({ page }) => {
       const ct = await page.evaluate(() => state.data.caTracker);
-      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', bitstackDca:450, fuelPerDay:15, bitstackFrom:'2026-12', augustReserve:150, augustReserveFrom:'2027-01', communNeed:370, surplusPaid:{}, shineMonths:{} });
+      assert.deepEqual(ct, { target:4100, rate:0.375, months:{}, perso:{}, floor:1500, urssaf:0.23, persoBase:153, moto:697, motoEnd:'2027-08', bitstackDca:450, fuelPerDay:15, bitstackFrom:'2026-12', augustReserve:150, augustReserveFrom:'2027-01', communNeed:370, surplusPaid:{}, communCushion:500, day5:{}, shineMonths:{} });
     }));
 
   test('CA3 Mois en cours : reste à faire réparti sur les jours ouvrés après aujourd’hui', () =>

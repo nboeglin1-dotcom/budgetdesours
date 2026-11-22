@@ -86,20 +86,7 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     assert.match(card, /Atteint · \+2\s820\s€/);
     const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
     const fr = n => new Intl.NumberFormat('fr-FR').format(n).replace(/\s/g, '\\s');
-    assert.match(card, new RegExp(`Surplus ${fr(Math.floor((commun - 370) / 10) * 10)}\\s€ le 5 déc\\. : le commun reçoit ${fr(commun)}\\s€ pour un besoin de 370\\s€`));
-    // Verser le surplus : l'objectif monte, une dépense « épargne » sur le commun, l'encadré passe à « versé »
-    const surplus = Math.floor((commun - 370) / 10) * 10;
-    await page.click('[data-pay-surplus="2026-12"]');
-    assert.equal(await page.evaluate(() => state.data.goals[0].current), 1515 + surplus);
-    assert.match(await page.textContent('.surplus-box'), /Surplus versé/);
-    await page.click('[data-undo-surplus="2026-12"]');               // annuler : tout revient
-    assert.equal(await page.evaluate(() => state.data.goals[0].current), 1515);
-    assert.ok(await page.$('[data-pay-surplus="2026-12"]'));
-    await page.fill('#surplusAmt-2026-12', '300');                    // montant choisi
-    await page.click('[data-pay-surplus="2026-12"]');
-    assert.equal(await page.evaluate(() => state.data.goals[0].current), 1815);
-    await page.click('[data-undo-surplus="2026-12"]');
-    await page.evaluate(() => setState({ toast:null }));
+    assert.match(card, new RegExp(`Surplus ≈ ${fr(Math.floor((commun - 370) / 10) * 10)}\\s€ le 5 déc\\. : le commun reçoit ${fr(commun)}\\s€ pour un besoin de 370\\s€`));
     await page.evaluate(() => setState({ goalDeadlineModalId:'g1' }));
     await page.fill('#goalPlanLabel', '13e mois');
     await page.fill('#goalPlanAmount', '800');
@@ -136,4 +123,47 @@ test('G5 Versements prévus arrivés : rappel sur l’accueil, « C’est fait �
     assert.equal(await page.$('.planned-due-card'), null);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
+});
+
+test('G6 Liste « Le 5 » sur l’accueil : virements du mois, surplus au-dessus du coussin, versement, puis disparaît', async () => {
+  const app = await openApp({ now:'2026-12-05T10:00:00+01:00', data: baseData({
+    caTracker:{ months:{ '2026-11':5000 }, shineMonths:{ '2026-12':{ amount:1600, after:false, date:'2026-12-05' } } },
+    goals:[{ id:'g1', name:'Voyage au Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main', deadline:'2027-08-31T00:00:00.000Z' }] }) });
+  const { page, errors } = app;
+  try{
+    const card = await page.textContent('.day5-card');
+    assert.match(card, /Le 5 décembre/);
+    assert.match(card, /CA final de novembre/);
+    const plan = await page.evaluate(() => shineTransferPlan(2026, 11));
+    const fr = n => new Intl.NumberFormat('fr-FR').format(n).replace(/\s/g, '\\s');
+    assert.match(card, new RegExp(`Vers le LCL commun${fr(plan.commun)}\\s€`));
+    const sp = await page.evaluate(() => day5Surplus());
+    assert.equal(Number(await page.inputValue('#day5Amt')), sp.amount);
+    assert.equal(sp.amount, Math.max(0, Math.floor((sp.end - 500) / 10) * 10));
+    await page.click('[data-day5-check="update"]');
+    await page.click('[data-day5-check="transfers"]');
+    await page.fill('#day5Amt', '250');
+    await page.click('[data-pay-surplus="2026-12"]');
+    assert.equal(await page.evaluate(() => state.data.goals[0].current), 1765);
+    assert.equal(await page.$('.day5-card'), null);                 // tout est fait
+    // Objectifs (novembre) : le surplus du 5 déc. apparaît comme versé
+    await page.evaluate(() => setState({ toast:null, tab:'goals', viewY:2026, viewM:10 }));
+    assert.match(await page.textContent('.surplus-box'), /Surplus versé : 250\s€/);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
+
+test('G7 « Le 5 » : « Rien ce mois-ci » valide l’étape, pas de liste avant décembre 2026 ni sans activité', async () => {
+  let app = await openApp({ now:'2026-12-06T10:00:00+01:00', data: baseData({
+    caTracker:{ months:{ '2026-11':4000 }, day5:{ '2026-12':{ update:true, transfers:true } } },
+    goals:[{ id:'g1', name:'Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main' }] }) });
+  try{
+    await app.page.click('[data-day5-check="skip"]');
+    assert.equal(await app.page.$('.day5-card'), null);
+    assert.deepEqual(app.errors, []);
+  } finally { await app.close(); }
+  app = await openApp({ now:'2026-11-22T10:00:00+01:00', data: baseData({ caTracker:{ months:{ '2026-11':4000 } } }) });
+  try{ assert.equal(await app.page.$('.day5-card'), null); } finally { await app.close(); }
+  app = await openApp({ now:'2026-12-05T10:00:00+01:00', data: baseData({}) });
+  try{ assert.equal(await app.page.$('.day5-card'), null); } finally { await app.close(); }
 });

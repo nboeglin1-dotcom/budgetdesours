@@ -706,6 +706,10 @@ function normalizeData(parsed){
       if(!(Number(ctx.communNeed) >= 0)) ctx.communNeed = 370;
       // Surplus deja verse a un objectif, par mois de virement (AAAA-MM) : { amount, goalId, date }.
       if(!ctx.surplusPaid || typeof ctx.surplusPaid !== 'object' || Array.isArray(ctx.surplusPaid)) ctx.surplusPaid = {};
+      // Coussin du commun : ce qu'on garde sur le commun en fin de mois ; au-dessus, c'est le surplus du 5.
+      if(!(Number(ctx.communCushion) >= 0)) ctx.communCushion = 500;
+      // Liste « Le 5 » : etapes cochees par mois de virement (AAAA-MM) : { update, transfers, skip }.
+      if(!ctx.day5 || typeof ctx.day5 !== 'object' || Array.isArray(ctx.day5)) ctx.day5 = {};
       if(typeof ctx.augustReserveFrom !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.augustReserveFrom)) ctx.augustReserveFrom = '2027-01';
       // Solde restant Shine : un par mois de virement (cle AAAA-MM du mois des virements du 5), garde d'un mois sur l'autre.
       const okSnap = sn => sn && typeof sn === 'object' && isFinite(Number(sn.amount)) && typeof sn.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sn.date);
@@ -1325,6 +1329,58 @@ function plannedDone(goalId, idx, source){
   });
   if(amount) showToast(`+${fmt0(amount)} vers ${name}`);
 }
+// Surplus du commun a verser le 5 : fin de mois estimee (enveloppes deduites, virement Shine compris
+// via sa recurrence) au-dessus du coussin.
+function day5Surplus(){
+  const f = computeForecast();
+  const ct = state.data.caTracker || {};
+  const end = f.startBalance - f.envNow;
+  return { end, cushion: ct.communCushion ?? 500, amount: Math.max(0, Math.floor((end - (ct.communCushion ?? 500)) / 10) * 10) };
+}
+// Liste « Le 5 » sur l'accueil : mise a jour, virements Shine, surplus. Disparait une fois tout fait.
+function renderDay5(now = new Date()){
+  if(!hasCaActivity()) return '';
+  const ct = state.data.caTracker || {};
+  const y = now.getFullYear(), m = now.getMonth();
+  const key = caMonthKey(y, m);
+  if(key < '2026-12') return '';
+  const st = (ct.day5||{})[key] || {};
+  const paidRaw = (ct.surplusPaid||{})[key];
+  const paid = paidRaw && (!paidRaw.txId || state.data.transactions.some(t=>t.id===paidRaw.txId)) ? paidRaw : null;
+  const s3 = !!paid || !!st.skip;
+  if(st.update && st.transfers && s3) return '';
+  const plan = shineTransferPlan(y, m);
+  const prevM = (m + 11) % 12;
+  const goals = (state.data.goals||[]).filter(g=>!(g.target>0 && g.current>=g.target));
+  const goal = [...goals].sort((a,b)=>((goalForecast(a)?.gap ?? 1e9) - (goalForecast(b)?.gap ?? 1e9)))[0];
+  const sp = day5Surplus();
+  const check = (step, on) => `<button data-day5-check="${step}" aria-label="${on ? 'Décocher' : 'Cocher'}" style="width:24px; height:24px; border-radius:50%; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border:1.5px solid ${on ? 'var(--sage)' : 'var(--line)'}; background:${on ? 'var(--sage)' : 'none'}; color:var(--bg);">${on ? icon('check',13) : ''}</button>`;
+  const row = (n, on, title, body) => `<div style="display:flex; gap:12px; padding:12px 0; border-top:1px solid var(--line);${on ? ' opacity:.55;' : ''}">
+      <div style="padding-top:1px;">${n}</div>
+      <div style="flex:1; min-width:0;"><div style="font-size:14px; font-weight:600; color:var(--paper);">${title}</div>${on ? '' : body}</div>
+    </div>`;
+  const small = 'background:none; border:1px solid var(--line); color:var(--paper); border-radius:999px; padding:6px 11px; font-size:11.5px;';
+  const t = (label, v, c) => `<div class="row" style="margin:0; font-size:12.5px; color:var(--paperDim);"><span>${label}</span><span class="mono" style="color:${c}; font-weight:700;">${fmt0(v)}</span></div>`;
+  return `<div class="card day5-card" style="border-color:var(--gold);">
+    <div class="row" style="margin-bottom:6px; flex-wrap:nowrap;"><div class="section-title" style="margin:0; font-size:15px; display:flex; align-items:center; gap:8px;"><span style="color:var(--gold); display:inline-flex;">${icon('repeat',15)}</span>Le 5 ${MONTHS[m].toLowerCase()}</div><span style="font-size:11.5px; color:var(--paperDim);">${[st.update, st.transfers, s3].filter(Boolean).length} / 3</span></div>
+    ${row(check('update', st.update), st.update, "Mettre l'appli à jour", `
+      <div style="font-size:12px; color:var(--paperDim); margin-top:3px; line-height:1.45;">CA final de ${MONTHS[prevM].toLowerCase()}, solde restant Shine, solde du commun.</div>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;"><button data-day5-goca="1" style="${small}">CA et Shine</button><button data-open-recal="1" style="${small}">Solde du commun</button></div>`)}
+    ${row(check('transfers', st.transfers), st.transfers, 'Virements depuis Shine', plan ? `
+      <div style="display:flex; flex-direction:column; gap:3px; margin-top:6px;">
+        ${t('Vers le LCL perso', plan.perso, 'var(--paper)')}
+        ${plan.bitstack > 0 ? t('Vers Bitstack', plan.bitstack, 'var(--gold)') : ''}
+        ${t('Vers le LCL commun', plan.commun, 'var(--sage)')}
+      </div>` : `<div style="font-size:12px; color:var(--coral); margin-top:3px;">Saisis d'abord le solde Shine (étape 1).</div>`)}
+    ${row(paid ? check('surplus', true) : `<span style="width:24px; height:24px; border-radius:50%; flex-shrink:0; display:inline-flex; border:1.5px solid var(--line);"></span>`, s3, `Surplus vers ${goal ? escapeHtml(goal.name) : 'un objectif'}`, goal ? `
+      <div style="font-size:12px; color:var(--paperDim); margin-top:3px; line-height:1.45;">Fin de mois estimée ${fmt0(sp.end)}, coussin ${fmt0(sp.cushion)}. Une fois le virement Shine arrivé, vire ce montant vers le Codevi puis :</div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <input id="day5Amt" class="field-input mono" type="text" inputmode="decimal" value="${sp.amount}" aria-label="Montant à verser en €" style="width:84px; flex-shrink:0; padding:8px 10px; font-size:13px; text-align:right;">
+        <button data-pay-surplus="${key}" data-surplus-goal="${goal.id}" data-surplus-input="day5Amt" class="btn-primary" style="flex:1; justify-content:center; padding:9px 10px; font-size:12.5px;">Verser</button>
+      </div>
+      <button data-day5-check="skip" style="background:none; border:none; color:var(--paperDim); text-decoration:underline; font-size:11.5px; padding:6px 0 0;">Rien ce mois-ci</button>` : '')}
+  </div>`;
+}
 function renderPlannedDue(){
   const due = plannedDue();
   if(!due.length) return '';
@@ -1472,6 +1528,7 @@ const ICONS = {
   piggy: `<path d="M3 10c0-3.3 3.6-6 8-6 3.2 0 6 1.4 7.3 3.4L21 7v4l-2 1v2c0 1-.7 2-2 2h-1v2H12v-2H9v2H6v-3.2C4.2 14.4 3 12.4 3 10Z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><circle cx="8" cy="10" r=".9" fill="currentColor"/>`,
   target: `<circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.6" fill="none"/><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="1.6" fill="none"/><circle cx="12" cy="12" r="1" fill="currentColor"/>`,
   plus: `<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  check: `<path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`,
   x: `<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
   trash: `<path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0-.8 12.1a1 1 0 01-1 .9H8.8a1 1 0 01-1-.9L7 7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
   pencil: `<path d="M4 20l1-4.2L15.5 5.3a1.5 1.5 0 012.1 0l1.1 1.1a1.5 1.5 0 010 2.1L8.2 19 4 20z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><path d="M14 6.8l3.2 3.2" stroke="currentColor" stroke-width="1.6"/>`,
@@ -2664,6 +2721,7 @@ function renderDashboard(){
       ${monthNav()}
     </div>
     ${renderExportReminder()}
+    ${renderDay5()}
     ${renderPlannedDue()}
     <div class="card">${renderBalanceContent(stats, true)}</div>
 
@@ -3526,6 +3584,7 @@ function renderCaCard(){
           ${caField('caFuelInput', 'Essence par jour roulé (€)', caNum(ct.fuelPerDay ?? 15), '15')}
           ${caField('caReserveInput', 'Réserve d\'août par mois (€)', caNum(ct.augustReserve ?? 150), '150')}
           ${caField('caNeedInput', 'Besoin du commun par mois (€)', caNum(ct.communNeed ?? 370), '370')}
+          ${caField('caCushionInput', 'Coussin du commun (€)', caNum(ct.communCushion ?? 500), '500')}
         </div>
         <div style="margin-top:8px;">
           ${caField('caUrssafInput', 'URSSAF + impôt prélevés sur le CA (%)', caNum(Math.round((ct.urssaf ?? 0.23)*1000)/10), '23')}
@@ -3627,7 +3686,7 @@ function renderGoals(){
           ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint${ca.ca > ca.target ? ` · +${fmt0(ca.ca - ca.target)}` : ''}</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
           ${bigLine(fmt0(ca.ca), ca.has ? caColor : 'var(--paperDim)', ca.target, caPct, caColor)}
           ${paidSurplus ? `<div class="surplus-box" style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;"><span style="color:var(--sage);">${icon('spark',10)} Surplus versé</span> : <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(paidSurplus.amount)}</span> vers ${escapeHtml((goals.find(g=>g.id===paidSurplus.goalId)||{}).name || 'un objectif')} le ${new Date(paidSurplus.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})}. <button data-undo-surplus="${nextPlan.key}" style="background:none; border:none; color:var(--paperDim); text-decoration:underline; font-size:12px; padding:0;">Annuler</button></div>`
-            : surplus >= 10 ? `<div class="surplus-box" style="margin-top:10px; padding:10px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}. : le commun reçoit ${fmt0(nextPlan.commun)} pour un besoin de ${fmt0(ctr.communNeed ?? 370)}.${goals.length ? `<div style="display:flex; gap:8px; margin-top:8px; align-items:stretch;"><input id="surplusAmt-${nextPlan.key}" class="field-input mono" type="text" inputmode="decimal" value="${surplus}" aria-label="Montant à verser en €" style="width:84px; flex-shrink:0; padding:8px 10px; font-size:13px; text-align:right;"><button data-pay-surplus="${nextPlan.key}" data-surplus-goal="${surplusGoal.id}" class="btn-primary" style="flex:1; justify-content:center; padding:9px 10px; font-size:12.5px;">Verser à ${escapeHtml(surplusGoal.name)}</button></div><div style="font-size:11px; margin-top:5px; text-align:center;">Une fois le virement Shine arrivé sur le commun</div>` : ''}</div>` : ''}
+            : surplus >= 10 ? `<div class="surplus-box" style="margin-top:10px; padding:10px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus ≈ <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}. : le commun reçoit ${fmt0(nextPlan.commun)} pour un besoin de ${fmt0(ctr.communNeed ?? 370)}.${goals.length ? `<div style="font-size:11.5px; margin-top:5px;">À verser le 5 depuis la liste « Le 5 » de l'Accueil.</div>` : ''}</div>` : ''}
         </div>` : ''}
       ${goals.length===0 ? `
         <div style="display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 6px;">
@@ -4354,9 +4413,10 @@ function bindEvents(){
     const fu = parseAmountInput((document.getElementById('caFuelInput')||{}).value);
     const rs = parseAmountInput((document.getElementById('caReserveInput')||{}).value);
     const nd = parseAmountInput((document.getElementById('caNeedInput')||{}).value);
-    if(!(nd >= 0)){ showToast('Réglages invalides'); return; }
+    const cu = parseAmountInput((document.getElementById('caCushionInput')||{}).value);
+    if(!(nd >= 0) || !(cu >= 0)){ showToast('Réglages invalides'); return; }
     if(!(f >= 0) || !(b >= 0) || !(u >= 0 && u < 100) || !(dca >= 0) || !(fu >= 0) || !(rs >= 0)){ showToast('Réglages invalides'); return; }
-    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; d.caTracker.augustReserve = Math.round(rs); d.caTracker.communNeed = Math.round(nd); syncShineRecurring(d); });
+    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; d.caTracker.augustReserve = Math.round(rs); d.caTracker.communNeed = Math.round(nd); d.caTracker.communCushion = Math.round(cu); syncShineRecurring(d); });
     showToast('Réglages enregistrés');
   }));
   app.querySelectorAll('[data-del-goal]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Objectif supprimé', d=>{ d.goals = d.goals.filter(g=>g.id!==el.dataset.delGoal); }); }));
@@ -4660,7 +4720,7 @@ function bindEvents(){
   }));
   app.querySelectorAll('[data-pay-surplus]').forEach(el=>el.addEventListener('click', ()=>{
     const key = el.dataset.paySurplus, goalId = el.dataset.surplusGoal;
-    const amount = Math.round(parseAmountInput((document.getElementById(`surplusAmt-${key}`)||{}).value) * 100) / 100;
+    const amount = Math.round(parseAmountInput((document.getElementById(el.dataset.surplusInput || `surplusAmt-${key}`)||{}).value) * 100) / 100;
     if(!(amount > 0)){ showToast('Montant invalide'); return; }
     goalContribute(goalId, amount);
     const txId = (state.data.transactions[0]||{}).id;
@@ -4677,6 +4737,18 @@ function bindEvents(){
       delete d.caTracker.surplusPaid[key];
     });
     showToast('Versement du surplus annulé');
+  }));
+  app.querySelectorAll('[data-day5-check]').forEach(el=>el.addEventListener('click', ()=>{
+    const step = el.dataset.day5Check;
+    const key = caMonthKey(new Date().getFullYear(), new Date().getMonth());
+    if(step === 'surplus'){ document.querySelector(`[data-undo-surplus="${key}"]`)?.click(); return; }
+    mutateData(d=>{ const cur = d.caTracker.day5[key] || {}; d.caTracker.day5 = { ...d.caTracker.day5, [key]: { ...cur, [step]: !cur[step] } }; });
+  }));
+  app.querySelectorAll('[data-day5-goca]').forEach(el=>el.addEventListener('click', ()=>{
+    const now = new Date(); const pm = (now.getMonth() + 11) % 12, py = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    setUiPref('caPanel', true); setUiPref('shinePlan', true);
+    setState({ tab:'goals', viewY: py, viewM: pm });
+    jumpToTop();
   }));
   app.querySelectorAll('[data-planned-done]').forEach(el=>el.addEventListener('click', ()=>{
     const gid = el.dataset.plannedDone, idx = Number(el.dataset.plannedIdx);
