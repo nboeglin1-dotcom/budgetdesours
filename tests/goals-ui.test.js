@@ -101,3 +101,24 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('G5 Versements prévus arrivés : rappel sur l’accueil, « C’est fait » fait monter l’objectif (bascule depuis un autre objectif)', async () => {
+  const app = await openApp({ now:'2027-06-03T10:00:00+02:00', data: baseData({
+    goals:[
+      { id:'g1', name:'Voyage au Pérou', target:10000, current:6000, color:'#6FA287', accountId:'main', deadline:'2027-08-31T00:00:00.000Z',
+        planned:[{ ym:'2027-06', amount:447, label:'Bascule de précaution' }, { ym:'2027-07', amount:800, label:'13e mois' }] },
+      { id:'g2', name:'Épargne de Précaution', target:5000, current:5447, color:'#9B7FD4', accountId:'main' } ] }) });
+  const { page, errors } = app;
+  try{
+    const card = await page.textContent('.planned-due-card');
+    assert.match(card, /Bascule de précaution/);
+    assert.doesNotMatch(card, /13e mois/);                     // juillet : pas encore
+    assert.equal(await page.inputValue('#plannedSrc-g1-0'), 'goal:g2');
+    const txBefore = await page.evaluate(() => state.data.transactions.length);
+    await page.click('[data-planned-done="g1"]');
+    const r = await page.evaluate(() => ({ p: state.data.goals[0].current, c: state.data.goals[1].current, n: state.data.goals[0].planned.length, tx: state.data.transactions.length }));
+    assert.deepEqual(r, { p: 6447, c: 5000, n: 1, tx: txBefore });
+    assert.equal(await page.$('.planned-due-card'), null);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

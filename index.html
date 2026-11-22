@@ -1285,6 +1285,65 @@ function accountTransfer(fromId, toId, amt, note, date){
   showToast(`${fmt0(amt)} viré de ${from.name} vers ${to.name}`);
   return true;
 }
+// Versements prevus (g.planned) arrives a leur mois (ou en retard) : rappel sur l'accueil.
+function plannedDue(d = state.data, now = new Date()){
+  const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const out = [];
+  (d.goals||[]).forEach(g=>(g.planned||[]).forEach((p,i)=>{ if(p.ym <= ym) out.push({ g, p, i }); }));
+  return out.sort((a,b)=>a.p.ym.localeCompare(b.p.ym));
+}
+// Source par defaut : un autre objectif dont le nom (ou un mot significatif) figure dans le libelle
+// (« Bascule de précaution » → Épargne de précaution), sinon de l'argent hors du commun (perso, prime).
+function plannedDefaultSource(g, p, d = state.data){
+  const norm = x => String(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const label = norm(p.label);
+  const other = (d.goals||[]).find(o=>o.id!==g.id && norm(o.name).split(/[^a-z0-9]+/).some(w=>w.length>=5 && label.includes(w)));
+  return other ? 'goal:'+other.id : 'outside';
+}
+// Marque un versement prevu comme fait : l'objectif monte, la ligne prevue disparait.
+// source : 'outside' (perso, prime : le commun ne bouge pas), 'main' (sorti du commun),
+// 'goal:<id>' (bascule depuis un autre objectif, qui baisse d'autant).
+function plannedDone(goalId, idx, source){
+  let name = '', amount = 0;
+  mutateData(d=>{
+    const g = d.goals.find(x=>x.id===goalId);
+    const p = g && (g.planned||[])[idx];
+    if(!p) return;
+    name = g.name; amount = Number(p.amount)||0;
+    g.current += amount;
+    g.planned.splice(idx, 1);
+    if(source === 'main'){
+      d.transactions.unshift({ id:uid(), type:'expense', amount, category:'epargne', note:`Vers "${g.name}"${p.label ? ` (${p.label})` : ''}`, date:new Date().toISOString(), accountId: g.accountId||'main', goalId: g.id });
+    } else if(String(source).startsWith('goal:')){
+      const from = d.goals.find(x=>x.id===source.slice(5));
+      if(from) from.current = Math.max(0, from.current - amount);
+    }
+  });
+  if(amount) showToast(`+${fmt0(amount)} vers ${name}`);
+}
+function renderPlannedDue(){
+  const due = plannedDue();
+  if(!due.length) return '';
+  const nowYm = localYMD(new Date()).slice(0,7);
+  return `<div class="card planned-due-card" style="border-color:var(--gold);">
+    <div class="row" style="margin-bottom:8px; flex-wrap:nowrap;"><div class="section-title" style="margin:0; font-size:15px; display:flex; align-items:center; gap:8px;"><span style="color:var(--gold); display:inline-flex;">${icon('target',15)}</span>À verser ce mois-ci</div></div>
+    ${due.map(({g,p,i})=>{
+      const def = plannedDefaultSource(g, p);
+      const late = p.ym < nowYm;
+      return `<div style="padding:10px 0; border-top:1px solid var(--line);">
+        <div class="row" style="margin:0; flex-wrap:nowrap; font-size:13.5px;"><span style="min-width:0;">${escapeHtml(p.label||'Versement prévu')} <span style="color:var(--paperDim);">→ ${escapeHtml(g.name)}</span>${late ? ` <span style="color:var(--coral); font-size:11.5px;">· en retard</span>` : ''}</span><span class="mono" style="color:var(--sage); font-weight:700; flex-shrink:0;">${fmt0(p.amount)}</span></div>
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+          <select id="plannedSrc-${g.id}-${i}" class="field-input" style="flex:1; padding:8px 10px; font-size:12.5px;">
+            <option value="outside"${def==='outside'?' selected':''}>Pris hors du commun (perso, prime)</option>
+            <option value="main">Pris sur le commun</option>
+            ${(state.data.goals||[]).filter(o=>o.id!==g.id).map(o=>`<option value="goal:${o.id}"${def==='goal:'+o.id?' selected':''}>Pris sur ${escapeHtml(o.name)}</option>`).join('')}
+          </select>
+          <button data-planned-done="${g.id}" data-planned-idx="${i}" class="btn-primary" style="padding:9px 14px; font-size:12.5px; justify-content:center;">C'est fait</button>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
 function goalContribute(id, amt){
   let goalName = '';
   let justCompleted = false;
@@ -2601,6 +2660,7 @@ function renderDashboard(){
       ${monthNav()}
     </div>
     ${renderExportReminder()}
+    ${renderPlannedDue()}
     <div class="card">${renderBalanceContent(stats, true)}</div>
 
     ${overdraftAlert ? `<div class="alert" data-overdraft style="line-height:1.45;"><span style="color:var(--coral); display:inline-flex; flex-shrink:0; margin-top:1px;">${icon('alert',15)}</span><div>${overdraftAlert}</div></div>` : ''}
@@ -4585,6 +4645,11 @@ function bindEvents(){
     if(!val) return;
     mutateData(d=>{ const g = d.goals.find(g=>g.id===el.dataset.saveGoaldeadline); if(g) g.deadline = new Date(val).toISOString(); });
     setState({goalDeadlineModalId:null});
+  }));
+  app.querySelectorAll('[data-planned-done]').forEach(el=>el.addEventListener('click', ()=>{
+    const gid = el.dataset.plannedDone, idx = Number(el.dataset.plannedIdx);
+    const src = document.getElementById(`plannedSrc-${gid}-${idx}`)?.value || 'outside';
+    plannedDone(gid, idx, src);
   }));
   app.querySelectorAll('[data-add-goalplan]').forEach(el=>el.addEventListener('click', ()=>{
     const amount = parseFloat(String(document.getElementById('goalPlanAmount').value).replace(',', '.'));
