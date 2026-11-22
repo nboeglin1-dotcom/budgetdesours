@@ -3048,21 +3048,10 @@ function renderTransactions(){
   const envRest = !q ? envelopeRestForMonth(state.viewY, state.viewM) : 0;
   const upNet = sumOf(upPart,'income') - sumOf(upPart,'expense') - envRest;
   const upCount = upPart.length;
-  // Sans recherche, la 3e case montre ce qui restera en fin de mois (meme chiffre que l'accueil),
-  // le net a venir passe en sous-titre.
-  const endOfMonth = q ? 0 : displayedEndOfMonth(computeForecast(), state.viewY, state.viewM);
-  // Ce qui fait passer du solde d'aujourd'hui (mois en cours) ou du 1er (mois futur) a la fin de mois :
-  // revenus et depenses a venir, epargne programmee et reste des enveloppes compris.
-  let endMove = 0;
-  if(!q){
-    const nowIdx = monthIndex(new Date().getFullYear(), new Date().getMonth()), vIdx = monthIndex(state.viewY, state.viewM);
-    if(vIdx === nowIdx){
-      const balToday = visibleTransactions().filter(t => new Date(t.date) <= endToday).reduce((a,t)=> a + (t.type==='income' ? t.amount : -t.amount), 0);
-      endMove = endOfMonth - balToday;
-    } else if(vIdx > nowIdx){
-      endMove = endOfMonth - computeMonthStats().startBal;
-    }
-  }
+  // 3e case : le solde a ce jour (fin du mois affiche s'il est passe), comme les deux autres cases.
+  const monthEndTs = new Date(state.viewY, state.viewM + 1, 0, 23, 59, 59, 999).getTime();
+  const balCut = Math.min(endToday, monthEndTs);
+  const balAtDate = q ? 0 : visibleTransactions().filter(t => new Date(t.date).getTime() <= balCut).reduce((a,t)=> a + (t.type==='income' ? t.amount : -t.amount), 0);
 
   return `
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
@@ -3080,7 +3069,7 @@ function renderTransactions(){
         ${caTile('Revenus', fmt0(inDone), 'var(--sage)', "à ce jour")}
         ${caTile('Dépenses', fmt0(outDone), 'var(--coral)', "à ce jour")}
         ${q ? caTile('À venir', upCount ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', `${upCount} prévue${upCount>1?'s':''}`)
-          : caTile('Fin de mois', fmt0(endOfMonth), endOfMonth < 0 ? 'var(--coral)' : 'var(--gold)', Math.abs(endMove) >= 0.5 ? `${endMove>=0?'+':'−'}${fmt0(Math.abs(endMove))} à venir` : 'rien à venir')}
+          : caTile('Solde', fmt0(balAtDate), balAtDate < 0 ? 'var(--coral)' : 'var(--gold)', balCut < endToday ? 'fin de mois' : 'à ce jour')}
       </div>
       ${(state.txSearchOpen || q) ? `<div class="search-wrap" style="position:relative; margin-top:10px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>` : ''}
       <div style="flex:1; display:flex; flex-direction:column; justify-content:center; margin-top:14px;">
