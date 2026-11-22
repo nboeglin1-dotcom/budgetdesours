@@ -1652,7 +1652,14 @@ function monthTx(){ return visibleTransactions().filter(t=>sameMonth(t.date, sta
 function moveMonth(delta){
   let m = state.viewM + delta, y = state.viewY;
   if(m<0){m=11;y--;} if(m>11){m=0;y++;}
-  setState({viewY:y, viewM:m, trendSelKey:null});
+  setState({viewY:y, viewM:m, trendSelKey:null, ...(state.tab==='dashboard' ? { envOpen:null } : {})});
+  dashboardTopAfterMonthChange();
+}
+// Accueil : apres un changement de mois, meme presentation qu'a l'ouverture de l'onglet
+// (haut de page, enveloppes refermees), pour que « Le mois en bref » ne glisse pas vers le bas.
+function dashboardTopAfterMonthChange(){
+  if(state.tab !== 'dashboard') return;
+  jumpToTop();
 }
 // Texte saisi ou importe -> HTML sur, y compris dans un attribut (value="...", title="...").
 function escapeHtml(s){
@@ -4191,7 +4198,8 @@ function bindEvents(){
   }));
   app.querySelectorAll('[data-goto-today]').forEach(el=>el.addEventListener('click', ()=>{
     const today = new Date();
-    setState({ viewY: today.getFullYear(), viewM: today.getMonth() });
+    setState({ viewY: today.getFullYear(), viewM: today.getMonth(), ...(state.tab==='dashboard' ? { envOpen:null } : {}) });
+    dashboardTopAfterMonthChange();
   }));
   app.querySelectorAll('[data-open-monthpicker]').forEach(el=>el.addEventListener('click', ()=>{ setState({ monthPickerOpen:true, monthPickerYear: state.viewY }); }));
   app.querySelectorAll('[data-close-monthpicker]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({monthPickerOpen:false}); }));
@@ -4202,8 +4210,9 @@ function bindEvents(){
   }));
   app.querySelectorAll('[data-goto-month]').forEach(el=>el.addEventListener('click', ()=>{
     const [y,m] = el.dataset.gotoMonth.split('-').map(Number);
-    setState({ viewY: y, viewM: m, monthPickerOpen: false });
+    setState({ viewY: y, viewM: m, monthPickerOpen: false, ...(state.tab==='dashboard' ? { envOpen:null } : {}) });
     window.scrollTo(0,0);
+    dashboardTopAfterMonthChange();
   }));
   app.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click', ()=>{
     if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' }; state.txAdvancedOpen = false; state.txDuplicateWarning = false;

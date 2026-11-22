@@ -138,3 +138,21 @@ test('T5 Transactions : une carte résumé, la liste s’ouvre avec les boutons 
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('T6 Accueil : changer de mois (flèches, Aujourd’hui) remet la page en haut, enveloppes refermées', async () => {
+  const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({ budgets:{ alimentation:600, loisirs:100, transport:100, sante:100, shopping:100 }, lastRolloverCheck:'2026-10',
+    transactions:[{ id:'e1', type:'expense', amount:200, category:'alimentation', note:'', accountId:'main', date:D('2026-11-05') }] }) });
+  const { page, errors } = app;
+  try{
+    await page.setViewportSize({ width:390, height:600 });
+    for(const sel of ['[data-move="1"]', '[data-move="-1"]', '[data-goto-today]']){
+      await page.evaluate(() => { state.envOpen = 'alimentation'; rerender(); document.documentElement.style.scrollBehavior='auto'; window.scrollTo(0, 500); });
+      assert.ok(await page.evaluate(() => window.scrollY) > 0);
+      if(sel === '[data-goto-today]') await page.evaluate(() => { state.viewM = 0; state.viewY = 2027; rerender(); window.scrollTo(0, 500); });
+      await page.click(sel);
+      await page.waitForTimeout(80);
+      assert.deepEqual(await page.evaluate(() => ({ sy: window.scrollY, env: state.envOpen })), { sy:0, env:null }, sel);
+    }
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
