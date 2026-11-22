@@ -787,6 +787,24 @@ function normalizeData(parsed){
         }
         parsed.arrondisTwice = true;
       }
+      // Si la recurrence des arrondis a ete supprimee avant d'etre rattachee : on cree les deux echeances
+      // (15 et 30, 15 EUR chacune) vers le Perou. Une fois.
+      if(!parsed.arrondisV2){
+        const perou = (parsed.goals||[]).find(g=>/p[ée]rou/i.test(g.name||''));
+        const has = d => (parsed.recurring||[]).some(r=>/arrondi/i.test(r.note||'') && (r.anchorDay===d || new Date(r.nextDate).getUTCDate()===d));
+        if(perou){
+          const now = new Date();
+          const mk = d => { let n = new Date(Date.UTC(now.getFullYear(), now.getMonth(), d)); if(n < new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))) n = new Date(Date.UTC(now.getFullYear(), now.getMonth()+1, d)); return n.toISOString(); };
+          if(!(parsed.recurring||[]).some(r=>/arrondi/i.test(r.note||''))){
+            if(!Array.isArray(parsed.recurring)) parsed.recurring = [];
+            [15, 30].forEach(d=> parsed.recurring.push({ id: uid(), type:'expense', amount:15, category:'epargne', note:'Arrondis LCL', frequency:'monthly', accountId: perou.accountId || 'main', nextDate: mk(d), anchorDay: d, goalId: perou.id }));
+          } else if(!has(15) || !has(30)){
+            const base = parsed.recurring.find(r=>/arrondi/i.test(r.note||''));
+            [15, 30].filter(d=>!has(d)).forEach(d=> parsed.recurring.push({ id: uid(), type:'expense', amount: base.amount, category:'epargne', note:'Arrondis LCL', frequency:'monthly', accountId: base.accountId || 'main', nextDate: mk(d), anchorDay: d, goalId: base.goalId || perou.id }));
+          }
+        }
+        parsed.arrondisV2 = true;
+      }
       if(!parsed.goalColorsDistinct){
         const pal = GOAL_PALETTE, used = new Set();
         parsed.goals.forEach(g=>{

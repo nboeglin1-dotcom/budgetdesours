@@ -20,6 +20,7 @@ async function closeBrowser(){ if(browser){ await browser.close(); browser = nul
 function baseData(extra = {}){
   return Object.assign({
     transactions: [],
+    arrondisV2: true,   // migration ponctuelle des arrondis LCL : testée à part (G11)
     budgets: {},
     goals: [],
     customCategories: [],

@@ -225,3 +225,16 @@ test('G10 Récurrence existante des arrondis (15 €, sans objectif) : rattaché
     assert.deepEqual(app.errors, []);
   } finally { await app.close(); }
 });
+
+test('G11 Arrondis supprimés avant le rattachement : les deux échéances (15 et 30) sont recréées vers le Pérou, une fois', async () => {
+  const app = await openApp({ now:'2026-11-22T22:00:00+01:00', data: baseData({ arrondisLinked:true, arrondisTwice:true, arrondisV2:false,
+    goals:[{ id:'g1', name:'Voyage au Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main' }], recurring:[] }) });
+  try{
+    const r = await app.page.evaluate(() => state.data.recurring.map(r=>[r.note, r.amount, r.anchorDay, r.nextDate.slice(0,10), r.goalId]));
+    assert.deepEqual(r, [['Arrondis LCL',15,15,'2026-12-15','g1'], ['Arrondis LCL',15,30,'2026-11-30','g1']]);
+    await app.page.click('[data-tab="transactions"]');
+    await app.page.click('[data-txlist="upcoming"]');
+    assert.match(await app.page.textContent('.tx-list-card'), /Arrondis LCL\s*PRÉVU/);
+    assert.deepEqual(app.errors, []);
+  } finally { await app.close(); }
+});
