@@ -3565,10 +3565,10 @@ function renderCaCard(){
         <div style="font-size:11.5px; color:var(--paperDim); text-align:right;">${status}</div>
       </div>
       <div class="row" style="align-items:baseline; margin-bottom:0;">
-        <div class="mono" style="font-size:26px; font-weight:700; color:${s.has?color:'var(--paperDim)'};">${fmt0(s.ca)}</div>
+        <div class="mono" style="font-size:26px; font-weight:700; color:${s.has?'var(--paper)':'var(--paperDim)'};">${fmt0(s.ca)}</div>
         <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(s.target)}</div>
       </div>
-      <div class="catbar-track" style="margin:6px 0 10px;"><div class="catbar-fill" style="width:${pct}%; background:${color};"></div></div>
+      <div class="catbar-track" style="margin:6px 0 10px;"><div class="catbar-fill" style="width:${pct}%; background:var(--gold);"></div></div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
         ${perDayTile}
         ${caTile('Skoot', fmt0(s.payout), 'var(--paper)', `début ${MONTHS_SHORT[(m+1)%12].toLowerCase()}.`)}
@@ -3664,7 +3664,6 @@ function renderGoals(){
   // Carte resume plein ecran (comme Transactions et Enveloppes) ; le detail s'ouvre avec les boutons du bas.
   const act = hasCaActivity();
   const ca = act ? caMonthStatus(state.viewY, state.viewM) : null;
-  const caColor = ca && ca.reached ? 'var(--sage)' : 'var(--gold)';
   const caPct = ca && ca.target > 0 ? Math.min(100, Math.round(ca.ca / ca.target * 100)) : 0;
   // Surplus : ce que le virement du 5 apporte au commun au-dela de son besoin du mois (reglage « Besoin du commun »).
   // Calcule sur les vrais virements (solde Shine saisi), sinon pas d'encadre.
@@ -3694,7 +3693,7 @@ function renderGoals(){
       ${act ? `
         <div>
           ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint${ca.ca > ca.target ? ` · +${fmt0(ca.ca - ca.target)}` : ''}</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
-          ${bigLine(fmt0(ca.ca), ca.has ? 'var(--paper)' : 'var(--paperDim)', ca.target, caPct, caColor)}
+          ${bigLine(fmt0(ca.ca), ca.has ? 'var(--paper)' : 'var(--paperDim)', ca.target, caPct, 'var(--gold)')}
           ${paidSurplus ? `<div class="surplus-box" style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;"><span style="color:var(--sage);">${icon('spark',10)} Surplus versé</span> : <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(paidSurplus.amount)}</span> vers ${escapeHtml((goals.find(g=>g.id===paidSurplus.goalId)||{}).name || 'un objectif')} le ${new Date(paidSurplus.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})}. <button data-undo-surplus="${nextPlan.key}" style="background:none; border:none; color:var(--paperDim); text-decoration:underline; font-size:12px; padding:0;">Annuler</button></div>`
             : surplus >= 10 ? `<div class="surplus-box" style="margin-top:10px; padding:10px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus ≈ <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}. : le commun reçoit ${fmt0(nextPlan.commun)} pour un besoin de ${fmt0(ctr.communNeed ?? 370)}.${goals.length ? `<div style="font-size:11.5px; margin-top:5px;">À verser le 5 depuis la liste « Le 5 » de l'Accueil.</div>` : ''}</div>` : ''}
         </div>` : ''}
