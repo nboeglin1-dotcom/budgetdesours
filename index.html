@@ -1579,7 +1579,7 @@ function renderApp(){
     ${renderTabbar()}
     ${(!state.modal && state.tab==='budgets') ? `
       <button data-open-newcat-standalone="1" class="fab-add" aria-label="Nouvelle catégorie">${icon('plus',22)}</button>
-    ` : (!state.modal && state.tab!=='dashboard') ? `
+    ` : (!state.modal && state.tab==='transactions') ? `
       <button data-open="addTx" class="fab-add" aria-label="Ajouter une transaction">${icon('plus',22)}</button>
     ` : ''}
     ${state.modal==='addTx' ? renderAddTxModal() : ''}
@@ -2586,35 +2586,21 @@ function renderDashboard(){
 
     ${env.rows.length ? `
     <div class="card env-card" data-envelopes>
-      <div class="env-head"><div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div><div class="env-head-right"><div class="section-title env-head-left" data-env-head-left style="margin:0; font-size:15px;">Reste</div><span class="env-chev" aria-hidden="true" style="visibility:hidden;">${icon('chevronR',13)}</span></div></div>
+      <div class="env-head"><div class="section-title" style="margin:0; font-size:15px;">Mes enveloppes</div><div class="env-head-right"><div class="section-title env-head-left" data-env-head-left style="margin:0; font-size:15px;">Reste</div></div></div>
       ${started.concat(untouched).map(r=>{
         const pct = Math.min(100, Math.round(r.spent/r.limit*100));
         const bar = r.over>0 ? 'var(--coral)' : (pct>=80 ? 'var(--amber)' : r.color);
-        const open = state.envOpen === r.id;
-        const txs = open ? visibleTransactions()
-          .filter(t=> t.type==='expense' && t.category===r.id && !isTxStrictlyRecurring(t) && sameMonth(t.date, state.viewY, state.viewM))
-          .sort((a,b)=> new Date(b.date) - new Date(a.date)) : [];
         return `
-        <div class="env-item${open?' open':''}">
+        <div class="env-item">
           <div class="env-row">
             <button class="env-main" data-quick-tx-cat="${r.id}" data-quick-tx-type="expense">
               <div class="env-name"><span class="env-dot" style="background:${r.color};"></span><span style="overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.label)}</span></div>
               <div class="env-track"><div class="catbar-fill" style="width:${pct}%; background:${bar};"></div></div>
             </button>
-            <button class="env-toggle" data-env-toggle="${r.id}" aria-expanded="${open}" aria-label="Voir les dépenses ${escapeHtml(r.label)}">
+            <button class="env-toggle" data-quick-tx-cat="${r.id}" data-quick-tx-type="expense" aria-label="Ajouter une dépense ${escapeHtml(r.label)}">
               <span data-env-left class="mono env-left" style="color:${r.over>0?'var(--coral)':(r.left>0?'var(--mint)':'var(--paperDim)')};">${r.over>0 ? `−${fmt0(r.over)}` : fmt0(r.left)}</span>
-              <span class="env-chev">${icon('chevronR',13)}</span>
             </button>
           </div>
-          ${open ? `<div class="env-drop" data-env-drop="${r.id}">
-            ${txs.length ? txs.map(t=>`
-              <button class="env-tx" data-view-tx="${t.id}">
-                <span class="env-tx-date">${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit', month:'2-digit'})}</span>
-                ${t.note && t.note.trim() ? `<span class="env-tx-note">${escapeHtml(t.note)}</span>` : `<span class="env-tx-note" style="color:var(--paperDim);">${escapeHtml(catInfo(t.category).label)}</span>`}
-                <span class="mono env-tx-amt">${fmt2(t.amount)}</span>
-              </button>`).join('') : `<div class="env-empty">Aucune dépense ce mois-ci</div>`}
-            <button class="env-add" data-quick-tx-cat="${r.id}" data-quick-tx-type="expense">${icon('plus',12)} Ajouter une dépense</button>
-          </div>` : ''}
         </div>`;
       }).join('')}
     </div>` : ''}
@@ -4898,10 +4884,6 @@ function bindEvents(){
     });
   }));
 
-  app.querySelectorAll('[data-env-toggle]').forEach(el=>el.addEventListener('click', ()=>{
-    const id = el.dataset.envToggle;
-    setState({ envOpen: state.envOpen === id ? null : id });
-  }));
   app.querySelectorAll('[data-quick-tx-cat]').forEach(el=>el.addEventListener('click', ()=>{
     const catId = el.dataset.quickTxCat;
     const type = el.dataset.quickTxType;

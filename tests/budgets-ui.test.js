@@ -95,7 +95,7 @@ test('B3 Nouvelle catégorie avec une limite : elle devient tout de suite une en
   } finally { await app.close(); }
 });
 
-test('B4 Bouton + flottant : nouvelle transaction dans Transactions, nouvelle catégorie dans Enveloppes', async () => {
+test('B4 Bouton + flottant : nouvelle transaction dans Transactions, nouvelle catégorie dans Enveloppes, aucun dans Objectifs', async () => {
   const app = await openApp({ now:'2026-11-22T10:00:00+01:00', data: baseData({ budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10' }) });
   const { page, errors } = app;
   try{
@@ -107,6 +107,9 @@ test('B4 Bouton + flottant : nouvelle transaction dans Transactions, nouvelle ca
     await page.click('.fab-add');
     assert.equal(await page.evaluate(() => state.categoryModalOpen), true);
     assert.ok(await page.$('#newCatLimit'));               // catégorie de dépense, avec le champ limite
+    await page.evaluate(() => { state.categoryModalOpen = false; rerender(); });
+    await page.click('.tabbar [data-tab="goals"]');
+    assert.equal(await page.$('.fab-add'), null);           // pas de + flottant dans Objectifs
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });

@@ -1239,14 +1239,12 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.doesNotMatch(r.txt, /Reste au total|Reste à dépenser|Dépassée|Pleine|Pas encore entamées| \/ /);
     }));
 
-  test('A1 septies Mes enveloppes : le menu déroulant liste les dépenses de l’enveloppe (sans les récurrences)', () =>
+  test('A1 septies Mes enveloppes : pas de flèche ni de liste déroulante, toute la ligne ajoute une dépense', () =>
     withApp({ now:NOW, data: data() }, async ({ page, errors }) => {
-      assert.equal(await page.$$eval('[data-env-drop]', els => els.length), 0);
-      await page.evaluate(() => document.querySelector('[data-env-toggle="transport"]').click());
-      const ids = await page.$$eval('[data-env-drop="transport"] [data-view-tx]', els => els.map(e => e.dataset.viewTx));
-      assert.deepEqual(ids, ['t']);
-      await page.evaluate(() => document.querySelector('[data-env-toggle="transport"]').click());
-      assert.equal(await page.$$eval('[data-env-drop]', els => els.length), 0);
+      assert.equal(await page.$$eval('[data-envelopes] .env-chev', els => els.length), 0);
+      assert.equal(await page.$$eval('[data-env-toggle]', els => els.length), 0);
+      await page.evaluate(() => document.querySelector('[data-envelopes] .env-toggle[data-quick-tx-cat="transport"]').click());
+      assert.equal(await page.evaluate(() => !!state.quickTxOpen), true);
       assert.deepEqual(errors, []);
     }));
 
@@ -1445,17 +1443,6 @@ test.describe('Enveloppes : prorata de février et menu des dépenses', () => {
     }
   })());
 
-  test('P2 Menu d’une enveloppe : une dépense sans libellé affiche sa catégorie, une avec libellé affiche le libellé', () =>
-    withApp({ now:'2026-11-10T10:00:00+01:00', data: baseData({ budgets:{ alimentation:300 },
-      transactions:[ tx({ id:'a', amount:12, category:'alimentation', note:'', date:D('2026-11-05') }),
-                     tx({ id:'b', amount:8, category:'alimentation', note:'Marché fictif', date:D('2026-11-06') }) ] }) }, async ({ page, errors }) => {
-      await page.evaluate(() => { state.envOpen = 'alimentation'; rerender(); });
-      const notes = await page.evaluate(() => [...document.querySelectorAll('.env-tx-note')].map(e => e.textContent.trim()));
-      const lib = await page.evaluate(() => catInfo('alimentation').label);
-      assert.deepEqual(notes.sort(), ['Marché fictif', lib].sort());
-      assert.ok(!notes.includes('Sans libellé'));
-      assert.deepEqual(errors, []);
-    }));
 });
 
 test.describe('Soldes Shine par mois : mois passés, ancien format et changement d’année', () => {
