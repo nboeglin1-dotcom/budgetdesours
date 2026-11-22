@@ -3097,10 +3097,9 @@ function renderBudgets(){
     ${offEnvCats.length ? `
       <div class="card budgets-offenv-card">
         <div class="row" style="margin-bottom:10px;">
-          <div class="section-title" style="margin:0; font-size:15px;">Hors enveloppes</div>
+          <div class="section-title" style="margin:0; font-size:15px;">Dépenses ponctuelles</div>
           <span class="mono" style="font-size:15px; font-weight:600; color:var(--paper);">${fmt0(offEnvTotal)}</span>
         </div>
-        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:6px;">Dépenses ponctuelles sans limite, non comptées dans le total du mois.</div>
         ${offEnvCats.map(c=>`
           <div class="row" style="margin:0; padding:8px 0; border-top:1px solid var(--lineSoft);">
             <div style="display:flex; align-items:center; gap:8px; font-size:13.5px;"><span style="width:8px; height:8px; border-radius:50%; background:${c.color}; flex-shrink:0;"></span>${escapeHtml(c.label)}</div>
@@ -3785,7 +3784,7 @@ function renderAddGoalModal(){
   `;
 }
 
-let newCatFormState = { color: COLORS.slate, type:'expense', label:'', editingId:null };
+let newCatFormState = { color: COLORS.slate, type:'expense', label:'', limit:'', editingId:null };
 function renderNewCategoryModal(){
   const palette = [COLORS.coral,COLORS.gold,COLORS.sage,COLORS.violet,COLORS.teal,COLORS.rose,COLORS.amber,COLORS.slate];
   const isEditing = !!newCatFormState.editingId;
@@ -3799,6 +3798,9 @@ function renderNewCategoryModal(){
         </div>
         <label class="field-label">Nom</label>
         <input id="newCatLabel" class="field-input" placeholder="Ex : Cadeaux" value="${escapeHtml(newCatFormState.label||'')}">
+        ${newCatFormState.type==='expense' ? `
+        <label class="field-label">Limite par mois <span style="color:var(--paperDim); font-weight:400;">(facultatif)</span></label>
+        <input id="newCatLimit" type="text" inputmode="decimal" class="field-input" placeholder="Ex : 100 — vide = dépense ponctuelle, sans enveloppe" value="${escapeHtml(String(newCatFormState.limit||''))}">` : ''}
         <label class="field-label">Couleur</label>
         <div class="color-row">${palette.map(c=>`<button data-newcat-color="${c}" class="color-swatch" style="background:${c}; outline:${newCatFormState.color===c?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>
         <button class="submit-btn" data-submit-newcat="1">${isEditing ? 'Enregistrer les modifications' : 'Créer la catégorie'}</button>
@@ -4306,30 +4308,44 @@ function bindEvents(){
   app.querySelectorAll('[data-edit-cat]').forEach(el=>el.addEventListener('click', ()=>{
     const cat = (state.data.customCategories||[]).find(c=>c.id===el.dataset.editCat);
     if(!cat) return;
-    newCatFormState = { color: cat.color, type: cat.type, label: cat.label, editingId: cat.id };
+    newCatFormState = { color: cat.color, type: cat.type, label: cat.label, limit: (state.data.budgets||{})[cat.id] || '', editingId: cat.id };
     state.categoryModalOpen = true; rerender();
   }));
   app.querySelectorAll('[data-close-newcat]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.categoryModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-newcat]').forEach(el=>el.addEventListener('click', ()=>{ state.categoryModalOpen=false; rerender(); }));
-  app.querySelectorAll('[data-newcat-type]').forEach(el=>el.addEventListener('click', ()=>{ newCatFormState.type = el.dataset.newcatType; rerender(); }));
-  app.querySelectorAll('[data-newcat-color]').forEach(el=>el.addEventListener('click', ()=>{ newCatFormState.color = el.dataset.newcatColor; rerender(); }));
+  // Garde le nom et la limite saisis quand on change le type ou la couleur (le modal est redessine).
+  const keepNewCatInputs = ()=>{
+    const l = document.getElementById('newCatLabel'); if(l) newCatFormState.label = l.value;
+    const lim = document.getElementById('newCatLimit'); if(lim) newCatFormState.limit = lim.value;
+  };
+  app.querySelectorAll('[data-newcat-type]').forEach(el=>el.addEventListener('click', ()=>{ keepNewCatInputs(); newCatFormState.type = el.dataset.newcatType; rerender(); }));
+  app.querySelectorAll('[data-newcat-color]').forEach(el=>el.addEventListener('click', ()=>{ keepNewCatInputs(); newCatFormState.color = el.dataset.newcatColor; rerender(); }));
   const submitNewCat = app.querySelector('[data-submit-newcat]');
   if(submitNewCat) submitNewCat.addEventListener('click', ()=>{
     const label = document.getElementById('newCatLabel').value.trim();
     if(!label) return;
+    const limEl = document.getElementById('newCatLimit');
+    const limRaw = limEl ? limEl.value.trim() : '';
+    const limit = limRaw === '' ? 0 : parseAmountInput(limRaw);
+    if(newCatFormState.type==='expense' && !(limit >= 0)){ showToast('Limite invalide'); return; }
+    const setLimit = (d, id)=>{
+      if(newCatFormState.type!=='expense') return;
+      d.budgets = d.budgets || {};
+      if(limit > 0) d.budgets[id] = Math.round(limit*100)/100; else delete d.budgets[id];
+    };
     if(newCatFormState.editingId){
       const editId = newCatFormState.editingId;
       state.categoryModalOpen = false;
       mutateData(d=>{
         const cat = d.customCategories.find(c=>c.id===editId);
-        if(cat){ cat.label=label; cat.color=newCatFormState.color; cat.type=newCatFormState.type; }
+        if(cat){ cat.label=label; cat.color=newCatFormState.color; cat.type=newCatFormState.type; setLimit(d, editId); }
       });
       showToast('Catégorie modifiée');
       return;
     }
     const cat = { id:uid(), label, color:newCatFormState.color, type:newCatFormState.type };
     state.categoryModalOpen = false;
-    mutateData(d=>{ d.customCategories.push(cat); });
+    mutateData(d=>{ d.customCategories.push(cat); setLimit(d, cat.id); });
     if(state.modal==='addTx' && txFormState.type===cat.type){ txFormState.category = cat.id; }
     showToast('Catégorie créée');
   });

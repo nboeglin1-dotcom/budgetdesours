@@ -38,7 +38,7 @@ test('B1 Budgets : total avec tuiles, limite modifiable, détail, sans bouton D�
   } finally { await app.close(); }
 });
 
-test('B2 Budgets : cartes = enveloppes, dépenses sans limite dans « Hors enveloppes », épargne exclue', async () => {
+test('B2 Budgets : cartes = enveloppes, dépenses sans limite dans « Dépenses ponctuelles », épargne exclue', async () => {
   const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({
     budgets:{ alimentation:750, loisirs:150 }, lastRolloverCheck:'2026-10',
     recurring:[{ id:'tf', type:'expense', amount:178, category:'logement', note:'Taxe test', frequency:'monthly', accountId:'main', nextDate:'2026-12-15T00:00:00.000Z' }],
@@ -63,10 +63,36 @@ test('B2 Budgets : cartes = enveloppes, dépenses sans limite dans « Hors envel
     assert.equal(await page.$('[data-toggle-budget-detail="shopping"]'), null);
     // Hors enveloppes : impôts (catégorie avec récurrence) et cadeau, sans l'épargne, non comptés dans le total.
     const off = (await page.textContent('.budgets-offenv-card')).replace(/\s+/g,' ');
-    assert.match(off, /Hors enveloppes 328\s€/);
+    assert.match(off, /Dépenses ponctuelles 328\s€/);
     assert.match(off, /228\s€/);
     assert.match(off, /100\s€/);
     assert.doesNotMatch(off, /1\s000\s€/);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
+
+test('B3 Nouvelle catégorie avec une limite : elle devient tout de suite une enveloppe', async () => {
+  const app = await openApp({ now:'2026-11-22T10:00:00+01:00', data: baseData({ budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10' }) });
+  const { page, errors } = app;
+  try{
+    await page.evaluate(() => { newCatFormState = { color: COLORS.slate, type:'expense', label:'', editingId:null }; state.categoryModalOpen = true; rerender(); });
+    await page.fill('#newCatLabel', 'Coiffeur');
+    await page.fill('#newCatLimit', '40');
+    await page.click('[data-newcat-color]');                 // changer la couleur ne perd pas la saisie
+    assert.equal(await page.inputValue('#newCatLabel'), 'Coiffeur');
+    assert.equal(await page.inputValue('#newCatLimit'), '40');
+    await page.click('[data-submit-newcat]');
+    const r = await page.evaluate(() => { const c = state.data.customCategories.find(c=>c.label==='Coiffeur'); return { limit: state.data.budgets[c.id] }; });
+    assert.equal(r.limit, 40);
+    // Sans limite : pas d'enveloppe
+    await page.evaluate(() => { newCatFormState = { color: COLORS.slate, type:'expense', label:'', editingId:null }; state.categoryModalOpen = true; rerender(); });
+    await page.fill('#newCatLabel', 'Cadeaux');
+    await page.click('[data-submit-newcat]');
+    const r2 = await page.evaluate(() => { const c = state.data.customCategories.find(c=>c.label==='Cadeaux'); return state.data.budgets[c.id]; });
+    assert.equal(r2, undefined);
+    // Revenu : pas de champ limite
+    await page.evaluate(() => { newCatFormState = { color: COLORS.slate, type:'income', label:'', editingId:null }; state.categoryModalOpen = true; rerender(); });
+    assert.equal(await page.$('#newCatLimit'), null);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
