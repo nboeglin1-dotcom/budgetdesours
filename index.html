@@ -704,6 +704,8 @@ function normalizeData(parsed){
       if(!(Number(ctx.augustReserve) >= 0)) ctx.augustReserve = 150;
       // Besoin du commun : ce que le virement du 5 doit apporter au compte commun un mois normal. Au-dela = surplus a placer.
       if(!(Number(ctx.communNeed) >= 0)) ctx.communNeed = 370;
+      // Surplus deja verse a un objectif, par mois de virement (AAAA-MM) : { amount, goalId, date }.
+      if(!ctx.surplusPaid || typeof ctx.surplusPaid !== 'object' || Array.isArray(ctx.surplusPaid)) ctx.surplusPaid = {};
       if(typeof ctx.augustReserveFrom !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.augustReserveFrom)) ctx.augustReserveFrom = '2027-01';
       // Solde restant Shine : un par mois de virement (cle AAAA-MM du mois des virements du 5), garde d'un mois sur l'autre.
       const okSnap = sn => sn && typeof sn === 'object' && isFinite(Number(sn.amount)) && typeof sn.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sn.date);
@@ -3601,6 +3603,7 @@ function renderGoals(){
   const nextPlan = act ? shineTransferPlan(state.viewM === 11 ? state.viewY + 1 : state.viewY, (state.viewM + 1) % 12) : null;
   const surplus = nextPlan && nextPlan.hasCa ? Math.max(0, Math.floor((nextPlan.commun - (ctr.communNeed ?? 370)) / 10) * 10) : 0;
   // Objectif a nourrir en priorite : le plus en retard sur son echeance, sinon le plus proche.
+  const paidSurplus = nextPlan ? (ctr.surplusPaid||{})[nextPlan.key] : null;
   const surplusGoal = [...goals].filter(g=>!(g.target>0 && g.current>=g.target))
     .sort((a,b)=>((goalForecast(a)?.gap ?? 1e9) - (goalForecast(b)?.gap ?? 1e9)))[0] || goals[0];
   // Petit titre de section + montant principal "sur X" + barre : meme gabarit pour l'activite et l'epargne.
@@ -3622,7 +3625,8 @@ function renderGoals(){
         <div>
           ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint${ca.ca > ca.target ? ` · +${fmt0(ca.ca - ca.target)}` : ''}</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
           ${bigLine(fmt0(ca.ca), ca.has ? caColor : 'var(--paperDim)', ca.target, caPct, caColor)}
-          ${surplus >= 10 ? `<div style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> à placer le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}. : le commun reçoit ${fmt0(nextPlan.commun)} pour un besoin de ${fmt0(ctr.communNeed ?? 370)}${goals.length ? ` → de quoi avancer ${escapeHtml(surplusGoal.name)}` : ''}.</div>` : ''}
+          ${paidSurplus ? `<div class="surplus-box" style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;"><span style="color:var(--sage);">${icon('spark',10)} Surplus versé</span> : <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(paidSurplus.amount)}</span> vers ${escapeHtml((goals.find(g=>g.id===paidSurplus.goalId)||{}).name || 'un objectif')} le ${new Date(paidSurplus.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})}.</div>`
+            : surplus >= 10 ? `<div class="surplus-box" style="margin-top:10px; padding:10px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}. : le commun reçoit ${fmt0(nextPlan.commun)} pour un besoin de ${fmt0(ctr.communNeed ?? 370)}.${goals.length ? `<button data-pay-surplus="${nextPlan.key}" data-surplus-goal="${surplusGoal.id}" data-surplus-amount="${surplus}" class="btn-primary" style="width:100%; justify-content:center; margin-top:8px; padding:9px 12px; font-size:12.5px;">Verser ${fmt0(surplus)} à ${escapeHtml(surplusGoal.name)}</button><div style="font-size:11px; margin-top:5px; text-align:center;">Une fois le virement Shine arrivé sur le commun</div>` : ''}</div>` : ''}
         </div>` : ''}
       ${goals.length===0 ? `
         <div style="display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 6px;">
@@ -4652,6 +4656,12 @@ function bindEvents(){
     if(!val) return;
     mutateData(d=>{ const g = d.goals.find(g=>g.id===el.dataset.saveGoaldeadline); if(g) g.deadline = new Date(val).toISOString(); });
     setState({goalDeadlineModalId:null});
+  }));
+  app.querySelectorAll('[data-pay-surplus]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.dataset.paySurplus, goalId = el.dataset.surplusGoal, amount = Number(el.dataset.surplusAmount);
+    if(!(amount > 0)) return;
+    goalContribute(goalId, amount);
+    mutateData(d=>{ d.caTracker.surplusPaid = { ...(d.caTracker.surplusPaid||{}), [key]: { amount, goalId, date: localYMD(new Date()) } }; });
   }));
   app.querySelectorAll('[data-planned-done]').forEach(el=>el.addEventListener('click', ()=>{
     const gid = el.dataset.plannedDone, idx = Number(el.dataset.plannedIdx);
