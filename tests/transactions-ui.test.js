@@ -178,3 +178,18 @@ test('T7 Clavier ouvert : la fenêtre de saisie se colle en haut de la zone visi
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('T8 Récurrence créée avec une 1re date future : PRÉVU jusqu’à sa date ; anciennes données remises en PRÉVU', async () => {
+  const app = await openApp({ now:'2026-11-22T21:00:00+01:00', data: baseData({
+    recurring:[{ id:'rr', type:'expense', amount:15, category:'epargne', note:'', frequency:'monthly', accountId:'main', nextDate:'2026-12-30T00:00:00.000Z', anchorDay:30 }],
+    transactions:[{ id:'tf', type:'expense', amount:15, category:'epargne', note:'', accountId:'main', date:'2026-11-30T00:00:00.000Z', recurringId:'rr' }] }) });
+  const { page, errors } = app;
+  try{
+    const r = await page.evaluate(() => ({ n: state.data.transactions.filter(t=>t.recurringId==='rr').length, next: state.data.recurring[0].nextDate.slice(0,10) }));
+    assert.deepEqual(r, { n:0, next:'2026-11-30' });
+    await page.click('[data-tab="transactions"]');
+    await page.click('[data-txlist="upcoming"]');
+    assert.match(await page.textContent('.tx-list-card'), /PRÉVU/);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

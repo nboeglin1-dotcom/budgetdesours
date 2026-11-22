@@ -750,6 +750,20 @@ function normalizeData(parsed){
       const safeColor = (c)=> (typeof c==='string' && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : COLORS.slate;
       [parsed.customCategories, parsed.goals, parsed.accounts].forEach(list=> (list||[]).forEach(x=>{ if(x) x.color = safeColor(x.color); }));
       Object.keys(parsed.categoryColorOverrides||{}).forEach(k=>{ parsed.categoryColorOverrides[k] = safeColor(parsed.categoryColorOverrides[k]); });
+      // Recurrence creee avec une 1re echeance future : cette echeance avait ete enregistree tout de suite
+      // comme vraie transaction. On la remet en PRÉVU (la regle repart de sa date). Sans photo seulement.
+      {
+        const endToday = new Date(); endToday.setHours(23,59,59,999);
+        (parsed.recurring||[]).forEach(r=>{
+          const t = (parsed.transactions||[]).find(t=>t && t.recurringId===r.id && new Date(t.date) > endToday && !t.photo);
+          if(!t) return;
+          const next = addPeriod(t.date, r.frequency, r.anchorDay).toISOString();
+          if(Math.abs(new Date(next) - new Date(r.nextDate)) > 36*3600*1000) return;   // pas la 1re echeance : on ne touche pas
+          if((parsed.transactions||[]).some(x=>x!==t && x.recurringId===r.id)) return;
+          r.nextDate = t.date;
+          parsed.transactions = parsed.transactions.filter(x=>x!==t);
+        });
+      }
       if(!parsed.goalColorsDistinct){
         const pal = GOAL_PALETTE, used = new Set();
         parsed.goals.forEach(g=>{
@@ -4569,8 +4583,11 @@ function bindEvents(){
       const newTxId = uid();
       if(txFormState.recurring){
         const newRuleId = uid();
-        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: addPeriod(isoDate, txFormState.frequency).toISOString(), anchorDay: new Date(isoDate).getUTCDate() });
-        d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId, recurringId:newRuleId });
+        // Premiere echeance dans le futur : elle reste PRÉVU jusqu'a sa date (comme les autres recurrences),
+        // et devient une vraie transaction ce jour-la.
+        const future = new Date(isoDate) > new Date(new Date().setHours(23,59,59,999));
+        d.recurring.push({ id:newRuleId, type:txFormState.type, amount, category:txFormState.category, note, frequency:txFormState.frequency, accountId, nextDate: future ? isoDate : addPeriod(isoDate, txFormState.frequency).toISOString(), anchorDay: new Date(isoDate).getUTCDate() });
+        if(!future) d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId, recurringId:newRuleId });
       } else {
         d.transactions.unshift({ id:newTxId, type:txFormState.type, amount, category:txFormState.category, note, date: isoDate, photo, accountId });
       }
