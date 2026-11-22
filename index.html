@@ -2394,12 +2394,11 @@ function envelopeRestForMonth(y, m){
 // mois ne pese plus sur les mois suivants, et en debut de mois les depenses a venir sont bien comptees.
 function envelopeExpectedRest(now = new Date()){
   const y = now.getFullYear(), m = now.getMonth();
-  const dim = new Date(y, m+1, 0).getDate();
-  const share = (dim - now.getDate() + 1) / dim;
+  // Prudent : tout ce qui reste dans les enveloppes est compte comme depense d'ici la fin du mois
+  // (comme pour les mois suivants). Ce qui a ete mis de cote depuis les enveloppes ne sera plus
+  // depense : on ne le compte pas deux fois.
   const e = envelopeStatus(y, m);
-  const paced = e.rows.reduce((a,r)=> a + Math.min(r.left, r.limit * share), 0);
-  // Ce qui a ete mis de cote depuis les enveloppes ne sera plus depense : on ne le compte pas deux fois.
-  return Math.min(paced, Math.max(0, e.rows.reduce((a,r)=>a + r.left, 0) - (e.committed||0)));
+  return Math.max(0, e.rows.reduce((a,r)=>a + r.left, 0) - (e.committed||0));
 }
 function computeForecast(){
   if(_forecastCache && _forecastCacheToken === _renderToken) return _forecastCache;

@@ -1055,11 +1055,11 @@ test.describe('Solde après enveloppes', () => {
     rolloverEnabled:false, lastRolloverCheck:'2026-9',
   }, extra));
 
-  test('E1 Mois en cours (calcul) : Reste moins les dépenses d’enveloppes attendues d’ici la fin du mois (au prorata), dépense connue non comptée deux fois', () =>
+  test('E1 Mois en cours (calcul) : Reste moins tout ce qui reste dans les enveloppes, dépense connue non comptée deux fois', () =>
     withApp({ now:NOW_OCT, data: data() }, async ({ page, errors }) => {
       const r = await page.evaluate(() => { _forecastCache=null; const s = computeMonthStats(); return { bal:s.bal, after:s.balAfterEnv }; });
       assert.equal(r.bal, 2700);
-      assert.ok(Math.abs(r.after - (2700 - 500*7/31 - 100*7/31)) < 0.01, String(r.after));
+      assert.ok(Math.abs(r.after - (2700 - 300 - 100)) < 0.01, String(r.after));   // alimentation 300 + transport 100 (impôts déjà connus)
       assert.deepEqual(errors, []);
     }));
 
@@ -1069,20 +1069,20 @@ test.describe('Solde après enveloppes', () => {
       tx({ id:'c', amount:700, category:'alimentation', date:D('2026-10-10') }) ] }) }, async ({ page }) => {
       const r = await page.evaluate(() => { _forecastCache=null; const s = computeMonthStats(); return { bal:s.bal, after:s.balAfterEnv }; });
       assert.equal(r.bal, 2300);
-      assert.ok(Math.abs(r.after - (2300 - 2*100*7/31)) < 0.01, String(r.after));
+      assert.ok(Math.abs(r.after - (2300 - 100 - 100)) < 0.01, String(r.after));   // transport 100 + impôts 100 (alimentation dépassée)
     }));
 
-  test('E3 Prévisionnel : enveloppes des mois suivants en cumul + dépenses attendues du mois en cours au prorata', () =>
+  test('E3 Prévisionnel : enveloppes des mois suivants en cumul + tout le reste des enveloppes du mois en cours', () =>
     withApp({ now:NOW_OCT, data: data() }, async ({ page }) => {
       const p = await page.evaluate(() => { _forecastCache=null; const f = computeForecast(); return f.points.slice(0,2); });
-      const rest = 600*7/31;
+      const rest = 400;
       assert.equal(p[0].value, 3700);
       assert.ok(Math.abs(p[0].afterEnv - (3700 - rest - 700)) < 0.01);
       assert.ok(Math.abs(p[1].afterEnv - (p[1].value - rest - 700 - 700)) < 0.01);
     }));
 
-  test('E3b Début de mois : les enveloppes du mois en cours pèsent presque entièrement sur les mois suivants ; dernier jour : presque rien', () => (async () => {
-    for(const [now, share] of [['2026-11-01T10:00:00+01:00', 30/30], ['2026-11-30T10:00:00+01:00', 1/30]]){
+  test('E3b Premier comme dernier jour : tout le reste des enveloppes du mois en cours pèse sur la fin de mois', () => (async () => {
+    for(const [now, share] of [['2026-11-01T10:00:00+01:00', 1], ['2026-11-30T10:00:00+01:00', 1]]){
       await withApp({ now, data: baseData({ budgets:{ alimentation:600 },
         transactions:[ tx({ id:'s', type:'income', amount:3000, category:'salaire', date:D('2026-11-01') }) ] }) }, async ({ page }) => {
         const r = await page.evaluate(() => { _forecastCache=null; const f = computeForecast(); return { v:f.points[0].value, a:f.points[0].afterEnv, now:f.envNow }; });
@@ -1199,7 +1199,7 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.equal(r.tr.spent, 100);
       assert.equal(r.tr.over, 20);
       assert.equal(r.rem, 300 + 100);
-      assert.ok(Math.abs(r.after - (r.bal - 300 - 100*19/30)) < 0.01, String(r.after));
+      assert.ok(Math.abs(r.after - (r.bal - 300 - 100)) < 0.01, String(r.after));
       assert.ok(r.hasReste && r.hasAfter && r.envCard && r.goal);
       assert.deepEqual(errors, []);
     }));
@@ -1429,10 +1429,10 @@ test.describe('Rappel de sauvegarde les jours de sauvegarde', () => {
 
 
 test.describe('Enveloppes : prorata de février et menu des dépenses', () => {
-  test('P1 Prorata du mois en cours en février (28 et 29 jours) : 1er, avant-dernier et dernier jour', () => (async () => {
+  test('P1 Février (28 et 29 jours) : tout le reste des enveloppes, quel que soit le jour', () => (async () => {
     const cas = [
-      ['2027-02-01T10:00:00+01:00', 28/28], ['2027-02-28T10:00:00+01:00', 1/28],
-      ['2028-02-01T10:00:00+01:00', 29/29], ['2028-02-28T10:00:00+01:00', 2/29], ['2028-02-29T10:00:00+01:00', 1/29],
+      ['2027-02-01T10:00:00+01:00', 1], ['2027-02-28T10:00:00+01:00', 1],
+      ['2028-02-01T10:00:00+01:00', 1], ['2028-02-28T10:00:00+01:00', 1], ['2028-02-29T10:00:00+01:00', 1],
     ];
     for(const [now, share] of cas){
       await withApp({ now, data: baseData({ budgets:{ alimentation:600 } }) }, async ({ page, errors }) => {
