@@ -23,7 +23,10 @@ test('T1 Transactions : tuiles du mois justes même passées masquées, recherch
     let sum = await page.textContent('.tx-summary-card');
     assert.match(sum, /Revenus\s*2\s000\s€/);
     assert.match(sum, /Dépenses\s*748\s€/);
-    assert.match(sum, /À venir\s*−15\s€\s*1 prévue/);
+    // 3e case : ce qui restera en fin de mois (= « Fin de mois · estimé » de l'accueil), le net à venir dessous
+    const end = await page.evaluate(() => displayedEndOfMonth(computeForecast(), 2026, 9));
+    assert.equal(Math.round(end), 1237);                                // 2 000 − 748 − 15
+    assert.match(sum, /Fin de mois\s*1\s237\s€\s*−15\s€ à venir/);
     assert.equal(await page.$('#txSearch'), null);                   // la recherche est derrière la loupe
     assert.equal(await page.$('.tx-list-card'), null);               // la liste est repliée
     await page.click('[data-toggle-txsearch]');
@@ -56,7 +59,8 @@ test('T2 Dépenses du mois : même total sur l’accueil, dans Transactions et s
     assert.match(bref, new RegExp(`dont ${stats.up.toLocaleString('fr-FR').replace(/\s/g,'\\s')}\\s€ à venir`));
     await page.click('[data-tab="transactions"]');
     const tiles = await page.$$eval('.tx-summary-card .mono', els => els.map(e => e.textContent));
-    const paid = num(tiles[1]), up = num(tiles[2]);
+    const sumTxt = await page.textContent('.tx-summary-card');
+    const paid = num(tiles[1]), up = num(sumTxt.match(/−([\d\s\u202f]+)\s€ à venir/)[1]);   // net à venir (pas de revenu attendu ici)
     assert.equal(paid, 200);                                  // l'épargne n'est pas une dépense
     assert.equal(paid + up, stats.expense);                   // payé + à venir = dépenses de l'accueil
     const chart = await page.textContent('.trend-summary');
