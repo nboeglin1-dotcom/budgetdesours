@@ -160,3 +160,21 @@ test('T6 Accueil : changer de mois (flèches, Aujourd’hui) remet la page en ha
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('T7 Clavier ouvert : la fenêtre de saisie se colle en haut de la zone visible', async () => {
+  const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({}) });
+  const { page, errors } = app;
+  try{
+    await page.setViewportSize({ width:390, height:844 });
+    await page.evaluate(() => setState({ recalOpen:true, recalInput:'' }));
+    const pos = await page.evaluate(() => { const o=document.querySelector('.modal-overlay'); return getComputedStyle(o).alignItems; });
+    assert.equal(pos, 'flex-end');                                     // sans clavier : en bas
+    await page.evaluate(() => { const h=document.documentElement; h.classList.add('kb-open'); h.style.setProperty('--vvh','480px'); h.style.setProperty('--vvt','0px'); });
+    const r = await page.evaluate(() => { const o=document.querySelector('.modal-overlay'), sh=document.querySelector('.modal-sheet'); return { a:getComputedStyle(o).alignItems, h:Math.round(o.getBoundingClientRect().height), top:Math.round(sh.getBoundingClientRect().top), bottom:Math.round(sh.getBoundingClientRect().bottom) }; });
+    assert.equal(r.a, 'flex-start');
+    assert.equal(r.h, 480);
+    assert.equal(r.top, 0);
+    assert.ok(r.bottom <= 480, JSON.stringify(r));                     // rien sous le clavier
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

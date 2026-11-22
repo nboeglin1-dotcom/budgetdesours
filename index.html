@@ -179,6 +179,8 @@
   .pin-pad{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; width:100%; max-width:260px; margin:10px auto 0;}
   .pin-key{aspect-ratio:1; border-radius:50%; background:var(--surfaceHi); border:1px solid var(--line); font-size:21px; font-weight:600; color:var(--paper); display:flex; align-items:center; justify-content:center;}
   .modal-overlay{position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; justify-content:center;}
+  .kb-open .modal-overlay{top:var(--vvt, 0px); bottom:auto; height:var(--vvh, 100vh); align-items:flex-start;}
+  .kb-open .modal-sheet{border-radius:0 0 24px 24px; max-height:var(--vvh, 100vh); padding-bottom:18px; animation:none;}
   .modal-sheet{width:100%; max-width:480px; background:var(--surface); border:1px solid var(--line); border-radius:24px 24px 0 0;
     padding:18px 18px calc(env(safe-area-inset-bottom) + 22px); max-height:min(88vh, calc(var(--vvh, 100vh) - 24px)); overflow-y:auto; animation:slideUp .28s ease;}
   @keyframes slideUp{from{transform:translateY(100%);} to{transform:translateY(0);}}
@@ -5558,9 +5560,23 @@ function animateBalance(el, target){
 
 (function(){
   if(!window.visualViewport) return;
-  const setVVH = ()=> document.documentElement.style.setProperty('--vvh', window.visualViewport.height+'px');
+  // Clavier ouvert (iPhone) : la zone visible retrecit. Les fenetres de saisie se collent alors en haut
+  // de la zone visible au lieu du bas, ou le clavier les cacherait.
+  const setVVH = ()=>{
+    const vv = window.visualViewport, h = document.documentElement;
+    h.style.setProperty('--vvh', vv.height+'px');
+    h.style.setProperty('--vvt', vv.offsetTop+'px');
+    h.classList.toggle('kb-open', window.innerHeight - vv.height > 120);
+  };
   window.visualViewport.addEventListener('resize', setVVH);
+  window.visualViewport.addEventListener('scroll', setVVH);
   setVVH();
+  // Champ d'une fenetre de saisie : une fois le clavier sorti, on le ramene dans la partie visible.
+  document.addEventListener('focusin', (e)=>{
+    const el = e.target;
+    if(!el.matches || !el.matches('input, textarea, select') || !el.closest('.modal-sheet')) return;
+    setTimeout(()=>{ setVVH(); el.scrollIntoView({ block:'nearest' }); }, 320);
+  });
 })();
 rerender();
 clearAppBadgeOnce();
