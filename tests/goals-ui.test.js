@@ -220,8 +220,8 @@ test('G10 Récurrence existante des arrondis (15 €, sans objectif) : rattaché
     recurring:[{ id:'rr', type:'expense', amount:15, category:'epargne', note:'', frequency:'monthly', accountId:'main', nextDate:'2026-11-30T00:00:00.000Z', anchorDay:30 },
                { id:'big', type:'expense', amount:300, category:'epargne', note:'Autre', frequency:'monthly', accountId:'main', nextDate:'2026-11-30T00:00:00.000Z', anchorDay:30 }] }) });
   try{
-    const r = await app.page.evaluate(() => state.data.recurring.map(r=>[r.id, r.goalId||null, r.note]));
-    assert.deepEqual(r, [['rr','g1','Arrondis LCL'], ['big', null, 'Autre']]);
+    const r = await app.page.evaluate(() => state.data.recurring.map(r=>[r.goalId||null, r.note, r.amount, r.anchorDay, r.nextDate.slice(0,10)]));
+    assert.deepEqual(r, [['g1','Arrondis LCL',15,30,'2026-11-30'], [null,'Autre',300,30,'2026-11-30'], ['g1','Arrondis LCL',15,15,'2026-12-15']]);   // 2e échéance le 15
     assert.deepEqual(app.errors, []);
   } finally { await app.close(); }
 });

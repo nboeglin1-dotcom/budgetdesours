@@ -776,6 +776,17 @@ function normalizeData(parsed){
         });
         parsed.arrondisLinked = true;
       }
+      // Les arrondis partent le 15 ET le 30 (15 EUR chaque fois) : une 2e echeance le 15, une fois.
+      if(!parsed.arrondisTwice){
+        const base = (parsed.recurring||[]).find(r=>r.category==='epargne' && r.goalId && /arrondi/i.test(r.note||''));
+        if(base && !(parsed.recurring||[]).some(r=>r!==base && r.goalId===base.goalId && /arrondi/i.test(r.note||''))){
+          const now = new Date();
+          let next = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 15));
+          if(next < new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))) next = new Date(Date.UTC(now.getFullYear(), now.getMonth()+1, 15));
+          parsed.recurring.push({ id: uid(), type:'expense', amount: base.amount, category:'epargne', note: base.note, frequency:'monthly', accountId: base.accountId || 'main', nextDate: next.toISOString(), anchorDay: 15, goalId: base.goalId });
+        }
+        parsed.arrondisTwice = true;
+      }
       if(!parsed.goalColorsDistinct){
         const pal = GOAL_PALETTE, used = new Set();
         parsed.goals.forEach(g=>{
