@@ -1542,6 +1542,18 @@ function jumpToTop(){
   window.scrollTo(0, 0);
   requestAnimationFrame(()=>{ window.scrollTo(0, 0); h.style.scrollBehavior = prev; });
 }
+// Revient a une position de page apres la fermeture d'une fenetre de saisie. Sur iPhone, le clavier decale
+// la page pendant la saisie : on revient a la position d'avant l'ouverture, sans animation, puis encore une
+// fois quand le clavier a fini de se refermer.
+function restoreScroll(y){
+  if(typeof y !== 'number') return;
+  const h = document.documentElement;
+  const prev = h.style.scrollBehavior;
+  h.style.scrollBehavior = 'auto';
+  window.scrollTo(0, y);
+  requestAnimationFrame(()=> window.scrollTo(0, y));
+  setTimeout(()=>{ window.scrollTo(0, y); h.style.scrollBehavior = prev; }, 350);
+}
 function rerender(){
   const active = document.activeElement;
   const activeId = active && active.id;
@@ -3917,6 +3929,7 @@ function bindEvents(){
     if(el.dataset.open==='addTx'){ txFormState = { type:'expense', category:EXPENSE_CATS[0].id, date:defaultTxDate(), recurring:false, frequency:'monthly', note:'', amount:'', editingId:null, photo:null, accountId: state.activeAccountFilter || txFormState.accountId || 'main' }; state.txAdvancedOpen = false; state.txDuplicateWarning = false;
       if(el.dataset.txType==='income'){ txFormState.type = 'income'; txFormState.category = INCOME_CATS[0].id; } }
     if(el.dataset.open==='addGoal'){ goalFormState = { color: COLORS.sage }; }
+    state.modalReturnY = window.scrollY;           // position avant le clavier, pour y revenir a la fermeture
     setState({modal: el.dataset.open});
     if(el.dataset.open==='addTx'){
       const amtEl = document.getElementById('txAmount');
@@ -3924,8 +3937,12 @@ function bindEvents(){
     }
   }));
 
-  app.querySelectorAll('[data-close-modal]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ setState({modal:null}); } }));
-  app.querySelectorAll('[data-close-x-modal]').forEach(el=>el.addEventListener('click', ()=>{ setState({modal:null}); }));
+  const closeMainModal = ()=>{
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    setState({modal:null}); restoreScroll(state.modalReturnY);
+  };
+  app.querySelectorAll('[data-close-modal]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) closeMainModal(); }));
+  app.querySelectorAll('[data-close-x-modal]').forEach(el=>el.addEventListener('click', ()=> closeMainModal()));
 
   app.querySelectorAll('[data-del-tx]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.delTx;
@@ -4238,7 +4255,9 @@ function bindEvents(){
     });
     state.txDuplicateWarning = false;
     state.modal = null;
-    showToast(txFormState.recurring ? 'Récurrence créée' : (txFormState.type==='income' ? 'Entrée ajoutée' : 'Dépense ajoutée'));
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    showToast(txFormState.recurring ? 'Récurrence créée' : (txFormState.type==='income' ? 'Revenu ajouté' : 'Dépense ajoutée'));
+    if(!txFormState.editingId) restoreScroll(state.modalReturnY);
   });
   const txPhotoInput = app.querySelector('#txPhotoInput');
   if(txPhotoInput) txPhotoInput.addEventListener('change', async ()=>{
@@ -4905,13 +4924,18 @@ function bindEvents(){
     quickTxFormState = { category:catId, type, date:defaultTxDate(), amount:'', note:'', photo:null };
     state.txDuplicateWarning = false;
     state.manageCatOpen = false;
+    state.quickTxReturnY = window.scrollY;       // position avant le clavier, pour y revenir a la fermeture
     state.quickTxOpen = true;
     rerender();
     const amtEl = document.getElementById('quickTxAmount');
     if(amtEl) amtEl.focus();
   }));
-  app.querySelectorAll('[data-close-quicktx]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.quickTxOpen=false; rerender(); } }));
-  app.querySelectorAll('[data-close-x-quicktx]').forEach(el=>el.addEventListener('click', ()=>{ state.quickTxOpen=false; rerender(); }));
+  const closeQuickTx = ()=>{
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    state.quickTxOpen = false; rerender(); restoreScroll(state.quickTxReturnY);
+  };
+  app.querySelectorAll('[data-close-quicktx]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) closeQuickTx(); }));
+  app.querySelectorAll('[data-close-x-quicktx]').forEach(el=>el.addEventListener('click', ()=> closeQuickTx()));
   const quickTxPhotoInput = app.querySelector('#quickTxPhotoInput');
   if(quickTxPhotoInput) quickTxPhotoInput.addEventListener('change', async ()=>{
     const file = quickTxPhotoInput.files[0];
@@ -4942,12 +4966,14 @@ function bindEvents(){
       const dup = state.data.transactions.some(t=> t.type===quickTxFormState.type && t.category===quickTxFormState.category && t.amount===amount && new Date(t.date)>=dayStart && new Date(t.date)<=dayEnd);
       if(dup){ quickTxFormState.amount = amount; quickTxFormState.note = note; quickTxFormState.date = date; state.txDuplicateWarning = true; rerender(); return; }
     }
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    state.quickTxOpen = false;
+    state.txDuplicateWarning = false;
     mutateData(d=>{
       d.transactions.unshift({ id:uid(), type:quickTxFormState.type, amount, category:quickTxFormState.category, note, date: isoDate, photo:quickTxFormState.photo, accountId: state.activeAccountFilter || 'main' });
     });
-    state.quickTxOpen = false;
-    state.txDuplicateWarning = false;
-    showToast(quickTxFormState.type==='income' ? 'Entrée ajoutée' : 'Dépense ajoutée');
+    showToast(quickTxFormState.type==='income' ? 'Revenu ajouté' : 'Dépense ajoutée');
+    restoreScroll(state.quickTxReturnY);
   });
 
   app.querySelectorAll('[data-hide-budgetcat]').forEach(el=>el.addEventListener('click', ()=>{

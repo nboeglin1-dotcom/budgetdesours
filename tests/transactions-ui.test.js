@@ -82,3 +82,23 @@ test('T3 Onglet Accueil : revient toujours au mois en cours, en haut, enveloppes
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('T4 Ajout depuis une enveloppe de l’accueil : la page revient où elle était', async () => {
+  const many = Array.from({length:8}, (_,i)=>({ id:'x'+i, type:'expense', amount:10, category:'alimentation', note:'', accountId:'main', date:D('2026-11-0'+(i+1)) }));
+  const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({ budgets:{ alimentation:600, loisirs:100, transport:100, sante:100, shopping:100 }, lastRolloverCheck:'2026-10', transactions: many }) });
+  const { page, errors } = app;
+  try{
+    await page.setViewportSize({ width:390, height:600 });
+    await page.evaluate(() => { document.documentElement.style.scrollBehavior='auto'; window.scrollTo(0, 250); });
+    const y0 = await page.evaluate(() => window.scrollY);
+    assert.ok(y0 > 100);
+    await page.evaluate(() => document.querySelector('[data-envelopes] .env-main[data-quick-tx-cat="alimentation"]').click());
+    await page.evaluate(() => window.scrollTo(0, 0));                 // le clavier décale la page
+    await page.fill('#quickTxAmount', '12');
+    await page.click('[data-submit-quicktx]');
+    await page.waitForTimeout(450);
+    assert.equal(await page.evaluate(() => state.quickTxOpen), false);
+    assert.equal(await page.evaluate(() => window.scrollY), y0);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
