@@ -3498,6 +3498,9 @@ function renderGoals(){
   const ca = act ? caMonthStatus(state.viewY, state.viewM) : null;
   const caColor = ca && ca.reached ? 'var(--sage)' : 'var(--gold)';
   const caPct = ca && ca.target > 0 ? Math.min(100, Math.round(ca.ca / ca.target * 100)) : 0;
+  // Petit titre de section + montant principal "sur X" + barre : meme gabarit pour l'activite et l'epargne.
+  const secHead = (t, right) => `<div class="row" style="margin:0 0 4px; flex-wrap:nowrap; font-size:11.5px; color:var(--paperDim); text-transform:uppercase; letter-spacing:.06em;"><span>${t}</span><span style="text-transform:none; letter-spacing:0; font-size:12px;">${right}</span></div>`;
+  const bigLine = (val, color, target, pct, barColor) => `<div class="row" style="align-items:baseline; margin:0;"><span class="mono" style="font-size:26px; font-weight:700; color:${color};">${val}</span><span style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(target)}</span></div><div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>`;
   const objBtn = (id, label, on) => `<button data-objpanel="${id}" class="${on ? 'active' : ''}">${label}</button>`;
   const iconBtn = 'display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:10px; background:none; border:1px solid var(--line); color:var(--paperDim);';
   return `
@@ -3505,34 +3508,34 @@ function renderGoals(){
       ${monthNav()}
     </div>
     <div class="card goals-total-card" style="display:flex; flex-direction:column; min-height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 152px - env(safe-area-inset-bottom)); margin-bottom:14px;">
-      <div class="row" style="margin-bottom:10px; flex-wrap:nowrap;">
-        <div><div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${goals.length} objectif${goals.length>1?'s':''} d'épargne${act ? ' · activité' : ''}</div></div>
+      <div class="row" style="margin-bottom:4px; flex-wrap:nowrap;">
+        <div><div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${goals.length} objectif${goals.length>1?'s':''} d'épargne</div></div>
         <button data-open="addGoal" aria-label="Nouvel objectif" style="${iconBtn}">${icon('plus',14)}</button>
       </div>
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:18px; padding:8px 0;">
       ${act ? `
-        <div style="background:var(--surfaceHi); border-radius:12px; padding:10px 12px; margin-bottom:12px;">
-          <div class="row" style="margin:0; flex-wrap:nowrap; font-size:12px; color:var(--paperDim);"><span>Chiffre d'affaires</span><span>${ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`}</span></div>
-          <div class="row" style="margin:2px 0 0; align-items:baseline;"><span class="mono" style="font-size:18px; font-weight:700; color:${ca.has ? caColor : 'var(--paperDim)'};">${fmt0(ca.ca)}</span><span style="font-size:12px; color:var(--paperDim);">sur ${fmt0(ca.target)}</span></div>
-          <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${caPct}%; background:${caColor};"></div></div>
+        <div>
+          ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
+          ${bigLine(fmt0(ca.ca), ca.has ? caColor : 'var(--paperDim)', ca.target, caPct, caColor)}
         </div>` : ''}
       ${goals.length===0 ? `
-        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:12px 6px;">
+        <div style="display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 6px;">
           ${bearMascot('content', 52)}
           <div style="font-size:14px; color:var(--paper); font-weight:600; margin:12px 0 4px;">Pas encore d'objectif</div>
           <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:16px; line-height:1.5;">Un voyage, un imprévu, un projet — commence par te fixer un cap.</div>
           <button data-open="addGoal" class="btn-primary" style="display:inline-flex; margin:0 auto;">${icon('plus',14)} Créer mon premier objectif</button>
         </div>` : `
-        <div class="row" style="align-items:baseline; margin-bottom:0;">
-          <div class="mono" style="font-size:26px; font-weight:700; color:var(--gold);">${fmt0(totalSaved)}</div>
-          <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(totalTarget)}</div>
+        <div>
+          ${secHead('Épargne totale', `${doneCount} / ${goals.length} atteint${doneCount>1?'s':''}`)}
+          ${bigLine(fmt0(totalSaved), 'var(--gold)', totalTarget, pctAll, 'var(--gold)')}
+          <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:12px;">
+            ${caTile('Reste à mettre', fmt0(Math.max(0, totalTarget-totalSaved)))}
+            ${caTile('Auto / mois', perMonth ? fmt0(perMonth) : '—', perMonth ? 'var(--gold)' : 'var(--paperDim)')}
+          </div>
         </div>
-        <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pctAll}%; background:var(--gold);"></div></div>
-        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px;">
-          ${caTile('Reste à mettre', fmt0(Math.max(0, totalTarget-totalSaved)))}
-          ${caTile('Auto / mois', perMonth ? fmt0(perMonth) : '—', perMonth ? 'var(--gold)' : 'var(--paperDim)')}
-          ${caTile('Atteints', `${doneCount} / ${goals.length}`, doneCount ? 'var(--sage)' : 'var(--paper)')}
-        </div>
-        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:14px; margin-top:16px;">
+        <div>
+          ${secHead('Par objectif', '')}
+          <div style="display:flex; flex-direction:column; gap:14px; margin-top:8px;">
           ${goals.map(g=>{
             const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
             return `<div>
@@ -3540,7 +3543,9 @@ function renderGoals(){
               <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${p}%; background:${g.color};"></div></div>
             </div>`;
           }).join('')}
+          </div>
         </div>`}
+      </div>
       ${(goals.length || act) ? `
       <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:16px; width:100%;">
         ${act ? objBtn('ca', 'Activité', uiPref('caPanel')) + objBtn('virements', 'Virements', uiPref('shinePlan')) : ''}${goals.length ? objBtn('goals', 'Objectifs', uiPref('goalsDetail')) : ''}
