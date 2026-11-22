@@ -73,7 +73,7 @@ test('G3 Sans activité ni objectif : état vide, lien pour suivre une activité
 
 test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus de CA', async () => {
   const app = await openApp({ now:'2026-11-22T10:00:00+01:00', data: baseData({
-    caTracker:{ months:{ '2026-11':6920 } },
+    caTracker:{ months:{ '2026-11':6920 }, shineMonths:{ '2026-12':{ amount:1600, after:false, date:'2026-11-22' } } },
     goalTransfers:[{ goalId:'g1', amount:500, frequency:'monthly', nextDate:'2026-12-09T00:00:00.000Z' }],
     goals:[{ id:'g1', name:'Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main', deadline:'2027-08-01T00:00:00.000Z' }] }) });
   const { page, errors } = app;
@@ -82,9 +82,11 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     // 1 515 + 8 × 500 (déc. → juil.) = 5 515 → manque 4 485 sur 9 mois ≈ 500 €/mois
     let card = await page.textContent('.goals-total-card');
     assert.match(card, /manque 4\s485\s€ · ≈ 500\s€\/mois de plus/);
-    // Surplus : (6 920 − 4 100) × 0,375 × 0,77 ≈ 814 → 810
+    // Surplus = virement du 5 vers le commun − besoin du commun (370 € par défaut)
     assert.match(card, /Atteint · \+2\s820\s€/);
-    assert.match(card, /Surplus ≈ 810\s€ net/);
+    const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
+    const fr = n => new Intl.NumberFormat('fr-FR').format(n).replace(/\s/g, '\\s');
+    assert.match(card, new RegExp(`Surplus ${fr(Math.floor((commun - 370) / 10) * 10)}\\s€ à placer le 5 déc\\. : le commun reçoit ${fr(commun)}\\s€ pour un besoin de 370\\s€`));
     await page.evaluate(() => setState({ goalDeadlineModalId:'g1' }));
     await page.fill('#goalPlanLabel', '13e mois');
     await page.fill('#goalPlanAmount', '800');

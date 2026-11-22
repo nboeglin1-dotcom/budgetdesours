@@ -702,6 +702,8 @@ function normalizeData(parsed){
       // Reserve d'aout : chaque virement du 5 de janvier a aout garde augustReserve € de plus sur Shine (le plancher monte
       // d'autant). Aout n'est pas roule : le 5 septembre, la reserve est liberee et paie les virements. Chaque annee.
       if(!(Number(ctx.augustReserve) >= 0)) ctx.augustReserve = 150;
+      // Besoin du commun : ce que le virement du 5 doit apporter au compte commun un mois normal. Au-dela = surplus a placer.
+      if(!(Number(ctx.communNeed) >= 0)) ctx.communNeed = 370;
       if(typeof ctx.augustReserveFrom !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.augustReserveFrom)) ctx.augustReserveFrom = '2027-01';
       // Solde restant Shine : un par mois de virement (cle AAAA-MM du mois des virements du 5), garde d'un mois sur l'autre.
       const okSnap = sn => sn && typeof sn === 'object' && isFinite(Number(sn.amount)) && typeof sn.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sn.date);
@@ -3521,6 +3523,7 @@ function renderCaCard(){
           ${caField('caDcaInput', 'DCA Bitstack par mois (€)', caNum(ct.bitstackDca ?? 450), '450')}
           ${caField('caFuelInput', 'Essence par jour roulé (€)', caNum(ct.fuelPerDay ?? 15), '15')}
           ${caField('caReserveInput', 'Réserve d\'août par mois (€)', caNum(ct.augustReserve ?? 150), '150')}
+          ${caField('caNeedInput', 'Besoin du commun par mois (€)', caNum(ct.communNeed ?? 370), '370')}
         </div>
         <div style="margin-top:8px;">
           ${caField('caUrssafInput', 'URSSAF + impôt prélevés sur le CA (%)', caNum(Math.round((ct.urssaf ?? 0.23)*1000)/10), '23')}
@@ -3592,9 +3595,11 @@ function renderGoals(){
   const ca = act ? caMonthStatus(state.viewY, state.viewM) : null;
   const caColor = ca && ca.reached ? 'var(--sage)' : 'var(--gold)';
   const caPct = ca && ca.target > 0 ? Math.min(100, Math.round(ca.ca / ca.target * 100)) : 0;
-  // Surplus du mois au-dela de l'objectif de CA, en argent reellement verse (part Skoot, net d'URSSAF).
+  // Surplus : ce que le virement du 5 apporte au commun au-dela de son besoin du mois (reglage « Besoin du commun »).
+  // Calcule sur les vrais virements (solde Shine saisi), sinon pas d'encadre.
   const ctr = state.data.caTracker || {};
-  const surplus = ca && ca.ca > ca.target ? Math.floor((ca.ca - ca.target) * (ctr.rate ?? 0.375) * (1 - (ctr.urssaf ?? 0.23)) / 10) * 10 : 0;
+  const nextPlan = act ? shineTransferPlan(state.viewM === 11 ? state.viewY + 1 : state.viewY, (state.viewM + 1) % 12) : null;
+  const surplus = nextPlan && nextPlan.hasCa ? Math.max(0, Math.floor((nextPlan.commun - (ctr.communNeed ?? 370)) / 10) * 10) : 0;
   // Objectif a nourrir en priorite : le plus en retard sur son echeance, sinon le plus proche.
   const surplusGoal = [...goals].filter(g=>!(g.target>0 && g.current>=g.target))
     .sort((a,b)=>((goalForecast(a)?.gap ?? 1e9) - (goalForecast(b)?.gap ?? 1e9)))[0] || goals[0];
@@ -3617,7 +3622,7 @@ function renderGoals(){
         <div>
           ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint${ca.ca > ca.target ? ` · +${fmt0(ca.ca - ca.target)}` : ''}</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
           ${bigLine(fmt0(ca.ca), ca.has ? caColor : 'var(--paperDim)', ca.target, caPct, caColor)}
-          ${surplus >= 10 ? `<div style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus ≈ <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> net sur le commun le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}.${goals.length ? ` → de quoi avancer ${escapeHtml(surplusGoal.name)}.` : ''}</div>` : ''}
+          ${surplus >= 10 ? `<div style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> à placer le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}. : le commun reçoit ${fmt0(nextPlan.commun)} pour un besoin de ${fmt0(ctr.communNeed ?? 370)}${goals.length ? ` → de quoi avancer ${escapeHtml(surplusGoal.name)}` : ''}.</div>` : ''}
         </div>` : ''}
       ${goals.length===0 ? `
         <div style="display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 6px;">
@@ -4343,8 +4348,10 @@ function bindEvents(){
     const dca = parseAmountInput((document.getElementById('caDcaInput')||{}).value);
     const fu = parseAmountInput((document.getElementById('caFuelInput')||{}).value);
     const rs = parseAmountInput((document.getElementById('caReserveInput')||{}).value);
+    const nd = parseAmountInput((document.getElementById('caNeedInput')||{}).value);
+    if(!(nd >= 0)){ showToast('Réglages invalides'); return; }
     if(!(f >= 0) || !(b >= 0) || !(u >= 0 && u < 100) || !(dca >= 0) || !(fu >= 0) || !(rs >= 0)){ showToast('Réglages invalides'); return; }
-    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; d.caTracker.augustReserve = Math.round(rs); syncShineRecurring(d); });
+    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; d.caTracker.augustReserve = Math.round(rs); d.caTracker.communNeed = Math.round(nd); syncShineRecurring(d); });
     showToast('Réglages enregistrés');
   }));
   app.querySelectorAll('[data-del-goal]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Objectif supprimé', d=>{ d.goals = d.goals.filter(g=>g.id!==el.dataset.delGoal); }); }));
