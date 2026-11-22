@@ -224,6 +224,9 @@
   .trend-summary-title{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--paperDim);}
   .trend-sub{font-size:10.5px; color:var(--paperDim); font-weight:400;}
   .legend{display:flex; gap:16px; margin-top:10px; font-size:11.5px; color:var(--paperDim);}
+  .trend-embedded .chart-bars{height:180px; margin:0 auto;}
+  .trend-embedded .chart-bars-pair{height:140px;}
+  .trend-embedded .legend{justify-content:center;}
   .legend span{display:inline-flex; align-items:center; gap:5px;}
   .legend .dot{width:8px; height:8px; border-radius:50%;}
   .scroll-cats{max-height:130px; overflow-y:auto; margin-top:10px; padding-right:2px;}
@@ -2699,7 +2702,8 @@ function renderDashboard(){
 // Graphique « Revenus vs depenses — 12 mois » (onglet Transactions). Memes regles que le mois en bref :
 // compte affiche uniquement, epargne exclue, echeances a venir ajoutees pour le mois en cours / a venir.
 function renderTrendCard(embedded = false){
-  if(!state.data.dashboardSettings.showTrend) return '';
+  if(!embedded && !state.data.dashboardSettings.showTrend) return '';
+  const H = embedded ? 130 : 100;   // hauteur max des barres (plus grandes dans la carte Transactions)
   const stats = computeMonthStats();
   const trend = [];
   const trendCurIdx = monthIndex(new Date().getFullYear(), new Date().getMonth());
@@ -2730,7 +2734,7 @@ function renderTrendCard(embedded = false){
   const selView = embedded ? (trend.find(t=>t.isView) || trend[trend.length-1]) : trendView;
   return `
     <div class="${embedded ? 'trend-embedded' : 'card'}">
-      ${embedded ? `<div style="font-size:11.5px; color:var(--paperDim); margin:2px 0 2px;">12 derniers mois · touche un mois pour y aller</div>` : `
+      ${embedded ? `<div style="font-size:11.5px; color:var(--paperDim); text-align:center; margin-bottom:6px;">12 derniers mois · touche un mois pour y aller</div>` : `
       <div class="row" style="margin-bottom:2px;">
         <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
         <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
@@ -2742,12 +2746,12 @@ function renderTrendCard(embedded = false){
             <button type="button" ${embedded ? `data-trend-month="${t.key}"` : `data-trend-sel="${t.key}"`} class="chart-col${t.isSel?' is-view':''}" aria-label="Voir ${t.name}">
               <div class="chart-bars-pair">
                 <div class="chart-stack">
-                  ${t.incPlan>0 ? `<div class="chart-bar-plan" style="height:${t.incPlan/maxTrend*100}px; --c:var(--sage);"></div>` : ''}
-                  <div class="chart-bar" style="height:${Math.max(2,t.inc/maxTrend*100)}px; background:var(--sage);${t.incPlan>0?' border-radius:0;':''}"></div>
+                  ${t.incPlan>0 ? `<div class="chart-bar-plan" style="height:${t.incPlan/maxTrend*H}px; --c:var(--sage);"></div>` : ''}
+                  <div class="chart-bar" style="height:${Math.max(2,t.inc/maxTrend*H)}px; background:var(--sage);${t.incPlan>0?' border-radius:0;':''}"></div>
                 </div>
                 <div class="chart-stack">
-                  ${t.expPlan>0 ? `<div class="chart-bar-plan" style="height:${t.expPlan/maxTrend*100}px; --c:var(--coral);"></div>` : ''}
-                  <div class="chart-bar" style="height:${Math.max(2,t.exp/maxTrend*100)}px; background:var(--coral);${t.expPlan>0?' border-radius:0;':''}"></div>
+                  ${t.expPlan>0 ? `<div class="chart-bar-plan" style="height:${t.expPlan/maxTrend*H}px; --c:var(--coral);"></div>` : ''}
+                  <div class="chart-bar" style="height:${Math.max(2,t.exp/maxTrend*H)}px; background:var(--coral);${t.expPlan>0?' border-radius:0;':''}"></div>
                 </div>
               </div>
               <div class="chart-label">${t.label}</div>
@@ -2912,7 +2916,7 @@ function renderTransactions(){
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
       ${monthNav()}
     </div>
-    <div class="card tx-summary-card" style="display:flex; flex-direction:column; min-height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 152px - env(safe-area-inset-bottom)); margin-bottom:${listOpen ? '14px' : '0'};">
+    <div class="card tx-summary-card" style="display:flex; flex-direction:column; min-height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 212px - env(safe-area-inset-bottom)); margin-bottom:14px;">
       <div class="row" style="margin-bottom:10px; flex-wrap:nowrap;">
         <div><div class="section-title" style="margin:0; font-size:15px;">${filtered ? 'Selon ta recherche' : 'Le mois en opérations'}</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${opCount} opération${opCount>1?'s':''}</div></div>
         <div style="display:flex; gap:6px;">
@@ -2923,13 +2927,13 @@ function renderTransactions(){
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
         ${caTile('Revenus', fmt0(inDone), 'var(--sage)', "à ce jour")}
         ${caTile('Dépenses', fmt0(outDone), 'var(--coral)', "à ce jour")}
-        ${caTile('À venir', (upCount || envRest >= 1) ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', envRest >= 1 ? `${upCount} prévue${upCount>1?'s':''} + enveloppes` : `${upCount} prévue${upCount>1?'s':''}`)}
+        ${caTile('À venir', (upCount || envRest >= 1) ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', envRest >= 1 ? `${upCount} prév. + env.` : `${upCount} prévue${upCount>1?'s':''}`)}
       </div>
       ${(state.txSearchOpen || q) ? `<div class="search-wrap" style="position:relative; margin-top:10px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>` : ''}
-      <div style="flex:1; display:flex; flex-direction:column; justify-content:center; margin-top:8px;">
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center; margin-top:14px;">
         ${renderTrendCard(true)}
       </div>
-      <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:10px; width:calc(100% - 60px);">
+      <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:14px; width:100%;">
         ${listBtn('all', 'Toutes')}${listBtn('income', 'Revenus')}${listBtn('expense', 'Dépenses')}${listBtn('upcoming', 'À venir')}
       </div>
     </div>
