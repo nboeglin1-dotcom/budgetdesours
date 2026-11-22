@@ -69,7 +69,7 @@ test.describe('Objectif de CA', () => {
       assert.equal(s.totalIn, 1050);
       assert.equal(s.remaining, 1300);
       const txt = await page.textContent('.ca-card');
-      assert.match(txt, /Dont courses perso/);
+      assert.doesNotMatch(txt, /Dont courses perso/);   // phrase retirée pour gagner de la place
       // Vider seulement les courses perso garde le CA Skoot
       await page.fill('#caPersoInput', '');
       await page.click('[data-save-ca]');

@@ -3383,7 +3383,6 @@ function renderCaCard(){
         ${caTile('Skoot', fmt0(s.payout), 'var(--paper)', `versé début ${MONTHS_SHORT[(m+1)%12].toLowerCase()}.`)}
         ${caTile('Net encaissé', `≈ ${fmt0(net)}`, 'var(--sage)', `${fmt0(s.totalIn)} avant URSSAF`)}
       </div>
-      ${s.perso > 0 ? `<div style="font-size:11.5px; color:var(--paperDim); margin-top:10px; line-height:1.5;">Dont courses perso ${fmt0(s.perso)}, sans commission : elles comptent pour ${fmt0(s.persoEquiv)} de CA Skoot.</div>` : ''}
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;">
         ${caField('caInput', 'CA Skoot à date', s.hasSkoot ? caNum(s.skoot) : '', 'avec commission')}
         ${caField('caPersoInput', 'Courses perso', s.hasPerso ? caNum(s.perso) : '', 'sans commission')}
