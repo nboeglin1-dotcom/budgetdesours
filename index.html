@@ -149,6 +149,8 @@
   .filter-pills{display:flex; gap:4px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:4px;}
   .filter-pills button{padding:7px 12px; border-radius:8px; font-size:12px; font-weight:500; color:var(--paperDim);}
   .filter-pills button.active{background:var(--surfaceHi); color:var(--paper);}
+  .tx-listbtns button{flex:1; padding:8px 4px; white-space:nowrap;}
+  .tx-listbtns button.active{background:var(--gold); color:var(--ink); font-weight:600;}
   .budget-stack{display:flex; flex-direction:column; gap:14px;}
   .budget-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
   .budget-cat{display:flex; align-items:center; gap:9px; font-size:15.5px; font-weight:600; color:var(--paper) !important;}
@@ -2696,7 +2698,7 @@ function renderDashboard(){
 
 // Graphique « Revenus vs depenses — 12 mois » (onglet Transactions). Memes regles que le mois en bref :
 // compte affiche uniquement, epargne exclue, echeances a venir ajoutees pour le mois en cours / a venir.
-function renderTrendCard(){
+function renderTrendCard(embedded = false){
   if(!state.data.dashboardSettings.showTrend) return '';
   const stats = computeMonthStats();
   const trend = [];
@@ -2724,17 +2726,20 @@ function renderTrendCard(){
   const trendView = trend.find(t=>t.key===state.trendSelKey) || trend[trend.length-1];
   trend.forEach(t=>{ t.isSel = t===trendView; });
 
+  if(embedded){ trend.forEach(t=>{ t.isSel = t.isView; }); }
+  const selView = embedded ? (trend.find(t=>t.isView) || trend[trend.length-1]) : trendView;
   return `
-    <div class="card">
+    <div class="${embedded ? 'trend-embedded' : 'card'}">
+      ${embedded ? `<div style="font-size:11.5px; color:var(--paperDim); margin:2px 0 2px;">12 derniers mois · touche un mois pour y aller</div>` : `
       <div class="row" style="margin-bottom:2px;">
         <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
         <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
       </div>
-      <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · à venir = échéances et reste des enveloppes · touchez un mois pour le détail</div>
+      <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · à venir = échéances et reste des enveloppes · touchez un mois pour le détail</div>`}
       <div class="trend-scroll">
         <div class="chart-bars">
           ${trend.map(t=>`
-            <button type="button" data-trend-sel="${t.key}" class="chart-col${t.isSel?' is-view':''}" aria-label="Voir ${t.name}">
+            <button type="button" ${embedded ? `data-trend-month="${t.key}"` : `data-trend-sel="${t.key}"`} class="chart-col${t.isSel?' is-view':''}" aria-label="Voir ${t.name}">
               <div class="chart-bars-pair">
                 <div class="chart-stack">
                   ${t.incPlan>0 ? `<div class="chart-bar-plan" style="height:${t.incPlan/maxTrend*100}px; --c:var(--sage);"></div>` : ''}
@@ -2751,8 +2756,8 @@ function renderTrendCard(){
         </div>
       </div>
       <div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>
-      <div class="trend-summary">
-        <div class="trend-summary-title">${trendView.name}</div>
+      ${(()=>{ const trendView = selView; return `<div class="trend-summary">
+        ${embedded ? '' : `<div class="trend-summary-title">${trendView.name}</div>`}
         <div class="row" style="margin-bottom:0;">
           <span>Revenus</span>
           <span class="mono" style="color:var(--sage);">${fmt0(trendView.inc+trendView.incPlan)}${trendView.incPlan>0 ? ` <span class="trend-sub">dont ${fmt0(trendView.incPlan)} à venir</span>` : ''}</span>
@@ -2763,7 +2768,7 @@ function renderTrendCard(){
         </div>
         ${(()=>{ const d=(trendView.inc+trendView.incPlan)-(trendView.exp+trendView.expPlan); return `<div class="row" style="margin-bottom:0; font-weight:600;"><span>${d>=0?'Gagné en plus':'Dépensé en trop'}</span><span class="mono" style="color:${d>=0?'var(--sage)':'var(--coral)'};">${d>=0?'+':'−'}${fmt0(Math.abs(d))}</span></div>`; })()}
         ${trendView.isView && state.activeAccountFilter && stats.netTransfers ? `<div class="row" style="margin-bottom:0;"><span style="color:var(--paperDim);">Virements avec tes autres comptes</span><span class="mono" style="color:var(--paperDim);">${stats.netTransfers>0?'+':'−'}${fmt0(Math.abs(stats.netTransfers))}</span></div>` : ''}
-      </div>
+      </div>`; })()}
     </div>
   `;
 }
@@ -2883,16 +2888,23 @@ function renderTransactions(){
   // Totaux du mois selon la recherche et le filtre Entrees/Sorties (mais pas « Masquer passees »,
   // pour que « a ce jour » reste juste), hors virements internes et epargne.
   const endToday = todayStart.getTime()+86399999;
-  const match = t => (state.txFilter==='all' || t.type===state.txFilter) && (!q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q));
+  // Les cases du resume suivent la recherche, pas les boutons de liste (Revenus / Depenses / A venir).
+  const match = t => (!q || (t.note||'').toLowerCase().includes(q) || catInfo(t.category).label.toLowerCase().includes(q));
   const monthReal = visibleTransactions().filter(t => sameMonth(t.date, state.viewY, state.viewM)).filter(match);
   const donePart = monthReal.filter(t=> new Date(t.date) <= endToday);
   const upPart = [...monthReal.filter(t=> new Date(t.date) > endToday), ...recurringPreviewForMonth(state.viewY, state.viewM).filter(match)];
   const sumOf = (arr, type)=> arr.filter(t=>t.type===type && isRealIncExp(t)).reduce((a,t)=>a+t.amount,0);
   const inDone = sumOf(donePart,'income'), outDone = sumOf(donePart,'expense');
-  const filtered = !!q || state.txFilter!=='all';
+  const filtered = !!q;
+  // Liste des operations : cachee tant qu'on n'a pas touche un bouton (ou lance une recherche).
+  const listOpen = !!state.txListOpen || !!q;
+  const activeBtn = !listOpen ? null : state.hidePastTx ? 'upcoming' : state.txFilter;
+  const opCount = donePart.length + upPart.length;
+  const listBtn = (id, label) => `<button data-txlist="${id}" class="${activeBtn===id ? 'active' : ''}">${label}</button>`;
+  const iconBtn = 'display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:10px; background:none; border:1px solid var(--line); color:var(--paperDim);';
   // Sans recherche, « À venir » compte aussi le reste probable des enveloppes : Payé + À venir = dépenses
   // du mois, le même chiffre que l'accueil et le graphique.
-  const envRest = (!q && state.txFilter!=='income') ? envelopeRestForMonth(state.viewY, state.viewM) : 0;
+  const envRest = !q ? envelopeRestForMonth(state.viewY, state.viewM) : 0;
   const upNet = sumOf(upPart,'income') - sumOf(upPart,'expense') - envRest;
   const upCount = upPart.length;
 
@@ -2900,34 +2912,31 @@ function renderTransactions(){
     <div class="row" style="position:sticky; top:var(--header-h,76px); z-index:16; background:var(--bg); justify-content:center; padding:14px 0 4px; margin-bottom:10px;">
       ${monthNav()}
     </div>
-    <div class="row" style="margin-bottom:12px;">
-      <div class="section-title" style="margin:0;">Mes transactions</div>
-      <button data-open-recurmodal="1" style="${pillBtn}">${icon('repeat',13)} Récurrences${recurCount?` · ${recurCount}`:''}</button>
-    </div>
-    <div class="card tx-summary-card">
-      <div class="row" style="margin-bottom:10px;">
-        <div class="section-title" style="margin:0; font-size:15px;">${filtered ? 'Selon ta recherche' : 'Le mois en opérations'}</div>
-        <span style="font-size:12.5px; color:var(--paperDim);">${donePart.length+upPart.length} opération${donePart.length+upPart.length>1?'s':''}</span>
+    <div class="card tx-summary-card" style="display:flex; flex-direction:column; min-height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 152px - env(safe-area-inset-bottom)); margin-bottom:${listOpen ? '14px' : '0'};">
+      <div class="row" style="margin-bottom:10px; flex-wrap:nowrap;">
+        <div><div class="section-title" style="margin:0; font-size:15px;">${filtered ? 'Selon ta recherche' : 'Le mois en opérations'}</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${opCount} opération${opCount>1?'s':''}</div></div>
+        <div style="display:flex; gap:6px;">
+          <button data-toggle-txsearch="1" aria-label="Rechercher une opération" style="${iconBtn}${(state.txSearchOpen||q) ? ' color:var(--gold); border-color:var(--gold);' : ''}">${icon('search',14)}</button>
+          <button data-open-recurmodal="1" aria-label="Récurrences" style="${iconBtn}">${icon('repeat',14)}</button>
+        </div>
       </div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
         ${caTile('Revenus', fmt0(inDone), 'var(--sage)', "à ce jour")}
         ${caTile('Dépenses', fmt0(outDone), 'var(--coral)', "à ce jour")}
         ${caTile('À venir', (upCount || envRest >= 1) ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', envRest >= 1 ? `${upCount} prévue${upCount>1?'s':''} + enveloppes` : `${upCount} prévue${upCount>1?'s':''}`)}
       </div>
-      <div class="search-wrap" style="position:relative; margin-top:12px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>
-      <div class="row" style="margin:10px 0 0; gap:8px;">
-        <div class="filter-pills" style="background:var(--surfaceHi);">
-          <button data-filter="all" class="${state.txFilter==='all'?'active':''}">Tout</button>
-          <button data-filter="income" class="${state.txFilter==='income'?'active':''}">Revenus</button>
-          <button data-filter="expense" class="${state.txFilter==='expense'?'active':''}">Dépenses</button>
-        </div>
-        <button data-toggle-hide-past="1" class="toggle-switch ${state.hidePastTx?'on':''}" style="font-size:11.5px;">${state.hidePastTx ? 'Passées masquées' : 'Masquer passées'}</button>
+      ${(state.txSearchOpen || q) ? `<div class="search-wrap" style="position:relative; margin-top:10px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>` : ''}
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center; margin-top:8px;">
+        ${renderTrendCard(true)}
+      </div>
+      <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:10px; width:calc(100% - 60px);">
+        ${listBtn('all', 'Toutes')}${listBtn('income', 'Revenus')}${listBtn('expense', 'Dépenses')}${listBtn('upcoming', 'À venir')}
       </div>
     </div>
-    <div class="card tx-list-card">${list.length===0 ? `
+    ${!listOpen ? '' : `<div class="card tx-list-card">${list.length===0 ? `
       <div style="padding:30px 20px; text-align:center;">
         ${bearMascot('sleepy', 56)}
-        <div style="font-size:13.5px; color:var(--paperDim); margin:12px 0 16px;">${filtered ? 'Aucune opération ne correspond.' : state.hidePastTx && donePart.length ? 'Plus rien de prévu ce mois-ci. Touche « Masquer passées » pour revoir les opérations passées.' : 'Rien par ici ce mois-ci — ton ours fait la sieste 🐻'}</div>
+        <div style="font-size:13.5px; color:var(--paperDim); margin:12px 0 16px;">${filtered || state.txFilter!=='all' ? 'Aucune opération ne correspond.' : state.hidePastTx ? 'Plus rien de prévu ce mois-ci.' : 'Rien par ici ce mois-ci — ton ours fait la sieste 🐻'}</div>
         <button data-open="addTx" class="btn-ghost" style="display:inline-flex; margin:0 auto;">${icon('plus',14)} Ajouter une transaction</button>
       </div>
     ` : (()=>{
@@ -2958,8 +2967,7 @@ function renderTransactions(){
         lastKey = key;
         return header + (t.isPending ? previewTxRow(t) : txRow(t,true));
       }).join('');
-    })()}</div>
-    ${renderTrendCard()}
+    })()}</div>`}
   `;
 }
 function previewTxRow(t){
@@ -4100,6 +4108,26 @@ function bindEvents(){
     sheet.addEventListener('touchcancel', finish);
   })();
   app.querySelectorAll('[data-filter]').forEach(el=>el.addEventListener('click', ()=> setState({txFilter: el.dataset.filter})));
+  // Boutons de liste : ouvrent la liste filtree ; re-toucher le bouton actif la referme.
+  app.querySelectorAll('[data-txlist]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.dataset.txlist;
+    const cur = !state.txListOpen ? null : state.hidePastTx ? 'upcoming' : state.txFilter;
+    if(cur === id){ setState({ txListOpen:false }); return; }
+    setState({ txListOpen:true, txFilter: id==='upcoming' ? 'all' : id, hidePastTx: id==='upcoming' });
+    const card = document.querySelector('.tx-list-card');
+    if(card){ const top = card.getBoundingClientRect().top + window.scrollY - (document.querySelector('.header')?.offsetHeight||0) - 70; window.scrollTo({ top: Math.max(0, top), behavior:'smooth' }); }
+  }));
+  app.querySelectorAll('[data-toggle-txsearch]').forEach(el=>el.addEventListener('click', ()=>{
+    const open = !(state.txSearchOpen || state.txQuery);
+    setState({ txSearchOpen: open, txQuery: open ? state.txQuery : '' });
+    if(open){ const inp = document.getElementById('txSearch'); if(inp) inp.focus(); }
+  }));
+  app.querySelectorAll('[data-trend-month]').forEach(el=>el.addEventListener('click', ()=>{
+    const [y, m] = el.dataset.trendMonth.split('-').map(Number);
+    const ts = app.querySelector('.trend-scroll');
+    state.trendScrollLeft = ts ? ts.scrollLeft : null;
+    setState({ viewY: y, viewM: m });
+  }));
   app.querySelectorAll('[data-clear-tx-search]').forEach(el=>el.addEventListener('click', ()=> setState({txQuery:''})));
   app.querySelectorAll('[data-toggle-hide-past]').forEach(el=>el.addEventListener('click', ()=> setState({hidePastTx: !state.hidePastTx})));
   app.querySelectorAll('[data-toggle-budget-detail]').forEach(el=>el.addEventListener('click', ()=>{

@@ -24,6 +24,9 @@ test('T1 Transactions : tuiles du mois justes même passées masquées, recherch
     assert.match(sum, /Revenus\s*2\s000\s€/);
     assert.match(sum, /Dépenses\s*748\s€/);
     assert.match(sum, /À venir\s*−15\s€\s*1 prévue/);
+    assert.equal(await page.$('#txSearch'), null);                   // la recherche est derrière la loupe
+    assert.equal(await page.$('.tx-list-card'), null);               // la liste est repliée
+    await page.click('[data-toggle-txsearch]');
     await page.click('#txSearch');
     await page.keyboard.type('Cost');
     assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'txSearch');
@@ -99,6 +102,35 @@ test('T4 Ajout depuis une enveloppe de l’accueil : la page revient où elle é
     await page.waitForTimeout(450);
     assert.equal(await page.evaluate(() => state.quickTxOpen), false);
     assert.equal(await page.evaluate(() => window.scrollY), y0);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
+
+test('T5 Transactions : une carte résumé, la liste s’ouvre avec les boutons du bas et se referme', async () => {
+  const app = await openApp({ now:'2026-10-21T10:00:00+02:00', data: baseData({ lastRolloverCheck:'2026-9',
+    recurring:[{ id:'r1', type:'expense', amount:15, category:'abonnements', note:'Abo test', frequency:'monthly', accountId:'main', nextDate:D('2026-10-25') }],
+    transactions:[
+      tx({ id:'s', amount:2000, type:'income', category:'salaire', note:'Salaire', date:D('2026-10-01') }),
+      tx({ id:'c', amount:688, category:'alimentation', note:'Costco', date:D('2026-10-20') }),
+    ] }) });
+  const { page, errors } = app;
+  try{
+    await page.click('[data-tab="transactions"]');
+    assert.equal(await page.$('.tx-list-card'), null);
+    await page.click('[data-txlist="income"]');
+    let txt = await page.textContent('.tx-list-card');
+    assert.match(txt, /Salaire/); assert.doesNotMatch(txt, /Costco/);
+    await page.click('[data-txlist="upcoming"]');
+    txt = await page.textContent('.tx-list-card');
+    assert.match(txt, /Abo test/); assert.doesNotMatch(txt, /Costco|Salaire/);
+    await page.click('[data-txlist="all"]');
+    txt = await page.textContent('.tx-list-card');
+    assert.match(txt, /Costco/); assert.match(txt, /Salaire/);
+    await page.click('[data-txlist="all"]');                          // re-toucher referme
+    assert.equal(await page.$('.tx-list-card'), null);
+    // Toucher un mois du graphique y emmène
+    await page.click('[data-trend-month="2026-8"]');
+    assert.deepEqual(await page.evaluate(() => [state.viewY, state.viewM]), [2026, 8]);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });

@@ -1297,7 +1297,7 @@ test.describe('Nouvelle page d’accueil', () => {
 
   test('A3 Le graphique 12 mois est dans l’onglet Transactions, plus sur l’accueil', () =>
     withApp({ now:NOW, data: data() }, async ({ page }) => {
-      const r = await page.evaluate(() => ({ dash: renderDashboard().includes('Revenus vs dépenses'), tx: renderTransactions().includes('Revenus vs dépenses') }));
+      const r = await page.evaluate(() => ({ dash: renderDashboard().includes('trend-scroll'), tx: renderTransactions().includes('trend-scroll') }));
       assert.equal(r.dash, false);
       assert.equal(r.tx, true);
     }));
