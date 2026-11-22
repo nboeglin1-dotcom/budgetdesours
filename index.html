@@ -3186,6 +3186,40 @@ const parseAmountInput = v => { const n = parseFloat(String(v==null?'':v).replac
 // Chiffres du mois (y,m) pour la carte : CA saisi, reste a faire, jours ouvres restants, rythme, versement attendu.
 // Les courses perso ne paient pas de commission : 1 € perso rapporte autant que 1/rate € de CA Skoot,
 // on les convertit donc en « equivalent CA Skoot » pour suivre l'objectif (exprime en CA Skoot).
+// Prevision d'un objectif a son echeance : solde actuel + virements auto a venir (jusqu'a l'echeance)
+// + versements prevus (g.planned : [{ym:'AAAA-MM', amount, label}], mois en cours et suivants).
+function goalForecast(g, d = state.data, now = new Date()){
+  if(!g || !g.deadline || !(g.target > 0)) return null;
+  const dl = new Date(g.deadline);
+  const ymOf = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}`;
+  const nowYm = ymOf(now), dlYm = ymOf(dl);
+  let auto = 0;
+  (d.goalTransfers||[]).filter(t=>t.goalId===g.id && t.amount>0 && t.nextDate).forEach(t=>{
+    let x = new Date(t.nextDate), guard = 0;
+    while(x <= dl && guard++ < 600){
+      if(x >= new Date(now.getFullYear(), now.getMonth(), now.getDate())) auto += Number(t.amount);
+      if(t.frequency==='weekly') x = new Date(x.getFullYear(), x.getMonth(), x.getDate()+7);
+      else if(t.frequency==='yearly') x = new Date(x.getFullYear()+1, x.getMonth(), x.getDate());
+      else x = new Date(x.getFullYear(), x.getMonth()+1, x.getDate());
+    }
+  });
+  const planned = (g.planned||[]).filter(p=>p.ym >= nowYm && p.ym <= dlYm).reduce((a,p)=>a+(Number(p.amount)||0), 0);
+  const projected = g.current + auto + planned;
+  const gap = projected - g.target;
+  const monthsLeft = Math.max(1, (dl.getFullYear()-now.getFullYear())*12 + dl.getMonth() - now.getMonth());
+  return { auto, planned, projected, gap, monthsLeft, overdue: dl < now, perMonthMore: gap < 0 ? Math.ceil(-gap / monthsLeft / 10) * 10 : 0,
+    label: dl.toLocaleDateString('fr-FR',{month:'short', year:'numeric'}) };
+}
+// Texte court : « Dans les temps · +300 € » ou « Manque 1 200 € · ≈ 150 €/mois de plus ».
+function goalForecastLine(g){
+  if(g.target>0 && g.current>=g.target) return `<span style="color:var(--sage);">${icon('spark',10)} Atteint</span>`;
+  const f = goalForecast(g);
+  if(!f) return `<span style="color:var(--paperDim);">Sans échéance</span>`;
+  if(f.overdue) return `<span style="color:var(--coral);">Échéance dépassée</span>`;
+  return f.gap >= 0
+    ? `${f.label} · <span style="color:var(--sage);">dans les temps${f.gap >= 10 ? ` · +${fmt0(f.gap)}` : ''}</span>`
+    : `${f.label} · <span style="color:var(--coral);">manque ${fmt0(-f.gap)}</span> · ≈ ${fmt0(f.perMonthMore)}/mois de plus`;
+}
 function caMonthStatus(y, m, now = new Date()){
   const ct = state.data.caTracker || { target:4100, rate:0.375, months:{}, perso:{} };
   const key = caMonthKey(y, m);
@@ -3467,7 +3501,7 @@ function renderGoals(){
     if(done) info = `<span style="color:var(--sage);">${icon('spark',11)} Objectif atteint${g.current>g.target ? ` · +${fmt0(g.current-g.target)}` : ''}</span>`;
     else {
       const pace = computeGoalPaceProjection(g);
-      info = `Reste <span class="mono" style="color:var(--paper);">${fmt0(remaining)}</span>` + ((!pace || pace.noRate) ? '' : ` · atteint en ${pace.projectedDate.toLocaleDateString('fr-FR',{month:'short',year:'numeric'})}`);
+      info = g.deadline ? goalForecastLine(g) : `Reste <span class="mono" style="color:var(--paper);">${fmt0(remaining)}</span>` + ((!pace || pace.noRate) ? '' : ` · atteint en ${pace.projectedDate.toLocaleDateString('fr-FR',{month:'short',year:'numeric'})}`);
     }
     let deadline;
     if(g.deadline && !done){
@@ -3498,6 +3532,12 @@ function renderGoals(){
   const ca = act ? caMonthStatus(state.viewY, state.viewM) : null;
   const caColor = ca && ca.reached ? 'var(--sage)' : 'var(--gold)';
   const caPct = ca && ca.target > 0 ? Math.min(100, Math.round(ca.ca / ca.target * 100)) : 0;
+  // Surplus du mois au-dela de l'objectif de CA, en argent reellement verse (part Skoot, net d'URSSAF).
+  const ctr = state.data.caTracker || {};
+  const surplus = ca && ca.ca > ca.target ? Math.floor((ca.ca - ca.target) * (ctr.rate ?? 0.375) * (1 - (ctr.urssaf ?? 0.23)) / 10) * 10 : 0;
+  // Objectif a nourrir en priorite : le plus en retard sur son echeance, sinon le plus proche.
+  const surplusGoal = [...goals].filter(g=>!(g.target>0 && g.current>=g.target))
+    .sort((a,b)=>((goalForecast(a)?.gap ?? 1e9) - (goalForecast(b)?.gap ?? 1e9)))[0] || goals[0];
   // Petit titre de section + montant principal "sur X" + barre : meme gabarit pour l'activite et l'epargne.
   const secHead = (t, right) => `<div class="row" style="margin:0 0 4px; flex-wrap:nowrap; font-size:11.5px; color:var(--paperDim); text-transform:uppercase; letter-spacing:.06em;"><span>${t}</span><span style="text-transform:none; letter-spacing:0; font-size:12px;">${right}</span></div>`;
   const bigLine = (val, color, target, pct, barColor) => `<div class="row" style="align-items:baseline; margin:0;"><span class="mono" style="font-size:26px; font-weight:700; color:${color};">${val}</span><span style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(target)}</span></div><div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${pct}%; background:${barColor};"></div></div>`;
@@ -3509,14 +3549,15 @@ function renderGoals(){
     </div>
     <div class="card goals-total-card" style="display:flex; flex-direction:column; min-height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 152px - env(safe-area-inset-bottom)); margin-bottom:14px;">
       <div class="row" style="margin-bottom:4px; flex-wrap:nowrap;">
-        <div><div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${goals.length} objectif${goals.length>1?'s':''} d'épargne</div></div>
+        <div><div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${act ? 'Activité et épargne' : `${goals.length} objectif${goals.length>1?'s':''} d'épargne`}</div></div>
         <button data-open="addGoal" aria-label="Nouvel objectif" style="${iconBtn}">${icon('plus',14)}</button>
       </div>
       <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:18px; padding:8px 0;">
       ${act ? `
         <div>
-          ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
+          ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint${ca.ca > ca.target ? ` · +${fmt0(ca.ca - ca.target)}` : ''}</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
           ${bigLine(fmt0(ca.ca), ca.has ? caColor : 'var(--paperDim)', ca.target, caPct, caColor)}
+          ${surplus >= 10 ? `<div style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus ≈ <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> net sur le commun le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}.${goals.length ? ` → de quoi avancer ${escapeHtml(surplusGoal.name)}.` : ''}</div>` : ''}
         </div>` : ''}
       ${goals.length===0 ? `
         <div style="display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 6px;">
@@ -3526,21 +3567,14 @@ function renderGoals(){
           <button data-open="addGoal" class="btn-primary" style="display:inline-flex; margin:0 auto;">${icon('plus',14)} Créer mon premier objectif</button>
         </div>` : `
         <div>
-          ${secHead('Épargne totale', `${doneCount} / ${goals.length} atteint${doneCount>1?'s':''}`)}
-          ${bigLine(fmt0(totalSaved), 'var(--gold)', totalTarget, pctAll, 'var(--gold)')}
-          <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:12px;">
-            ${caTile('Reste à mettre', fmt0(Math.max(0, totalTarget-totalSaved)))}
-            ${caTile('Auto / mois', perMonth ? fmt0(perMonth) : '—', perMonth ? 'var(--gold)' : 'var(--paperDim)')}
-          </div>
-        </div>
-        <div>
-          ${secHead('Par objectif', '')}
-          <div style="display:flex; flex-direction:column; gap:14px; margin-top:8px;">
+          ${secHead('Mes objectifs', perMonth ? `Auto ${fmt0(perMonth)}/mois` : '')}
+          <div style="display:flex; flex-direction:column; gap:20px; margin-top:8px;">
           ${goals.map(g=>{
             const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
             return `<div>
               <div class="row" style="margin:0; font-size:13.5px; flex-wrap:nowrap;"><span style="display:flex; align-items:center; gap:8px; min-width:0;"><span style="width:8px; height:8px; border-radius:50%; background:${g.color}; flex-shrink:0;"></span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(g.name)}</span></span><span style="flex-shrink:0;"><span class="mono" style="font-weight:700; color:${g.color};">${fmt0(g.current)}</span> <span class="mono" style="font-size:11.5px; color:var(--paperDim);">/ ${fmt0(g.target)}</span></span></div>
               <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${p}%; background:${g.color};"></div></div>
+              <div style="font-size:12px; color:var(--paperDim); margin-top:6px;">${goalForecastLine(g)}</div>
             </div>`;
           }).join('')}
           </div>
@@ -3548,7 +3582,7 @@ function renderGoals(){
       </div>
       ${(goals.length || act) ? `
       <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:16px; width:100%;">
-        ${act ? objBtn('ca', 'Activité', uiPref('caPanel')) + objBtn('virements', 'Virements', uiPref('shinePlan')) : ''}${goals.length ? objBtn('goals', 'Objectifs', uiPref('goalsDetail')) : ''}
+        ${act ? objBtn('ca', 'Chiffre d’aff.', uiPref('caPanel')) + objBtn('virements', 'Virements', uiPref('shinePlan')) : ''}${goals.length ? objBtn('goals', 'Objectifs', uiPref('goalsDetail')) : ''}
       </div>` : ''}
     </div>
     ${act && uiPref('caPanel') ? renderCaCard() : ''}
@@ -3643,6 +3677,16 @@ function renderGoalDeadlineModal(){
         <label class="field-label">Date cible</label>
         <input id="goalDeadlineInput" type="date" class="field-input mono" value="${g.deadline ? localYMD(new Date(g.deadline)) : ''}">
         <div id="goalDeadlinePreview" style="font-size:12.5px; color:var(--paperDim); margin:10px 0 16px; min-height:18px;"></div>
+        <label class="field-label">Versements prévus en plus du virement auto</label>
+        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:8px; line-height:1.45;">13e mois, prime, épargne basculée… Comptés dans la prévision jusqu'à leur mois.</div>
+        ${(g.planned||[]).map((p,i)=>`<div class="row" style="margin:0 0 6px; flex-wrap:nowrap; font-size:13px;"><span>${escapeHtml(p.label||'Versement')} · <span style="color:var(--paperDim);">${new Date(p.ym+'-01T12:00:00').toLocaleDateString('fr-FR',{month:'short',year:'numeric'})}</span></span><span style="display:flex; align-items:center; gap:8px;"><span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(p.amount)}</span><button data-del-goalplan="${i}" aria-label="Retirer" style="background:none; border:none; color:var(--paperDim); padding:2px;">${icon('x',13)}</button></span></div>`).join('')}
+        <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:8px; margin-top:6px;">
+          <input id="goalPlanLabel" class="field-input" placeholder="Libellé (ex. 13e mois)">
+          <input id="goalPlanAmount" class="field-input mono" type="number" inputmode="decimal" placeholder="Montant">
+          <input id="goalPlanMonth" class="field-input mono" type="month" value="${localYMD(new Date()).slice(0,7)}">
+          <button data-add-goalplan="${g.id}" class="btn-ghost" style="justify-content:center;">${icon('plus',13)} Ajouter</button>
+        </div>
+        <div style="height:16px;"></div>
         <div class="row" style="gap:10px; margin-bottom:0;">
           ${g.deadline ? `<button data-remove-goaldeadline="${g.id}" class="btn-ghost" style="flex:1; justify-content:center; color:var(--coral);">Retirer l'échéance</button>` : ''}
           <button data-save-goaldeadline="${g.id}" class="btn-primary" style="flex:1; justify-content:center;">Enregistrer</button>
@@ -4541,6 +4585,18 @@ function bindEvents(){
     if(!val) return;
     mutateData(d=>{ const g = d.goals.find(g=>g.id===el.dataset.saveGoaldeadline); if(g) g.deadline = new Date(val).toISOString(); });
     setState({goalDeadlineModalId:null});
+  }));
+  app.querySelectorAll('[data-add-goalplan]').forEach(el=>el.addEventListener('click', ()=>{
+    const amount = parseFloat(String(document.getElementById('goalPlanAmount').value).replace(',', '.'));
+    const ym = document.getElementById('goalPlanMonth').value;
+    const label = document.getElementById('goalPlanLabel').value.trim();
+    if(!(amount > 0) || !/^\d{4}-\d{2}$/.test(ym)) return;
+    mutateData(d=>{ const g = d.goals.find(g=>g.id===el.dataset.addGoalplan); if(g){ g.planned = [...(g.planned||[]), { ym, amount, label }].sort((a,b)=>a.ym.localeCompare(b.ym)); } });
+    rerender();
+  }));
+  app.querySelectorAll('[data-del-goalplan]').forEach(el=>el.addEventListener('click', ()=>{
+    mutateData(d=>{ const g = d.goals.find(g=>g.id===state.goalDeadlineModalId); if(g && g.planned) g.planned.splice(Number(el.dataset.delGoalplan), 1); });
+    rerender();
   }));
   app.querySelectorAll('[data-remove-goaldeadline]').forEach(el=>el.addEventListener('click', ()=>{
     mutateData(d=>{ const g = d.goals.find(g=>g.id===el.dataset.removeGoaldeadline); if(g) g.deadline = null; });

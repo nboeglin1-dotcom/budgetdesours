@@ -18,9 +18,9 @@ test('G1 Cartes d’épargne : total, virements auto par mois, sans ajout ni ret
   try{
     await page.click('[data-tab="goals"]');
     const total = await page.textContent('.goals-total-card');
-    assert.match(total, /4\s250\s€/);
-    assert.match(total, /Auto \/ mois\s*500\s€/);
-    assert.match(total, /1 \/ 2/);
+    assert.match(total, /Auto 500\s€\/mois/);
+    assert.match(total, /juil\. 2027 · dans les temps · \+1\s250\s€/);   // 1 250 + 8 virements de 500
+    assert.match(total, /Atteint/);
     // Plus d'ajout ni de retrait sur les cartes : ça passe par les boutons − / + de l'accueil.
     assert.equal(await page.$('#goalAmount-g1'), null);
     assert.equal(await page.$('[data-contribute="g1"]'), null);
@@ -67,6 +67,36 @@ test('G3 Sans activité ni objectif : état vide, lien pour suivre une activité
     assert.match(await page.textContent('.goals-total-card'), /Pas encore d'objectif/);
     assert.equal(await page.$('[data-objpanel]'), null);
     assert.ok(await page.$('[data-enable-ca]'));
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
+
+test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus de CA', async () => {
+  const app = await openApp({ now:'2026-11-22T10:00:00+01:00', data: baseData({
+    caTracker:{ months:{ '2026-11':6920 } },
+    goalTransfers:[{ goalId:'g1', amount:500, frequency:'monthly', nextDate:'2026-12-09T00:00:00.000Z' }],
+    goals:[{ id:'g1', name:'Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main', deadline:'2027-08-01T00:00:00.000Z' }] }) });
+  const { page, errors } = app;
+  try{
+    await page.click('[data-tab="goals"]');
+    // 1 515 + 8 × 500 (déc. → juil.) = 5 515 → manque 4 485 sur 9 mois ≈ 500 €/mois
+    let card = await page.textContent('.goals-total-card');
+    assert.match(card, /manque 4\s485\s€ · ≈ 500\s€\/mois de plus/);
+    // Surplus : (6 920 − 4 100) × 0,375 × 0,77 ≈ 814 → 810
+    assert.match(card, /Atteint · \+2\s820\s€/);
+    assert.match(card, /Surplus ≈ 810\s€ net/);
+    await page.evaluate(() => setState({ goalDeadlineModalId:'g1' }));
+    await page.fill('#goalPlanLabel', '13e mois');
+    await page.fill('#goalPlanAmount', '800');
+    await page.fill('#goalPlanMonth', '2027-01');
+    await page.click('[data-add-goalplan="g1"]');
+    await page.fill('#goalPlanAmount', '800');
+    await page.fill('#goalPlanMonth', '2027-07');
+    await page.click('[data-add-goalplan="g1"]');
+    assert.equal(await page.evaluate(() => state.data.goals[0].planned.length), 2);
+    await page.evaluate(() => setState({ goalDeadlineModalId:null }));
+    card = await page.textContent('.goals-total-card');
+    assert.match(card, /manque 2\s885\s€/);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
