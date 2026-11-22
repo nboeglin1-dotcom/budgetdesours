@@ -764,6 +764,18 @@ function normalizeData(parsed){
           parsed.transactions = parsed.transactions.filter(x=>x!==t);
         });
       }
+      // Une fois : la recurrence « Depot sur epargne » des arrondis LCL (petit montant, sans objectif)
+      // est rattachee a l'objectif Perou, pour qu'elle le fasse monter et compte dans sa prevision.
+      if(!parsed.arrondisLinked){
+        const perou = (parsed.goals||[]).find(g=>/p[ée]rou/i.test(g.name||''));
+        if(perou) (parsed.recurring||[]).forEach(r=>{
+          if(r.category==='epargne' && r.type==='expense' && !r.goalId && Number(r.amount) > 0 && Number(r.amount) <= 50){
+            r.goalId = perou.id;
+            if(!r.note) r.note = 'Arrondis LCL';
+          }
+        });
+        parsed.arrondisLinked = true;
+      }
       if(!parsed.goalColorsDistinct){
         const pal = GOAL_PALETTE, used = new Set();
         parsed.goals.forEach(g=>{

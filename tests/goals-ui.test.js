@@ -213,3 +213,15 @@ test('G9 Dépôt sur épargne récurrent rattaché à un objectif (arrondis) : P
     assert.deepEqual(app.errors, []);
   } finally { await app.close(); }
 });
+
+test('G10 Récurrence existante des arrondis (15 €, sans objectif) : rattachée une fois au Pérou', async () => {
+  const app = await openApp({ now:'2026-11-22T22:00:00+01:00', data: baseData({
+    goals:[{ id:'g1', name:'Voyage au Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main' }],
+    recurring:[{ id:'rr', type:'expense', amount:15, category:'epargne', note:'', frequency:'monthly', accountId:'main', nextDate:'2026-11-30T00:00:00.000Z', anchorDay:30 },
+               { id:'big', type:'expense', amount:300, category:'epargne', note:'Autre', frequency:'monthly', accountId:'main', nextDate:'2026-11-30T00:00:00.000Z', anchorDay:30 }] }) });
+  try{
+    const r = await app.page.evaluate(() => state.data.recurring.map(r=>[r.id, r.goalId||null, r.note]));
+    assert.deepEqual(r, [['rr','g1','Arrondis LCL'], ['big', null, 'Autre']]);
+    assert.deepEqual(app.errors, []);
+  } finally { await app.close(); }
+});
