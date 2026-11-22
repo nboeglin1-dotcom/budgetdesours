@@ -1577,7 +1577,9 @@ function renderApp(){
       ${state.tab==='goals' ? renderGoals() : ''}
     </div>
     ${renderTabbar()}
-    ${(!state.modal && state.tab!=='dashboard') ? `
+    ${(!state.modal && state.tab==='budgets') ? `
+      <button data-open-newcat-standalone="1" class="fab-add" aria-label="Nouvelle catégorie">${icon('plus',22)}</button>
+    ` : (!state.modal && state.tab!=='dashboard') ? `
       <button data-open="addTx" class="fab-add" aria-label="Ajouter une transaction">${icon('plus',22)}</button>
     ` : ''}
     ${state.modal==='addTx' ? renderAddTxModal() : ''}
@@ -2991,7 +2993,8 @@ function renderBudgets(){
   const recurringCatIds = new Set((state.data.recurring||[]).filter(r=>r.type==='expense').map(r=>r.category));
   // Onglet « Enveloppes » : une carte par enveloppe (categorie avec une limite), rien d'autre. Les depenses
   // sans limite (cadeaux, copro, impots…) restent dans Transactions et dans les depenses du mois de l'accueil.
-  const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id) && (byCat[c.id]||0)>0
+  // Toute enveloppe s'affiche, meme sans depense (une enveloppe qu'on vient de creer montre son reste entier).
+  const allExpenseCats = catsForType('expense').filter(c=>!hidden.includes(c.id)
     && !NOT_INC_EXP_CATS.has(c.id) && effectiveLimit(c.id) > 0).sort((a,b)=>a.label.localeCompare(b.label,'fr'));
   const pillBtn = 'display:flex; align-items:center; gap:5px; background:none; border:1px solid var(--line); color:var(--paper); border-radius:999px; padding:6px 11px; font-size:12px;';
 
@@ -3042,7 +3045,7 @@ function renderBudgets(){
     ${allExpenseCats.length===0 ? `
       <div class="card" style="padding:30px 20px; text-align:center;">
         ${bearMascot('sleepy', 52)}
-        <div style="font-size:13.5px; color:var(--paperDim); margin-top:12px;">Aucune dépense ponctuelle ce mois-ci pour l'instant.</div>
+        <div style="font-size:13.5px; color:var(--paperDim); margin-top:12px;">Aucune enveloppe pour l'instant. Touche + pour en créer une, avec une limite.</div>
       </div>
     ` : allExpenseCats.map(cat=>{
       const limit = effectiveLimit(cat.id);

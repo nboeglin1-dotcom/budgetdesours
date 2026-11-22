@@ -80,6 +80,8 @@ test('B3 Nouvelle catégorie avec une limite : elle devient tout de suite une en
     await page.click('[data-submit-newcat]');
     const r = await page.evaluate(() => { const c = state.data.customCategories.find(c=>c.label==='Coiffeur'); return { limit: state.data.budgets[c.id] }; });
     assert.equal(r.limit, 40);
+    await page.click('.tabbar [data-tab="budgets"]');
+    assert.match(await page.textContent('#app'), /Coiffeur/);   // nouvelle enveloppe visible, même sans dépense
     // Sans limite : pas d'enveloppe
     await page.evaluate(() => { newCatFormState = { color: COLORS.slate, type:'expense', label:'', editingId:null }; state.categoryModalOpen = true; rerender(); });
     await page.fill('#newCatLabel', 'Cadeaux');
@@ -89,6 +91,22 @@ test('B3 Nouvelle catégorie avec une limite : elle devient tout de suite une en
     // Revenu : pas de champ limite
     await page.evaluate(() => { newCatFormState = { color: COLORS.slate, type:'income', label:'', editingId:null }; state.categoryModalOpen = true; rerender(); });
     assert.equal(await page.$('#newCatLimit'), null);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
+
+test('B4 Bouton + flottant : nouvelle transaction dans Transactions, nouvelle catégorie dans Enveloppes', async () => {
+  const app = await openApp({ now:'2026-11-22T10:00:00+01:00', data: baseData({ budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10' }) });
+  const { page, errors } = app;
+  try{
+    await page.click('.tabbar [data-tab="transactions"]');
+    await page.click('.fab-add');
+    assert.equal(await page.evaluate(() => state.modal), 'addTx');
+    await page.evaluate(() => { state.modal = null; rerender(); });
+    await page.click('.tabbar [data-tab="budgets"]');
+    await page.click('.fab-add');
+    assert.equal(await page.evaluate(() => state.categoryModalOpen), true);
+    assert.ok(await page.$('#newCatLimit'));               // catégorie de dépense, avec le champ limite
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
