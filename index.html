@@ -3603,7 +3603,8 @@ function renderGoals(){
   const nextPlan = act ? shineTransferPlan(state.viewM === 11 ? state.viewY + 1 : state.viewY, (state.viewM + 1) % 12) : null;
   const surplus = nextPlan && nextPlan.hasCa ? Math.max(0, Math.floor((nextPlan.commun - (ctr.communNeed ?? 370)) / 10) * 10) : 0;
   // Objectif a nourrir en priorite : le plus en retard sur son echeance, sinon le plus proche.
-  const paidSurplus = nextPlan ? (ctr.surplusPaid||{})[nextPlan.key] : null;
+  const paidRaw = nextPlan ? (ctr.surplusPaid||{})[nextPlan.key] : null;
+  const paidSurplus = paidRaw && (!paidRaw.txId || state.data.transactions.some(t=>t.id===paidRaw.txId)) ? paidRaw : null;
   const surplusGoal = [...goals].filter(g=>!(g.target>0 && g.current>=g.target))
     .sort((a,b)=>((goalForecast(a)?.gap ?? 1e9) - (goalForecast(b)?.gap ?? 1e9)))[0] || goals[0];
   // Petit titre de section + montant principal "sur X" + barre : meme gabarit pour l'activite et l'epargne.
@@ -3625,7 +3626,7 @@ function renderGoals(){
         <div>
           ${secHead("Chiffre d'affaires", ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint${ca.ca > ca.target ? ` · +${fmt0(ca.ca - ca.target)}` : ''}</span>` : ca.when==='past' ? `Manqué : ${fmt0(ca.remaining)}` : `Reste ${fmt0(ca.remaining)}`)}
           ${bigLine(fmt0(ca.ca), ca.has ? caColor : 'var(--paperDim)', ca.target, caPct, caColor)}
-          ${paidSurplus ? `<div class="surplus-box" style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;"><span style="color:var(--sage);">${icon('spark',10)} Surplus versé</span> : <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(paidSurplus.amount)}</span> vers ${escapeHtml((goals.find(g=>g.id===paidSurplus.goalId)||{}).name || 'un objectif')} le ${new Date(paidSurplus.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})}.</div>`
+          ${paidSurplus ? `<div class="surplus-box" style="margin-top:10px; padding:9px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;"><span style="color:var(--sage);">${icon('spark',10)} Surplus versé</span> : <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(paidSurplus.amount)}</span> vers ${escapeHtml((goals.find(g=>g.id===paidSurplus.goalId)||{}).name || 'un objectif')} le ${new Date(paidSurplus.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})}. <button data-undo-surplus="${nextPlan.key}" style="background:none; border:none; color:var(--paperDim); text-decoration:underline; font-size:12px; padding:0;">Annuler</button></div>`
             : surplus >= 10 ? `<div class="surplus-box" style="margin-top:10px; padding:10px 12px; border-radius:12px; background:var(--surfaceHi); font-size:12.5px; color:var(--paperDim); line-height:1.45;">Surplus <span class="mono" style="color:var(--sage); font-weight:700;">${fmt0(surplus)}</span> le 5 ${MONTHS_SHORT[(state.viewM+1)%12].toLowerCase()}. : le commun reçoit ${fmt0(nextPlan.commun)} pour un besoin de ${fmt0(ctr.communNeed ?? 370)}.${goals.length ? `<button data-pay-surplus="${nextPlan.key}" data-surplus-goal="${surplusGoal.id}" data-surplus-amount="${surplus}" class="btn-primary" style="width:100%; justify-content:center; margin-top:8px; padding:9px 12px; font-size:12.5px;">Verser ${fmt0(surplus)} à ${escapeHtml(surplusGoal.name)}</button><div style="font-size:11px; margin-top:5px; text-align:center;">Une fois le virement Shine arrivé sur le commun</div>` : ''}</div>` : ''}
         </div>` : ''}
       ${goals.length===0 ? `
@@ -4661,7 +4662,20 @@ function bindEvents(){
     const key = el.dataset.paySurplus, goalId = el.dataset.surplusGoal, amount = Number(el.dataset.surplusAmount);
     if(!(amount > 0)) return;
     goalContribute(goalId, amount);
-    mutateData(d=>{ d.caTracker.surplusPaid = { ...(d.caTracker.surplusPaid||{}), [key]: { amount, goalId, date: localYMD(new Date()) } }; });
+    const txId = (state.data.transactions[0]||{}).id;
+    mutateData(d=>{ d.caTracker.surplusPaid = { ...(d.caTracker.surplusPaid||{}), [key]: { amount, goalId, txId, date: localYMD(new Date()) } }; });
+  }));
+  // Annuler un surplus verse : l'objectif redescend, la depense disparait, le bouton revient.
+  app.querySelectorAll('[data-undo-surplus]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.dataset.undoSurplus;
+    mutateData(d=>{
+      const paid = (d.caTracker.surplusPaid||{})[key];
+      if(!paid) return;
+      const t = d.transactions.find(t=>t.id===paid.txId);
+      if(t){ const g = d.goals.find(g=>g.id===t.goalId); if(g) g.current = Math.max(0, g.current - t.amount); d.transactions = d.transactions.filter(x=>x.id!==t.id); }
+      delete d.caTracker.surplusPaid[key];
+    });
+    showToast('Versement du surplus annulé');
   }));
   app.querySelectorAll('[data-planned-done]').forEach(el=>el.addEventListener('click', ()=>{
     const gid = el.dataset.plannedDone, idx = Number(el.dataset.plannedIdx);

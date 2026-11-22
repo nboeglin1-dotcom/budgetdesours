@@ -92,7 +92,10 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     await page.click('[data-pay-surplus="2026-12"]');
     assert.equal(await page.evaluate(() => state.data.goals[0].current), 1515 + surplus);
     assert.match(await page.textContent('.surplus-box'), /Surplus versé/);
-    await page.evaluate(() => { mutateData(d=>{ d.goals[0].current = 1515; }); setState({ toast:null }); });
+    await page.click('[data-undo-surplus="2026-12"]');               // annuler : tout revient
+    assert.equal(await page.evaluate(() => state.data.goals[0].current), 1515);
+    assert.ok(await page.$('[data-pay-surplus="2026-12"]'));
+    await page.evaluate(() => setState({ toast:null }));
     await page.evaluate(() => setState({ goalDeadlineModalId:'g1' }));
     await page.fill('#goalPlanLabel', '13e mois');
     await page.fill('#goalPlanAmount', '800');
