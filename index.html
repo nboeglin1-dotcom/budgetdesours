@@ -1622,7 +1622,7 @@ function renderHeader(){
                 <span style="font-size:11.5px; color:var(--paperDim);">${activeAcc ? 'Voir tous les comptes' : 'Tous les comptes'}</span>
                 ${icon('chevronR',10)}
               </button>
-            ` : `<div class="brand-sub">votre grand livre personnel</div>`}
+            ` : ''}
           </div>
         </div>
         <div style="display:flex; gap:8px;">
@@ -2906,16 +2906,16 @@ function renderTransactions(){
         <span style="font-size:12.5px; color:var(--paperDim);">${donePart.length+upPart.length} opération${donePart.length+upPart.length>1?'s':''}</span>
       </div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
-        ${caTile('Entrées', fmt0(inDone), 'var(--sage)', "à ce jour")}
-        ${caTile('Sorties', fmt0(outDone), 'var(--coral)', "à ce jour")}
+        ${caTile('Revenus', fmt0(inDone), 'var(--sage)', "à ce jour")}
+        ${caTile('Dépenses', fmt0(outDone), 'var(--coral)', "à ce jour")}
         ${caTile('À venir', (upCount || envRest >= 1) ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', envRest >= 1 ? `${upCount} prévue${upCount>1?'s':''} + enveloppes` : `${upCount} prévue${upCount>1?'s':''}`)}
       </div>
       <div class="search-wrap" style="position:relative; margin-top:12px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>
       <div class="row" style="margin:10px 0 0; gap:8px;">
         <div class="filter-pills" style="background:var(--surfaceHi);">
           <button data-filter="all" class="${state.txFilter==='all'?'active':''}">Tout</button>
-          <button data-filter="income" class="${state.txFilter==='income'?'active':''}">Entrées</button>
-          <button data-filter="expense" class="${state.txFilter==='expense'?'active':''}">Sorties</button>
+          <button data-filter="income" class="${state.txFilter==='income'?'active':''}">Revenus</button>
+          <button data-filter="expense" class="${state.txFilter==='expense'?'active':''}">Dépenses</button>
         </div>
         <button data-toggle-hide-past="1" class="toggle-switch ${state.hidePastTx?'on':''}" style="font-size:11.5px;">${state.hidePastTx ? 'Passées masquées' : 'Masquer passées'}</button>
       </div>
@@ -3054,7 +3054,7 @@ function renderBudgets(){
       const isRecurring = recurringCatIds.has(cat.id);
       const expanded = state.expandedBudgetCat === cat.id;
       const catTx = tx.filter(t=>t.type==='expense' && t.category===cat.id).sort((a,b)=> new Date(b.date)-new Date(a.date));
-      const foot = limit<=0 ? 'Pas de limite' : over ? `<span style="color:var(--coral);">Dépassée de ${fmt0(spent-limit)}</span>` : (limit-spent>0 ? 'Reste à dépenser' : 'Pleine');
+      const foot = limit<=0 ? 'Pas de limite' : over ? `<span style="color:var(--coral);">Dépassée de ${fmt0(spent-limit)}</span>` : (limit-spent>0 ? 'Reste' : 'Pleine');
       const actBtn = 'display:flex; align-items:center; justify-content:center; gap:5px; background:var(--surfaceHi); border:1px solid var(--line); color:var(--paper); border-radius:10px; padding:8px; font-size:12px; font-weight:600;';
       return `
         <div class="card budget-card">

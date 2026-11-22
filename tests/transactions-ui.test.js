@@ -21,15 +21,15 @@ test('T1 Transactions : tuiles du mois justes même passées masquées, recherch
   try{
     await page.click('[data-tab="transactions"]');
     let sum = await page.textContent('.tx-summary-card');
-    assert.match(sum, /Entrées\s*2\s000\s€/);
-    assert.match(sum, /Sorties\s*748\s€/);
+    assert.match(sum, /Revenus\s*2\s000\s€/);
+    assert.match(sum, /Dépenses\s*748\s€/);
     assert.match(sum, /À venir\s*−15\s€\s*1 prévue/);
     await page.click('#txSearch');
     await page.keyboard.type('Cost');
     assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'txSearch');
     sum = await page.textContent('.tx-summary-card');
     assert.match(sum, /Selon ta recherche/);
-    assert.match(sum, /Sorties\s*688\s€/);
+    assert.match(sum, /Dépenses\s*688\s€/);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
