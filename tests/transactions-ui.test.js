@@ -153,6 +153,13 @@ test('T6 Accueil : changer de mois (flèches, Aujourd’hui) remet la page en ha
       await page.waitForTimeout(80);
       assert.deepEqual(await page.evaluate(() => ({ sy: window.scrollY, env: state.envOpen })), { sy:0, env:null }, sel);
     }
+    // Mois futur : « tout à venir » sur une ligne, pour que « Le mois en bref » garde la même hauteur
+    const brefH = () => page.evaluate(() => { const c=[...document.querySelectorAll('.card')].find(c=>/Le mois en bref/.test(c.innerText)); return [Math.round(c.getBoundingClientRect().height), c.innerText]; });
+    const [hNow] = await brefH();
+    await page.click('[data-move="1"]');
+    const [hNext, txt] = await brefH();
+    assert.match(txt, /tout à venir/);
+    assert.equal(hNext, hNow);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
