@@ -3771,20 +3771,23 @@ function renderGoals(){
         <div><div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${act ? 'Activité et épargne' : `${goals.length} objectif${goals.length>1?'s':''} d'épargne`}</div></div>
         <button data-open="addGoal" aria-label="Nouvel objectif" style="${iconBtn}">${icon('plus',14)}</button>
       </div>
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:22px; padding:14px 0 4px;">
+      <div>
       ${act ? `
-      <div class="row" style="margin:8px 0 0; flex-wrap:nowrap; font-size:12px; color:var(--paperDim);"><span>Chiffre d'affaires</span><span>${ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint · +${fmt0(ca.ca - ca.target)}</span>` : ca.when==='past' ? `<span style="color:var(--coral);">Manqué : ${fmt0(ca.remaining)}</span>` : `Reste ${fmt0(ca.remaining)}`}</span></div>
+      <div class="row" style="margin:0; flex-wrap:nowrap; font-size:12px; color:var(--paperDim);"><span>Chiffre d'affaires</span><span>${ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint · +${fmt0(ca.ca - ca.target)}</span>` : ca.when==='past' ? `<span style="color:var(--coral);">Manqué : ${fmt0(ca.remaining)}</span>` : `Reste ${fmt0(ca.remaining)}`}</span></div>
       <div class="row" style="align-items:baseline; margin:2px 0 0;"><div class="mono" style="font-size:26px; font-weight:700; color:${ca.has ? 'var(--paper)' : 'var(--paperDim)'};">${fmt0(ca.ca)}</div><div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(ca.target)}</div></div>
       <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${caPct}%; background:var(--gold);"></div></div>` : ''}
       ${(act || goals.length) ? `
-      <div style="display:grid; grid-template-columns:repeat(${act ? 3 : 2},1fr); gap:8px; margin-top:12px;">
+      <div style="display:grid; grid-template-columns:repeat(${act ? 3 : 2},1fr); gap:8px; margin-top:${act ? 14 : 0}px;">
         ${act ? (paidSurplus
             ? `<div class="surplus-box" style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">Surplus versé</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:var(--sage);">${fmt0(paidSurplus.amount)}</div><div style="font-size:10.5px; color:var(--paperDim); margin-top:2px; white-space:nowrap;">le ${new Date(paidSurplus.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})} · <button data-undo-surplus="${nextPlan.key}" style="background:none; border:none; color:var(--paperDim); text-decoration:underline; font-size:10.5px; padding:0;">annuler</button></div></div>`
-            : `<div class="surplus-box" style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">Surplus du 5</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${surplus >= 10 ? 'var(--sage)' : 'var(--paperDim)'};">${surplus >= 10 ? '≈ ' + fmt0(surplus) : '—'}</div><div style="font-size:10.5px; color:var(--paperDim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${nextPlan ? `reçoit ${fmt0(nextPlan.commun)}` : 'solde Shine ?'}</div></div>`) : ''}
-        ${caTile('Auto / mois', perMonth ? fmt0(perMonth) : '—', perMonth ? 'var(--gold)' : 'var(--paperDim)', perMonth ? 'le 9 · arrondis' : '')}
+            : `<div class="surplus-box" style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">Surplus du 5</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${surplus >= 10 ? 'var(--sage)' : 'var(--paperDim)'};">${surplus >= 10 ? '≈ ' + fmt0(surplus) : '—'}</div></div>`) : ''}
+        ${caTile('Auto / mois', perMonth ? fmt0(perMonth) : '—', perMonth ? 'var(--gold)' : 'var(--paperDim)')}
         ${goals.length ? caTile('À l\'heure', `${onTime} / ${goals.length}`, onTime === goals.length ? 'var(--sage)' : 'var(--coral)') : ''}
       </div>` : ''}
+      </div>
       ${goals.length ? `
-      <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:20px; margin-top:16px;">
+      <div style="display:flex; flex-direction:column; gap:20px;">
         ${goals.map(g=>{
           const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
           const done = g.target>0 && g.current>=g.target;
@@ -3801,12 +3804,13 @@ function renderGoals(){
           </div>`;
         }).join('')}
       </div>` : `
-        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:12px 6px;">
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:12px 6px;">
           ${bearMascot('content', 52)}
           <div style="font-size:14px; color:var(--paper); font-weight:600; margin:12px 0 4px;">Pas encore d'objectif</div>
           <div style="font-size:12.5px; color:var(--paperDim); margin-bottom:16px; line-height:1.5;">Un voyage, un imprévu, un projet — commence par te fixer un cap.</div>
           <button data-open="addGoal" class="btn-primary" style="display:inline-flex; margin:0 auto;">${icon('plus',14)} Créer mon premier objectif</button>
         </div>`}
+      </div>
 
       ${(goals.length || act) ? `
       <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:16px; width:100%;">
