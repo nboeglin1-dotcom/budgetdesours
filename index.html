@@ -705,8 +705,6 @@ function normalizeData(parsed){
       // Reserve d'aout : chaque virement du 5 de janvier a aout garde augustReserve € de plus sur Shine (le plancher monte
       // d'autant). Aout n'est pas roule : le 5 septembre, la reserve est liberee et paie les virements. Chaque annee.
       if(!(Number(ctx.augustReserve) >= 0)) ctx.augustReserve = 150;
-      // Besoin du commun : ce que le virement du 5 doit apporter au compte commun un mois normal. Au-dela = surplus a placer.
-      if(!(Number(ctx.communNeed) >= 0)) ctx.communNeed = 370;
       // Surplus deja verse a un objectif, par mois de virement (AAAA-MM) : { amount, goalId, date }.
       if(!ctx.surplusPaid || typeof ctx.surplusPaid !== 'object' || Array.isArray(ctx.surplusPaid)) ctx.surplusPaid = {};
       // Coussin du commun : ce qu'on garde sur le commun en fin de mois ; au-dessus, c'est le surplus du 5.
@@ -1705,6 +1703,125 @@ function checkMonthlyRecap(){
   mutateData(d=>{ d.lastMonthlyRecapShown = key; });
 }
 
+/* ---------------- import du releve LCL (CSV) ---------------- */
+// Releve LCL : « date;montant;type;;libelle debit;libelle credit;;categorie », 1re ligne = solde d'ouverture,
+// derniere ligne = solde de cloture. Montants a la francaise (virgule).
+function parseLclCsv(text){
+  const lines = String(text||'').replace(/^[^0-9]+/,'').replace(/\r/g,'').split('\n').map(l=>l.trim()).filter(Boolean);
+  const toIso = s => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s||''); return m ? new Date(`${m[3]}-${m[2]}-${m[1]}`).toISOString() : null; };
+  const num = s => { const v = parseFloat(String(s||'').replace(/\s/g,'').replace(',','.')); return isNaN(v) ? null : v; };
+  const rows = lines.map(l=>l.split(';'));
+  const isBalance = r => /^\d{5}\s/.test((r[3]||'').trim()) || (r.length <= 4 && num(r[1]) !== null);
+  const ops = []; let opening = null, closing = null;
+  rows.forEach((r, i)=>{
+    const date = toIso((r[0]||'').trim()), amount = num(r[1]);
+    if(!date || amount === null) return;
+    if(isBalance(r)){ if(i === 0 || !opening && !ops.length) opening = { date, amount }; else closing = { date, amount }; return; }
+    const label = ((r[4]||'').trim() || (r[5]||'').trim()).replace(/\s+/g,' ');
+    // Carte : la vraie date d'achat est dans le libelle (« CB LIDL 3940 30/10/26 »).
+    const cm = /(\d{2})\/(\d{2})\/(\d{2})\s*$/.exec(label);
+    const opDate = cm ? new Date(`20${cm[3]}-${cm[2]}-${cm[1]}`).toISOString() : date;
+    ops.push({ date, opDate, amount: Math.round(amount*100)/100, label, kind:(r[2]||'').trim(), ref: `${(r[0]||'').trim()}|${amount}|${label}` });
+  });
+  if(!ops.length) return null;
+  return { opening, closing, ops };
+}
+// Libelle lisible : « CB  LIDL  3940  30/10/26 » → « Lidl », « PRLV SEPA CANAL+ France » → « Canal+ France ».
+function cleanBankLabel(l){
+  let s = String(l||'').replace(/^(CB|PRLV SEPA|VIR SEPA|VIR INST|VIR\.PERMANENT|VIREMENT|VIR)\s+/i,'').replace(/\s+\d{2}\/\d{2}\/\d{2}\s*$/,'').replace(/\s+\d{3,}\b/g,'').replace(/\s+/g,' ').trim();
+  return s ? s.toLowerCase().replace(/(^|[\s'’-])([a-zà-ÿ])/g, (m,a,b)=>a+b.toUpperCase()) : 'Opération bancaire';
+}
+// Rapprochement : chaque operation de la banque est associee a une (ou plusieurs) transaction(s) de l'appli
+// du meme sens, a quelques jours pres, a un arrondi pres. Une transaction deja rapprochee (bankRef) n'est
+// plus proposee, et une operation deja importee est ignoree.
+function reconcileBank(parsed, accountId, data = state.data){
+  const DAY = 864e5;
+  const ops = parsed.ops.filter(o=>!(data.transactions||[]).some(t=>t.bankRef && t.bankRef.split('¦').some(r=>r.replace(/#\d+$/,'')===o.ref)));
+  const already = parsed.ops.length - ops.length;
+  const first = Math.min(...parsed.ops.map(o=>+new Date(o.opDate))), last = Math.max(...parsed.ops.map(o=>+new Date(o.date)));
+  const pool = (data.transactions||[]).filter(t=>(t.accountId||'main')===accountId && !t.bankRef && t.category!=='ajustement'
+    && +new Date(t.date) >= first - 12*DAY && +new Date(t.date) <= last + 12*DAY);
+  const sv = t => t.type==='income' ? t.amount : -t.amount;
+  const days = (a, b) => Math.abs(+new Date(a) - +new Date(b)) / DAY;
+  // Fenetre de date : achat carte = date d'achat du libelle (±3 j) ; prelevement / virement = date du releve (±3 j).
+  const isCard = o => o.opDate !== o.date;
+  const near = (o, t) => isCard(o) ? days(t.date, o.opDate) <= 3 : days(t.date, o.date) <= 3;
+  const tol = a => Math.max(2, Math.abs(a) * 0.03);
+  const used = new Set(), done = new Set(), matches = [];
+  // 1) meme montant au centime, jusqu'a 12 jours d'ecart (saisie faite bien avant ou apres le debit)
+  ops.forEach((o, i)=>{
+    const c = pool.filter(t=>!used.has(t.id) && Math.abs(sv(t)-o.amount) < 0.005 && days(t.date, o.opDate) <= 12)
+      .sort((a,b)=> days(a.date, o.opDate) - days(b.date, o.opDate))[0];
+    if(c){ used.add(c.id); done.add(i); matches.push({ ops:[i], txIds:[c.id], diff:0, ...(days(c.date, o.opDate) > 3 ? { moveDate: o.opDate } : {}) }); }
+  });
+  // 2) montant arrondi (saisie au plus proche), paires les plus proches d'abord
+  const pairs = [];
+  ops.forEach((o, i)=>{ if(done.has(i)) return; pool.forEach(t=>{
+    if(used.has(t.id) || Math.sign(sv(t))!==Math.sign(o.amount) || !near(o, t)) return;
+    const dd = Math.abs(sv(t)-o.amount); if(dd > tol(o.amount)) return;
+    pairs.push({ i, t, score: dd + 0.3 * days(t.date, isCard(o) ? o.opDate : o.date) });
+  }); });
+  pairs.sort((a,b)=>a.score-b.score).forEach(({i,t})=>{
+    if(done.has(i) || used.has(t.id)) return;
+    used.add(t.id); done.add(i); matches.push({ ops:[i], txIds:[t.id], diff: Math.round((ops[i].amount - sv(t))*100)/100 });
+  });
+  // 3) une operation bancaire = plusieurs saisies (ex. 1 000 € = 500 + 500 ; 138,42 € = vin + cadeau)
+  ops.forEach((o, i)=>{
+    if(done.has(i)) return;
+    const c = pool.filter(t=>!used.has(t.id) && Math.sign(sv(t))===Math.sign(o.amount) && near(o, t));
+    let best = null;
+    const tryIds = ids => { const sum = ids.reduce((a,t)=>a+sv(t),0), dd = Math.abs(sum-o.amount); if(dd <= tol(o.amount) && (!best || dd < best.d)) best = { ids: ids.map(t=>t.id), d: dd, s: sum }; };
+    for(let a=0;a<c.length;a++) for(let b=a+1;b<c.length;b++){ tryIds([c[a],c[b]]); for(let k=b+1;k<c.length;k++) tryIds([c[a],c[b],c[k]]); }
+    if(best){ best.ids.forEach(id=>used.add(id)); done.add(i); matches.push({ ops:[i], txIds:best.ids, diff: Math.round((o.amount - best.s)*100)/100 }); }
+  });
+  // 4) une saisie = plusieurs operations bancaires du meme jour (ex. pret 1 417 € = 1 133,46 + 192,66 + 90,79)
+  pool.forEach(t=>{
+    if(used.has(t.id)) return;
+    const c = ops.map((o,i)=>({o,i})).filter(({o,i})=>!done.has(i) && Math.sign(o.amount)===Math.sign(sv(t)) && near(o, t));
+    let best = null;
+    const tryIs = arr => { if(arr.some(x=>days(x.o.date, arr[0].o.date) > 1)) return; const sum = arr.reduce((a,x)=>a+x.o.amount,0), dd = Math.abs(sum-sv(t)); if(dd <= tol(sum) && (!best || dd < best.d)) best = { is: arr.map(x=>x.i), d: dd, s: sum }; };
+    for(let a=0;a<c.length;a++) for(let b=a+1;b<c.length;b++){ tryIs([c[a],c[b]]); for(let k=b+1;k<c.length;k++) tryIs([c[a],c[b],c[k]]); }
+    if(best){ used.add(t.id); best.is.forEach(i=>done.add(i)); matches.push({ ops:best.is, txIds:[t.id], diff: Math.round((best.s - sv(t))*100)/100 }); }
+  });
+  const missing = ops.map((o,i)=>i).filter(i=>!done.has(i));
+  const firstBooked = Math.min(...parsed.ops.map(o=>+new Date(o.date)));
+  const upTo = parsed.closing ? +new Date(parsed.closing.date) + DAY - 1 : last;
+  const appOnly = pool.filter(t=>!used.has(t.id) && +new Date(t.date) >= firstBooked && +new Date(t.date) <= upTo).map(t=>t.id);
+  return { ops, already, matches, missing, appOnly };
+}
+// Solde de l'appli a la fin d'un jour donne (pour comparer avec le solde de cloture du releve).
+function appBalanceAt(iso, accountId, data = state.data){
+  const end = new Date(iso); end.setHours(23,59,59,999);
+  return (data.transactions||[]).filter(t=>(t.accountId||'main')===accountId && new Date(t.date) <= end).reduce((a,t)=>a + (t.type==='income'?t.amount:-t.amount), 0);
+}
+// Applique le releve : montants corriges, operations manquantes ajoutees, liens bankRef poses.
+function applyBankImport(imp){
+  const r = imp.result;
+  mutateData(d=>{
+    const sv = t => t.type==='income' ? t.amount : -t.amount;
+    r.matches.forEach((m, k)=>{
+      const txs = m.txIds.map(id=>d.transactions.find(t=>t.id===id)).filter(Boolean);
+      txs.forEach((t, j)=>{ t.bankRef = m.ops.map(i=>r.ops[i].ref).join('¦') + (txs.length>1 ? '#'+j : '');
+        // Saisie datee loin du debit (ex. versement saisi 9 jours apres) : on la cale sur la date de la banque.
+        if(m.moveDate && imp.fix[k] !== false) t.date = m.moveDate; });
+      if(Math.abs(m.diff) >= 0.005 && imp.fix[k] !== false){
+        const t = txs.slice().sort((a,b)=>b.amount-a.amount)[0];
+        if(!t) return;
+        const before = t.amount, after = Math.round((sv(t) + m.diff) * (t.type==='income'?1:-1) * 100)/100;
+        if(after > 0){
+          t.amount = after;
+          if(t.goalId && t.type==='expense'){ const g = d.goals.find(g=>g.id===t.goalId); if(g) g.current = Math.max(0, g.current + (after - before)); }
+        }
+      }
+    });
+    r.missing.forEach(i=>{
+      const pick = imp.add[i]; if(!pick) return;
+      const o = r.ops[i];
+      d.transactions.unshift({ id: uid(), type: o.amount >= 0 ? 'income' : 'expense', amount: Math.abs(o.amount), category: pick, note: cleanBankLabel(o.label), date: o.opDate, accountId: imp.accountId, bankRef: o.ref });
+    });
+  });
+}
+
 /* ---------------- helpers ---------------- */
 function visibleTransactions(){
   return state.activeAccountFilter ? state.data.transactions.filter(t=>t.accountId===state.activeAccountFilter) : state.data.transactions;
@@ -1817,6 +1934,7 @@ function renderApp(){
     ${state.goalDeadlineModalId ? renderGoalDeadlineModal() : ''}
     ${state.monthlyRecapOpen ? renderMonthlyRecapModal() : ''}
     ${state.recalOpen ? renderRecalModal() : ''}
+    ${state.bankImport ? renderBankImportModal() : ''}
     ${state.csvImportOpen ? renderCsvImportModal() : ''}
     ${state.editingGoalTransferId ? renderGoalTransferModal() : ''}
     ${state.editingBuiltinColorId ? renderEditBuiltinColorModal() : ''}
@@ -3123,6 +3241,7 @@ function renderTransactions(){
         <div><div class="section-title" style="margin:0; font-size:15px;">${filtered ? 'Selon ta recherche' : 'Le mois en opérations'}</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${opCount} opération${opCount>1?'s':''}</div></div>
         <div style="display:flex; gap:6px;">
           <button data-toggle-txsearch="1" aria-label="Rechercher une opération" style="${iconBtn}${(state.txSearchOpen||q) ? ' color:var(--gold); border-color:var(--gold);' : ''}">${icon('search',14)}</button>
+          <button data-open-bankimport="1" aria-label="Importer le relevé de la banque" style="${iconBtn}">${icon('upload',14)}</button>
           <button data-open-recurmodal="1" aria-label="Récurrences" style="${iconBtn}">${icon('repeat',14)}</button>
         </div>
       </div>
@@ -3671,7 +3790,6 @@ function renderCaCard(){
           ${caField('caDcaInput', 'DCA Bitstack par mois (€)', caNum(ct.bitstackDca ?? 450), '450')}
           ${caField('caFuelInput', 'Essence par jour roulé (€)', caNum(ct.fuelPerDay ?? 15), '15')}
           ${caField('caReserveInput', 'Réserve d\'août par mois (€)', caNum(ct.augustReserve ?? 150), '150')}
-          ${caField('caNeedInput', 'Besoin du commun par mois (€)', caNum(ct.communNeed ?? 370), '370')}
           ${caField('caCushionInput', 'Coussin du commun (€)', caNum(ct.communCushion ?? 500), '500')}
         </div>
         <div style="margin-top:8px;">
@@ -3751,7 +3869,10 @@ function renderGoals(){
   // Calcule sur les vrais virements (solde Shine saisi), sinon pas d'encadre.
   const ctr = state.data.caTracker || {};
   const nextPlan = act ? shineTransferPlan(state.viewM === 11 ? state.viewY + 1 : state.viewY, (state.viewM + 1) % 12) : null;
-  const surplus = nextPlan && nextPlan.hasCa ? Math.max(0, Math.floor((nextPlan.commun - (ctr.communNeed ?? 370)) / 10) * 10) : 0;
+  // Meme calcul que la liste « Le 5 » : fin du mois du virement (virement Shine, epargne et enveloppes compris)
+  // au-dessus du coussin du commun.
+  const surplus = nextPlan && nextPlan.hasCa ? (()=>{ const ny = state.viewM === 11 ? state.viewY + 1 : state.viewY, nm = (state.viewM + 1) % 12;
+    return Math.max(0, Math.floor((displayedEndOfMonth(computeForecast(), ny, nm) - (ctr.communCushion ?? 500)) / 10) * 10); })() : 0;
   // Objectif a nourrir en priorite : le plus en retard sur son echeance, sinon le plus proche.
   const paidRaw = nextPlan ? (ctr.surplusPaid||{})[nextPlan.key] : null;
   const paidSurplus = paidRaw && (!paidRaw.txId || state.data.transactions.some(t=>t.id===paidRaw.txId)) ? paidRaw : null;
@@ -3823,6 +3944,81 @@ function renderGoals(){
     ${act ? '' : `<button data-enable-ca="1" style="display:block; margin:6px auto 0; background:none; border:none; color:var(--paperDim); font-size:12px; text-decoration:underline;">Suivre une activité (chiffre d'affaires et virements)</button>`}
   `;
 
+}
+
+function renderBankImportModal(){
+  const imp = state.bankImport;
+  const accounts = (state.data.accounts||[]).length ? state.data.accounts : [{id:'main', name:'Compte principal'}];
+  const head = `<div class="modal-head"><div class="modal-title ledger">Importer le relevé</div><button data-close-x-bankimport="1">${icon('x',18)}</button></div>`;
+  if(!imp.result){
+    return `<div class="modal-overlay" data-close-bankimport="1"><div class="modal-sheet" onclick="event.stopPropagation()">${head}
+      <div style="font-size:12.5px; color:var(--paperDim); line-height:1.5; margin-bottom:14px;">Dans l'appli LCL, télécharge le relevé de tes opérations au format CSV, puis choisis-le ici. L'appli retrouve tes saisies, corrige les montants arrondis et te montre ce qui manque. Rien n'est changé avant ta validation.</div>
+      ${accounts.length>1 ? `<div class="field-label">Compte</div><select id="bankImportAccount" class="field-input" style="margin-bottom:13px; color:var(--paper);">${accounts.map(a=>`<option value="${a.id}" ${a.id===imp.accountId?'selected':''}>${escapeHtml(a.name)}</option>`).join('')}</select>` : ''}
+      <label class="btn-primary" style="width:100%; justify-content:center; cursor:pointer;">${icon('upload',15)} Choisir le relevé CSV<input id="bankImportFile" type="file" accept=".csv,text/csv,text/plain" style="display:none;"></label>
+      ${imp.error ? `<div style="color:var(--coral); font-size:12.5px; margin-top:12px;">${escapeHtml(imp.error)}</div>` : ''}
+    </div></div>`;
+  }
+  const r = imp.result, ops = r.ops;
+  if(!ops.length) return `<div class="modal-overlay" data-close-bankimport="1"><div class="modal-sheet bank-import" onclick="event.stopPropagation()">${head}
+    <div style="text-align:center; padding:10px 0 6px;"><div style="color:var(--sage); font-size:15px; font-weight:600;">${icon('check',16)} Tout est déjà importé</div>
+    <div style="font-size:12.5px; color:var(--paperDim); margin-top:6px;">Les ${r.already} opérations de ce relevé sont déjà rapprochées.</div></div>
+    <button class="btn-primary" data-close-x-bankimport="1" style="width:100%; justify-content:center; margin-top:14px;">Fermer</button></div></div>`;
+  const txById = id => state.data.transactions.find(t=>t.id===id);
+  const fixes = r.matches.map((m,k)=>({m,k})).filter(({m})=>Math.abs(m.diff) >= 0.005 || m.moveDate);
+  const okCount = r.matches.length - fixes.length;
+  const d = s => new Date(s).toLocaleDateString('fr-FR',{day:'numeric', month:'short'});
+  const sgn = v => `${v>=0?'+':'−'}${fmt2(Math.abs(v))}`;
+  // Solde a la date de cloture une fois les choix appliques.
+  const sv = t => t.type==='income' ? t.amount : -t.amount;
+  let after = imp.closing ? appBalanceAt(imp.closing.date, imp.accountId) : null;
+  if(after !== null){
+    fixes.forEach(({m,k})=>{ if(imp.fix[k] === false) return; after += m.diff;
+      // Date deplacee de l'autre cote de la cloture : la saisie entre (ou sort) du solde compare.
+      if(m.moveDate){ const t = txById(m.txIds[0]); const c = new Date(imp.closing.date); c.setHours(23,59,59,999); const inBefore = new Date(t.date) <= c, inAfter = new Date(m.moveDate) <= c; if(inBefore !== inAfter) after += (inAfter ? 1 : -1) * sv(t); } });
+    r.missing.forEach(i=>{ if(imp.add[i] && new Date(ops[i].opDate) <= new Date(imp.closing.date)) after += ops[i].amount; });
+  }
+  const gap = after === null ? null : Math.round((imp.closing.amount - after)*100)/100;
+  // Saisies des derniers jours du releve, pas encore debitees : elles expliquent une partie de l'ecart.
+  const lastBooked = Math.max(...ops.map(o=>+new Date(o.date)));
+  const pending = r.appOnly.map(txById).filter(t=>t && +new Date(t.date) >= lastBooked - 2*864e5).reduce((a,t)=>a+sv(t), 0);
+  const rest = gap === null ? null : Math.round((gap + pending)*100)/100;
+  const sec = (t, n, extra='') => `<div class="row" style="margin:16px 0 6px; font-size:12px; color:var(--paperDim); text-transform:uppercase; letter-spacing:.06em;"><span>${t}</span><span style="text-transform:none; letter-spacing:0;">${n}${extra}</span></div>`;
+  const catOpts = (type, sel) => catsForType(type).map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${escapeHtml(c.label)}</option>`).join('');
+  return `<div class="modal-overlay" data-close-bankimport="1"><div class="modal-sheet bank-import" onclick="event.stopPropagation()">${head}
+    <div style="font-size:12.5px; color:var(--paperDim); line-height:1.5;">${ops.length} opération${ops.length>1?'s':''} du ${d(ops.reduce((a,o)=>o.date<a?o.date:a, ops[0].date))} au ${d(ops.reduce((a,o)=>o.date>a?o.date:a, ops[0].date))}${r.already ? ` · ${r.already} déjà importée${r.already>1?'s':''}` : ''}</div>
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px;">
+      ${caTile('Retrouvées', String(r.matches.length), 'var(--sage)')}
+      ${caTile('À corriger', String(fixes.length), fixes.length ? 'var(--gold)' : 'var(--paperDim)')}
+      ${caTile('Manquantes', String(r.missing.length), r.missing.length ? 'var(--coral)' : 'var(--paperDim)')}
+    </div>
+    ${fixes.length ? sec('À corriger', fixes.length, ' · montant ou date') + fixes.map(({m,k})=>{
+      const t = txById(m.txIds[0]); const label = m.txIds.length>1 ? `${m.txIds.length} saisies` : escapeHtml(t ? (t.note || catInfo(t.category).label) : '');
+      return `<label style="display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); font-size:13px;">
+        <input type="checkbox" data-bankfix="${k}" ${imp.fix[k]!==false?'checked':''} style="width:18px; height:18px; accent-color:var(--gold);">
+        <span style="flex:1; min-width:0;"><span style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${label}</span><span style="font-size:11px; color:var(--paperDim);">${d(ops[m.ops[0]].opDate)} · banque ${fmt2(Math.abs(m.ops.reduce((a,i)=>a+ops[i].amount,0)))}</span></span>
+        <span class="mono" style="color:var(--gold); font-weight:700; text-align:right;">${Math.abs(m.diff) >= 0.005 ? sgn(m.diff) : ''}${m.moveDate ? `<span style="display:block; font-family:inherit; font-size:11px; font-weight:500;">date → ${d(m.moveDate)}</span>` : ''}</span></label>`;
+    }).join('') : ''}
+    ${r.missing.length ? sec('Absentes de l\'appli', r.missing.length, ' · coche pour ajouter') + r.missing.map(i=>{
+      const o = ops[i], type = o.amount>=0 ? 'income' : 'expense', on = !!imp.add[i];
+      return `<div style="padding:8px 0; border-top:1px solid var(--line);">
+        <label style="display:flex; gap:10px; align-items:center; font-size:13px;">
+          <input type="checkbox" data-bankadd="${i}" ${on?'checked':''} style="width:18px; height:18px; accent-color:var(--gold);">
+          <span style="flex:1; min-width:0;"><span style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(cleanBankLabel(o.label))}</span><span style="font-size:11px; color:var(--paperDim);">${d(o.opDate)}</span></span>
+          <span class="mono" style="color:${o.amount>=0?'var(--sage)':'var(--paper)'}; font-weight:700;">${sgn(o.amount)}</span></label>
+        ${on ? `<select data-bankcat="${i}" class="field-input" style="margin:8px 0 0 28px; width:calc(100% - 28px); padding:8px 10px; font-size:12.5px;">${catOpts(type, imp.add[i])}</select>` : ''}
+      </div>`;
+    }).join('') : ''}
+    ${r.appOnly.length ? sec('Dans l\'appli, pas à la banque', r.appOnly.length) + `<div style="font-size:11.5px; color:var(--paperDim); margin-bottom:4px;">Pas encore débitées, ou saisies en double : à vérifier. Rien n'est supprimé.</div>` + r.appOnly.map(id=>{ const t = txById(id); return t ? `<div class="row" style="margin:0; padding:7px 0; border-top:1px solid var(--line); font-size:12.5px; flex-wrap:nowrap;"><span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(t.note || catInfo(t.category).label)} <span style="color:var(--paperDim);">· ${d(t.date)}</span></span><span class="mono">${sgn(sv(t))}</span></div>` : ''; }).join('') : ''}
+    ${gap !== null ? `<div style="margin-top:16px; padding:11px 14px; border-radius:14px; background:var(--surfaceHi); font-size:12.5px; line-height:1.5;">
+      <div class="row" style="margin:0;"><span style="color:var(--paperDim);">Solde banque au ${d(imp.closing.date)}</span><span class="mono">${fmt2(imp.closing.amount)}</span></div>
+      <div class="row" style="margin:0;"><span style="color:var(--paperDim);">Solde appli après import</span><span class="mono">${fmt2(after)}</span></div>
+      <div class="row" style="margin:4px 0 0;"><span>Écart</span><span class="mono" style="font-weight:700; color:${Math.abs(gap)<1?'var(--sage)':'var(--gold)'};">${Math.abs(gap)<0.005 ? '0 €' : sgn(gap)}</span></div>
+      ${Math.abs(pending) >= 0.005 ? `<div class="row" style="margin:0;"><span style="color:var(--paperDim);">dont pas encore débité</span><span class="mono">${sgn(-pending)}</span></div>
+      <div class="row" style="margin:2px 0 0;"><span>Écart restant</span><span class="mono" style="font-weight:700; color:${Math.abs(rest)<5?'var(--sage)':'var(--gold)'};">${Math.abs(rest)<0.005 ? '0 €' : sgn(rest)}</span></div>` : ''}
+      ${Math.abs(pending) < 0.005 && Math.abs(gap) >= 1 ? `<div style="font-size:11.5px; color:var(--paperDim); margin-top:4px;">Regarde les opérations « dans l'appli, pas à la banque » ci-dessus.</div>` : ''}
+    </div>` : ''}
+    <button class="btn-primary" data-apply-bankimport="1" style="width:100%; justify-content:center; margin-top:16px;">Appliquer</button>
+  </div></div>`;
 }
 
 function renderRecalModal(){
@@ -4526,11 +4722,10 @@ function bindEvents(){
     const dca = parseAmountInput((document.getElementById('caDcaInput')||{}).value);
     const fu = parseAmountInput((document.getElementById('caFuelInput')||{}).value);
     const rs = parseAmountInput((document.getElementById('caReserveInput')||{}).value);
-    const nd = parseAmountInput((document.getElementById('caNeedInput')||{}).value);
     const cu = parseAmountInput((document.getElementById('caCushionInput')||{}).value);
-    if(!(nd >= 0) || !(cu >= 0)){ showToast('Réglages invalides'); return; }
+    if(!(cu >= 0)){ showToast('Réglages invalides'); return; }
     if(!(f >= 0) || !(b >= 0) || !(u >= 0 && u < 100) || !(dca >= 0) || !(fu >= 0) || !(rs >= 0)){ showToast('Réglages invalides'); return; }
-    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; d.caTracker.augustReserve = Math.round(rs); d.caTracker.communNeed = Math.round(nd); d.caTracker.communCushion = Math.round(cu); syncShineRecurring(d); });
+    mutateData(d=>{ d.caTracker.floor = Math.round(f); d.caTracker.persoBase = Math.round(b); d.caTracker.urssaf = Math.round(u*10)/1000; d.caTracker.bitstackDca = Math.round(dca); d.caTracker.fuelPerDay = Math.round(fu*100)/100; d.caTracker.augustReserve = Math.round(rs); d.caTracker.communCushion = Math.round(cu); syncShineRecurring(d); });
     showToast('Réglages enregistrés');
   }));
   app.querySelectorAll('[data-del-goal]').forEach(el=>el.addEventListener('click', ()=>{ mutateWithUndo('Objectif supprimé', d=>{ d.goals = d.goals.filter(g=>g.id!==el.dataset.delGoal); }); }));
@@ -5315,6 +5510,39 @@ function bindEvents(){
       if(btn) btn.disabled = (diff===null || diff===0);
     });
   }
+  // Import du releve bancaire
+  app.querySelectorAll('[data-open-bankimport]').forEach(el=>el.addEventListener('click', ()=>{
+    setState({ bankImport:{ accountId: state.activeAccountFilter || 'main', result:null, fix:{}, add:{}, error:null } });
+  }));
+  app.querySelectorAll('[data-close-bankimport]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) setState({ bankImport:null }); }));
+  app.querySelectorAll('[data-close-x-bankimport]').forEach(el=>el.addEventListener('click', ()=>setState({ bankImport:null })));
+  const bankAcc = app.querySelector('#bankImportAccount');
+  if(bankAcc) bankAcc.addEventListener('change', ()=>{ state.bankImport.accountId = bankAcc.value; });
+  const bankFile = app.querySelector('#bankImportFile');
+  if(bankFile) bankFile.addEventListener('change', async ()=>{
+    const f = bankFile.files && bankFile.files[0]; if(!f) return;
+    const buf = await f.arrayBuffer();
+    let text; try{ text = new TextDecoder('utf-8', { fatal:true }).decode(buf); }catch(e){ text = new TextDecoder('windows-1252').decode(buf); }
+    const parsed = parseLclCsv(text);
+    if(!parsed){ state.bankImport.error = "Ce fichier ne ressemble pas à un relevé LCL (CSV)."; rerender(); return; }
+    const result = reconcileBank(parsed, state.bankImport.accountId);
+    setState({ bankImport:{ ...state.bankImport, result, closing: parsed.closing, error:null, fix:{}, add:{} } });
+  });
+  app.querySelectorAll('[data-bankfix]').forEach(el=>el.addEventListener('change', ()=>{ state.bankImport.fix[el.dataset.bankfix] = el.checked; const y = document.querySelector('.bank-import')?.scrollTop; rerender(); const m = document.querySelector('.bank-import'); if(m && y!=null) m.scrollTop = y; }));
+  app.querySelectorAll('[data-bankadd]').forEach(el=>el.addEventListener('change', ()=>{
+    const i = el.dataset.bankadd, o = state.bankImport.result.ops[i];
+    state.bankImport.add[i] = el.checked ? (o.amount >= 0 ? ((catsForType('income').find(c=>c.id==='autres_i') || catsForType('income')[0] || {}).id) : ((catsForType('expense').find(c=>c.id==='autres_d') || catsForType('expense')[0] || {}).id)) : null;
+    const y = document.querySelector('.bank-import')?.scrollTop; rerender(); const m = document.querySelector('.bank-import'); if(m && y!=null) m.scrollTop = y;
+  }));
+  app.querySelectorAll('[data-bankcat]').forEach(el=>el.addEventListener('change', ()=>{ state.bankImport.add[el.dataset.bankcat] = el.value; }));
+  app.querySelectorAll('[data-apply-bankimport]').forEach(el=>el.addEventListener('click', ()=>{
+    const imp = state.bankImport; const r = imp.result;
+    const nFix = r.matches.filter((m,k)=>(Math.abs(m.diff) >= 0.005 || m.moveDate) && imp.fix[k] !== false).length;
+    const nAdd = r.missing.filter(i=>imp.add[i]).length;
+    applyBankImport(imp);
+    setState({ bankImport:null });
+    showToast(`Relevé importé · ${nFix} corrigée${nFix>1?'s':''}, ${nAdd} ajoutée${nAdd>1?'s':''}`);
+  }));
   app.querySelectorAll('[data-confirm-recal]').forEach(el=>el.addEventListener('click', ()=>{
     const accs = (state.data.accounts||[]).length ? state.data.accounts : [{id:'main'}];
     const accId = state.recalAccountId || state.activeAccountFilter || accs[0].id;

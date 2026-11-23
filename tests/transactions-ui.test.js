@@ -193,3 +193,53 @@ test('T8 Récurrence créée avec une 1re date future : PRÉVU jusqu’à sa dat
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('T9 Import du relevé LCL : montants arrondis corrigés, saisies groupées retrouvées, manquantes ajoutées, ré-import sans doublon', async () => {
+  const csv = [
+    '﻿01/11/2026;1000,00;;00594 691922P',
+    '02/11/2026;-21,67;Carte;;CB  LIDL     3940    30/10/26;;0;Divers',
+    '03/11/2026;1815;Virement;;;VIREMENT MONSIEUR NICOLAS BOEGL;;',
+    '03/11/2026;-1000;Virement;;VIR SEPA M NICOLAS BOEGLIN OU M;;;',
+    '10/11/2026;-81,39;Virement;;PRLV SEPA FRANCILIANE;;;',
+    '10/11/2026;-192,66;;;PRET IMMOBILIER ECH 10/11/26;;;',
+    '10/11/2026;-1133,46;;;PRET IMMOBILIER ECH 10/11/26;;;',
+    '16/11/2026;-138,42;Carte;;CB  AUX VENDANGES    14/11/26;;0;Divers',
+    '19/11/2026;-4,2;;;ASSURANCE MOYEN DE PAIEMENT;;;',
+    '21/11/2026;243,2;;00594 691922P',
+  ].join('\r\n');
+  const fs = require('fs'), path = require('path'), os = require('os');
+  const file = path.join(os.tmpdir(), 'releve-test.csv'); fs.writeFileSync(file, csv, 'utf8');
+  const tx = (id, amount, note, date, type='expense') => ({ id, type, amount, category:'autres_d', note, accountId:'main', date:D(date) });
+  const app = await openApp({ now:'2026-11-23T09:00:00+01:00', data: baseData({ transactions:[
+    { id:'start', type:'income', amount:1000, category:'ajustement', note:'', accountId:'main', date:D('2026-10-31') },
+    tx('lidl', 22, 'Lidl', '2026-10-30'), tx('sal', 1815, 'Salaire', '2026-11-03', 'income'),
+    tx('e1', 500, 'Épargne 1', '2026-11-03'), tx('e2', 500, 'Épargne 2', '2026-11-03'),
+    tx('veo', 83, 'Veolia', '2026-11-09'), tx('pret', 1326, 'Prêt', '2026-11-10'),
+    tx('vin', 90, 'Vin', '2026-11-14'), tx('cad', 50, 'Cadeau', '2026-11-14') ] }) });
+  const { page, errors } = app;
+  try{
+    await page.click('[data-tab="transactions"]');
+    await page.click('[data-open-bankimport]');
+    await page.setInputFiles('#bankImportFile', file);
+    await page.waitForSelector('[data-apply-bankimport]');
+    const txt = (await page.textContent('.bank-import')).replace(/\s+/g,' ');
+    assert.match(txt, /Retrouvées 6 À corriger 4 Manquantes 1/);
+    assert.match(txt, /Assurance Moyen De Paiement/);
+    await page.check('[data-bankadd="7"]');
+    await page.click('[data-apply-bankimport]');
+    const r = await page.evaluate(() => ({ lidl: state.data.transactions.find(t=>t.id==='lidl').amount, veo: state.data.transactions.find(t=>t.id==='veo').amount,
+      pret: state.data.transactions.find(t=>t.id==='pret').amount, vinCad: ['vin','cad'].map(id=>state.data.transactions.find(t=>t.id===id).amount),
+      added: state.data.transactions.filter(t=>t.bankRef && !['lidl','sal','e1','e2','veo','pret','vin','cad'].includes(t.id)).map(t=>[t.note, t.amount, t.category]),
+      bal: Math.round(appBalanceAt('2026-11-21T00:00:00.000Z','main')*100)/100 }));
+    assert.equal(r.lidl, 21.67); assert.equal(r.veo, 81.39); assert.equal(r.pret, 1326.12);
+    assert.deepEqual(r.vinCad, [88.42, 50]);                                         // l'écart va sur la plus grosse saisie
+    assert.deepEqual(r.added, [['Assurance Moyen De Paiement', 4.2, 'autres_d']]);
+    assert.equal(r.bal, 243.2);                                                     // = solde de clôture du relevé
+    // Ré-import : tout est déjà là
+    await page.click('[data-open-bankimport]');
+    await page.setInputFiles('#bankImportFile', file);
+    await page.waitForSelector('.bank-import');
+    assert.match((await page.textContent('.bank-import')).replace(/\s+/g,' '), /Tout est déjà importé.*Les 8 opérations/);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

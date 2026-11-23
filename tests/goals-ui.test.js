@@ -82,11 +82,13 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     // 1 515 + 8 × 500 (déc. → juil.) = 5 515 → manque 4 485 sur 9 mois ≈ 500 €/mois
     let card = await page.textContent('.goals-total-card');
     assert.match(card, /Manque 4\s485\s€ · août 2027 · \+500\s€\/mois/);
-    // Surplus = virement du 5 vers le commun − besoin du commun (370 € par défaut)
+    // Surplus du 5 = fin de décembre estimée (virement Shine compris) − coussin du commun (500 €)
     assert.match(card, /Atteint · \+2\s820\s€/);
     const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
+    const endDec = await page.evaluate(() => displayedEndOfMonth(computeForecast(), 2026, 11));
     const fr = n => new Intl.NumberFormat('fr-FR').format(n).replace(/\s/g, '\\s');
-    assert.match(card, new RegExp(`Surplus du 5\\s*≈ ${fr(Math.floor((commun - 370) / 10) * 10)}\\s€`));
+    const sp = Math.max(0, Math.floor((endDec - 500) / 10) * 10);
+    assert.match(card, sp >= 10 ? new RegExp(`Surplus du 5\\s*≈ ${fr(sp)}\\s€`) : /Surplus du 5\s*—/);
     await page.evaluate(() => setState({ goalDeadlineModalId:'g1' }));
     await page.fill('#goalPlanLabel', '13e mois');
     await page.fill('#goalPlanAmount', '800');
