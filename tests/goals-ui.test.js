@@ -18,8 +18,8 @@ test('G1 Cartes d’épargne : total, virements auto par mois, sans ajout ni ret
   try{
     await page.click('[data-tab="goals"]');
     const total = await page.textContent('.goals-total-card');
-    assert.match(total, /auto 500\s€\/mois/);
-    assert.match(total, /Dans les temps\s*juil\. 2027 · \+1\s250\s€/);   // 1 250 + 8 virements de 500
+    assert.match(total, /Auto \/ mois\s*500\s€/);
+    assert.match(total, /Dans les temps · juil\. 2027 · \+1\s250\s€/);   // 1 250 + 8 virements de 500
     assert.match(total, /Atteint/);
     // Plus d'ajout ni de retrait sur les cartes : ça passe par les boutons − / + de l'accueil.
     assert.equal(await page.$('#goalAmount-g1'), null);
@@ -40,7 +40,7 @@ test('G2 Objectifs : une carte résumé plein écran, les boutons du bas déplie
   try{
     await page.click('[data-tab="goals"]');
     const card = await page.textContent('.goals-total-card');
-    assert.match(card, /Chiffre d'aff\./);
+    assert.match(card, /Chiffre d'affaires/);
     assert.match(card, /Pérou/);
     for(const sel of ['.ca-card', '.ca-shine-card', '.goal-card']) assert.equal(await page.$(sel), null);
     await page.click('[data-objpanel="ca"]');
@@ -81,12 +81,12 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     await page.click('[data-tab="goals"]');
     // 1 515 + 8 × 500 (déc. → juil.) = 5 515 → manque 4 485 sur 9 mois ≈ 500 €/mois
     let card = await page.textContent('.goals-total-card');
-    assert.match(card, /Manque 4\s485\s€\s*\+500\s€\/mois/);
+    assert.match(card, /Manque 4\s485\s€ · août 2027 · \+500\s€\/mois/);
     // Surplus = virement du 5 vers le commun − besoin du commun (370 € par défaut)
-    assert.match(card, /Atteint\s*\+2\s820\s€/);
+    assert.match(card, /Atteint · \+2\s820\s€/);
     const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
     const fr = n => new Intl.NumberFormat('fr-FR').format(n).replace(/\s/g, '\\s');
-    assert.match(card, new RegExp(`Surplus du 5 déc\\.\\s*≈ ${fr(Math.floor((commun - 370) / 10) * 10)}\\s€\\s*Commun : reçoit ${fr(commun)}\\s€, besoin 370\\s€`));
+    assert.match(card, new RegExp(`Surplus du 5\\s*≈ ${fr(Math.floor((commun - 370) / 10) * 10)}\\s€\\s*reçoit ${fr(commun)}\\s€`));
     await page.evaluate(() => setState({ goalDeadlineModalId:'g1' }));
     await page.fill('#goalPlanLabel', '13e mois');
     await page.fill('#goalPlanAmount', '800');
@@ -148,7 +148,7 @@ test('G6 Liste « Le 5 » sur l’accueil : virements du mois, surplus au-dessus
     assert.equal(await page.$('.day5-card'), null);                 // tout est fait
     // Objectifs (novembre) : le surplus du 5 déc. apparaît comme versé
     await page.evaluate(() => setState({ toast:null, tab:'goals', viewY:2026, viewM:10 }));
-    assert.match(await page.textContent('.surplus-box'), /Surplus versé le[^]*250\s€/);
+    assert.match(await page.textContent('.surplus-box'), /Surplus versé\s*250\s€/);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
