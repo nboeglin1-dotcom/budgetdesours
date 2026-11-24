@@ -4051,13 +4051,8 @@ function renderGoals(){
       </div>
       <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:22px; padding:14px 0 4px;">
       <div>
-      ${act ? `
-      <div class="row" style="margin:0; flex-wrap:nowrap; font-size:13.5px; color:var(--paper);"><span style="display:flex; align-items:center; gap:8px;"><button data-cacolor-open="1" aria-label="Changer la couleur du chiffre d'affaires" style="width:22px; height:22px; margin:-7px -7px -7px -7px; display:inline-flex; align-items:center; justify-content:center; background:none; border:none; padding:0; flex-shrink:0;"><span style="width:8px; height:8px; border-radius:50%; background:${caCol};"></span></button>Chiffre d'affaires</span><span style="font-size:12px; color:var(--paperDim);">${ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint · +${fmt0(ca.ca - ca.target)}</span>` : ca.when==='past' ? `<span style="color:var(--coral);">Manqué : ${fmt0(ca.remaining)}</span>` : `Reste ${fmt0(ca.remaining)}`}</span></div>
-      <div class="row" style="align-items:baseline; margin:2px 0 0;"><div class="mono" style="font-size:26px; font-weight:700; color:${ca.has ? 'var(--paper)' : 'var(--paperDim)'};">${fmt0(ca.ca)}</div><div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(ca.target)}</div></div>
-      <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${caPct}%; background:${caCol};"></div></div>
-      ${state.caColorOpen ? `<div class="color-row" style="margin:10px 0 0;">${GOAL_PALETTE.map(c=>`<button data-cacolor-set="${c}" class="color-swatch" aria-label="Couleur" style="background:${c}; outline:${caCol.toLowerCase()===c.toLowerCase()?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>` : ''}` : ''}
       ${(act || goals.length) ? `
-      <div style="display:grid; grid-template-columns:repeat(${act ? 3 : 2},1fr); gap:8px; margin-top:${act ? 14 : 0}px;">
+      <div style="display:grid; grid-template-columns:repeat(${act ? 3 : 2},1fr); gap:8px;">
         ${act ? (paidSurplus
             ? `<div class="surplus-box" style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">Surplus versé</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:var(--sage);">${fmt0(paidSurplus.amount)}</div><div style="font-size:10.5px; color:var(--paperDim); margin-top:2px; white-space:nowrap;">le ${new Date(paidSurplus.date+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric', month:'short'})} · <button data-undo-surplus="${nextPlan.key}" style="background:none; border:none; color:var(--paperDim); text-decoration:underline; font-size:10.5px; padding:0;">annuler</button></div></div>`
             : `<div class="surplus-box" style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">Surplus du 5</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${surplus >= 10 ? 'var(--sage)' : 'var(--paperDim)'};">${surplus >= 10 ? '≈ ' + fmt0(surplus) : '—'}</div></div>`) : ''}
@@ -4065,9 +4060,13 @@ function renderGoals(){
         ${goals.length ? caTile('À l\'heure', `${onTime} / ${goals.length}`, onTime === goals.length ? 'var(--sage)' : 'var(--coral)') : ''}
       </div>` : ''}
       </div>
-      ${goals.length ? `
+      ${(act || goals.length) ? `
       <div style="display:flex; flex-direction:column; gap:4px;">
-        <div class="row" style="margin:0 0 2px; font-size:12px; color:var(--paperDim);"><span>Mes objectifs</span><span>Épargné</span></div>
+        <div class="row" style="margin:0 0 2px; font-size:12px; color:var(--paperDim);"><span>${act ? 'Activité et objectifs' : 'Mes objectifs'}</span><span>Montant</span></div>
+        ${act ? lineRow({ name: "Chiffre d'affaires", dot: caCol, dotAttr: 'data-cacolor-open="1" aria-label="Changer la couleur du chiffre d\'affaires"', pct: caPct, bar: caCol,
+            value: fmt0(ca.ca), valueColor: ca.reached ? 'var(--mint)' : ca.when==='past' ? 'var(--coral)' : (ca.has ? 'var(--paper)' : 'var(--paperDim)'),
+            sub: `sur ${fmt0(ca.target)} · ${ca.reached ? `${icon('spark',9)} atteint · <span style="color:var(--mint);">+${fmt0(ca.ca - ca.target)}</span>` : ca.when==='past' ? `<span style="color:var(--coral);">manqué : ${fmt0(ca.remaining)}</span>` : `reste ${fmt0(ca.remaining)}`}` })
+          + (state.caColorOpen ? `<div class="color-row" style="margin:4px 0 8px;">${GOAL_PALETTE.map(c=>`<button data-cacolor-set="${c}" class="color-swatch" aria-label="Couleur" style="background:${c}; outline:${caCol.toLowerCase()===c.toLowerCase()?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>` : '') : ''}
         ${goals.map(g=>{
           const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
           const done = g.target>0 && g.current>=g.target;

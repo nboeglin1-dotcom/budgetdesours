@@ -81,7 +81,7 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     let card = await page.textContent('.goals-total-card');
     assert.match(card, /manque 4\s485\s€ · \+500\s€\/mois/);
     // Surplus du 5 = fin de décembre estimée (virement Shine compris) − coussin du commun (500 €)
-    assert.match(card, /Atteint · \+2\s820\s€/);
+    assert.match(card, /atteint · \+2\s820\s€/);
     const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
     const endDec = await page.evaluate(() => displayedEndOfMonth(computeForecast(), 2026, 11));
     const fr = n => new Intl.NumberFormat('fr-FR').format(n).replace(/\s/g, '\\s');
