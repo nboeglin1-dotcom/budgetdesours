@@ -19,7 +19,8 @@ test('G1 Cartes d’épargne : total, virements auto par mois, sans ajout ni ret
     await page.click('[data-tab="goals"]');
     const total = await page.textContent('.goals-total-card');
     assert.match(total, /Auto \/ mois\s*500\s€/);
-    assert.match(total, /Dans les temps · juil\. 2027 · \+1\s250\s€/);   // 1 250 + 8 virements de 500
+    assert.match(total, /Dans les temps · \+1\s250\s€/);
+    assert.match(total, /Échéance juil\. 2027/);   // 1 250 + 8 virements de 500
     assert.match(total, /Atteint/);
     // Plus d'ajout ni de retrait sur les cartes : ça passe par les boutons − / + de l'accueil.
     assert.equal(await page.$('#goalAmount-g1'), null);
@@ -79,7 +80,8 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     await page.click('[data-tab="goals"]');
     // 1 515 + 8 × 500 (déc. → juil.) = 5 515 → manque 4 485 sur 9 mois ≈ 500 €/mois
     let card = await page.textContent('.goals-total-card');
-    assert.match(card, /Manque 4\s485\s€ · août 2027 · \+500\s€\/mois/);
+    assert.match(card, /Manque 4\s485\s€/);
+    assert.match(card, /Échéance août 2027 · \+500\s€\/mois pour y arriver/);
     // Surplus du 5 = fin de décembre estimée (virement Shine compris) − coussin du commun (500 €)
     assert.match(card, /Atteint · \+2\s820\s€/);
     const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
@@ -177,8 +179,8 @@ test('G8 Objectifs de même couleur : couleurs différentes au chargement, et la
     const cols = await page.evaluate(() => state.data.goals.map(g=>g.color));
     assert.notEqual(cols[0].toLowerCase(), cols[1].toLowerCase());
     await page.click('[data-tab="goals"]');
-    await page.click('[data-goalcolor-open="g2"]');
-    await page.click('[data-goalcolor-set="g2"][data-color="#D6829F"]');
+    await page.click('.panel-sheet [data-goalcolor-open="g2"]');
+    await page.click('.panel-sheet [data-goalcolor-set="g2"][data-color="#D6829F"]');
     assert.equal(await page.evaluate(() => state.data.goals[1].color), '#D6829F');
     await page.reload();
     assert.equal(await page.evaluate(() => state.data.goals[1].color), '#D6829F');   // pas de réattribution

@@ -4007,15 +4007,19 @@ function renderGoals(){
           const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
           const done = g.target>0 && g.current>=g.target;
           const f = done ? null : goalForecast(g);
-          const status = done ? `<span style="color:var(--sage);">${icon('spark',9)} Atteint</span>`
-            : !f ? `<span>Sans échéance</span>`
+          // Meme presentation que le chiffre d'affaires : pastille + nom et statut, montant en grand « sur X », barre.
+          const head = done ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint</span>`
+            : !f ? `Sans échéance`
             : f.overdue ? `<span style="color:var(--coral);">Échéance passée</span>`
-            : f.gap >= 0 ? `<span style="color:var(--sage);">Dans les temps</span> · ${f.label}${f.gap >= 10 ? ` · +${fmt0(f.gap)}` : ''}`
-            : `<span style="color:var(--coral);">Manque ${fmt0(-f.gap)}</span> · ${f.label} · +${fmt0(f.perMonthMore)}/mois`;
+            : f.gap >= 0 ? `<span style="color:var(--sage); font-weight:600;">Dans les temps${f.gap >= 10 ? ` · +${fmt0(f.gap)}` : ''}</span>`
+            : `<span style="color:var(--coral); font-weight:600;">Manque ${fmt0(-f.gap)}</span>`;
+          const foot = f && !f.overdue ? (f.gap >= 0 ? `Échéance ${f.label}` : `Échéance ${f.label} · +${fmt0(f.perMonthMore)}/mois pour y arriver`) : '';
           return `<div class="goal-line">
-            <div class="row" style="margin:0; font-size:13.5px; flex-wrap:nowrap;"><span style="display:flex; align-items:center; gap:8px; min-width:0;"><span style="width:8px; height:8px; border-radius:50%; background:${g.color}; flex-shrink:0;"></span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(g.name)}</span></span><span style="flex-shrink:0;"><span class="mono" style="font-weight:700; color:var(--paper);">${fmt0(g.current)}</span> <span class="mono" style="font-size:11.5px; color:var(--paperDim);">/ ${fmt0(g.target)}</span></span></div>
+            <div class="row" style="margin:0; flex-wrap:nowrap; font-size:13.5px; color:var(--paper);"><span style="display:flex; align-items:center; gap:8px; min-width:0;"><button data-goalcolor-open="${g.id}" aria-label="Changer la couleur" style="width:22px; height:22px; margin:-7px; display:inline-flex; align-items:center; justify-content:center; background:none; border:none; padding:0; flex-shrink:0;"><span style="width:8px; height:8px; border-radius:50%; background:${g.color};"></span></button><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(g.name)}</span></span><span style="font-size:12px; color:var(--paperDim); flex-shrink:0;">${head}</span></div>
+            <div class="row" style="align-items:baseline; margin:2px 0 0;"><div class="mono" style="font-size:26px; font-weight:700; color:var(--paper);">${fmt0(g.current)}</div><div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(g.target)}</div></div>
             <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${p}%; background:${g.color};"></div></div>
-            <div style="font-size:11.5px; color:var(--paperDim); margin-top:6px;">${status}</div>
+            ${state.goalColorOpen===g.id ? `<div class="color-row" style="margin:10px 0 0;">${GOAL_PALETTE.map(c=>`<button data-goalcolor-set="${g.id}" data-color="${c}" class="color-swatch" aria-label="Couleur" style="background:${c}; outline:${g.color.toLowerCase()===c.toLowerCase()?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>` : ''}
+            ${foot ? `<div style="font-size:11.5px; color:var(--paperDim); margin-top:6px;">${foot}</div>` : ''}
           </div>`;
         }).join('')}
       </div>` : `
