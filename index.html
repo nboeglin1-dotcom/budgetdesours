@@ -1667,14 +1667,18 @@ function bearMascot(mood, size=64){
 function bearMoodFromEnd(end){
   const cushion = (state.data.caTracker && state.data.caTracker.communCushion) ?? 500;
   if(end < 0) return 'worried';
+  // Sans activite suivie (ex. budget d'un enfant) : pas de coussin du commun, l'ours sourit des qu'on reste dans le vert.
+  if(!hasCaActivity()) return end >= 100 ? 'happy' : 'content';
   if(end < cushion) return 'neutral';
   if(end < cushion + 300) return 'content';
   return 'happy';
 }
 function bearLineFromEnd(end, isPast){
   const cushion = (state.data.caTracker && state.data.caTracker.communCushion) ?? 500;
-  if(isPast) return end < 0 ? `Mois fini à découvert` : end < cushion ? `Mois fini sous ton coussin de ${fmt0(cushion)}` : `Coussin tenu ce mois-là`;
+  if(isPast && end < 0) return 'Mois fini à découvert';
+  if(isPast && hasCaActivity()) return end < 0 ? `Mois fini à découvert` : end < cushion ? `Mois fini sous ton coussin de ${fmt0(cushion)}` : `Coussin tenu ce mois-là`;
   if(end < 0) return `${fmt0(-end)} à trouver d'ici le ${new Date(state.viewY, state.viewM + 1, 0).getDate()}`;
+  if(!hasCaActivity()) return isPast ? 'Mois fini dans le vert' : `Dans le vert : +${fmt0(end)} de marge`;
   if(end < cushion) return `${fmt0(cushion - end)} sous ton coussin de ${fmt0(cushion)}`;
   return `+${fmt0(end - cushion)} au-dessus de ton coussin`;
 }

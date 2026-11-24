@@ -191,7 +191,7 @@ test('B7 Rappel de sauvegarde : après 25 modifications ou un import de relevé,
 });
 
 test('B8 Ours de l’accueil : humeur selon la fin de mois et le coussin, avec une phrase', async () => {
-  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', data: baseData({ transactions:[tx({ type:'income', amount:100, category:'salaire', date:D('2026-11-02') }), tx({ amount:151, category:'autres_d', date:D('2026-11-03') })] }) });
+  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', data: baseData({ caTracker:{ enabled:true }, transactions:[tx({ type:'income', amount:100, category:'salaire', date:D('2026-11-02') }), tx({ amount:151, category:'autres_d', date:D('2026-11-03') })] }) });
   const { page, errors } = app;
   try{
     const r = await page.evaluate(() => [-51, 0, 300, 500, 900].map(e => [bearMoodFromEnd(e), bearLineFromEnd(e, false)]));
@@ -216,6 +216,18 @@ test('B9 Accueil : toucher la fin de mois affiche le solde d’aujourd’hui, pu
     assert.match(t, /Fin de mois estimée : 700\s€/);                    // − 200 restant dans l'enveloppe
     await page.click('[data-toggle-baltoday]'); await page.waitForTimeout(800);
     assert.match(await txt(), /Fin de mois · estimé 700\s€/);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
+
+test('B10 Ours sans activité suivie (budget d’un enfant) : pas de coussin, il sourit dès qu’on est dans le vert', async () => {
+  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', data: baseData({ transactions:[tx({ type:'income', amount:300, category:'salaire', date:D('2026-11-02') }), tx({ amount:240, category:'autres_d', date:D('2026-11-03') })] }) });
+  const { page, errors } = app;
+  try{
+    const r = await page.evaluate(() => [-20, 60, 250].map(e => [bearMoodFromEnd(e), bearLineFromEnd(e, false)]));
+    assert.deepEqual(r.map(x=>x[0]), ['worried','content','happy']);
+    assert.match(r[1][1], /Dans le vert : \+60\s€ de marge/);
+    assert.doesNotMatch(await page.textContent('.bear-line'), /coussin/);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
