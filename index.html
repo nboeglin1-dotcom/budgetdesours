@@ -242,6 +242,13 @@
   .chart-bar{width:9px; border-radius:3px 3px 0 0; min-height:2px; transition:height .5s cubic-bezier(.22,1,.36,1);}
   .chart-label{font-size:10px; color:var(--paperDim);}
   .trend-curves{margin:2px 0 8px;}
+  .trend-tiles{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:2px 0 10px;}
+  .trend-tile{display:flex; flex-direction:column; align-items:flex-start; background:var(--surfaceHi); border:1.5px solid transparent; border-radius:12px; padding:9px 10px; font:inherit; color:inherit; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent; min-width:0;}
+  .trend-tile.is-view{border-color:var(--gold);}
+  .trend-tile-m{font-size:11.5px; color:var(--paperDim);}
+  .trend-tile.is-view .trend-tile-m{color:var(--paper); font-weight:700;}
+  .trend-tile-v{font-size:14px; font-weight:600; margin-top:3px; white-space:nowrap;}
+  .trend-tile .catbar-track{width:100%; display:block;}
   .trend-months{display:grid; margin-top:6px;}
   .trend-months button{background:none; border:none; padding:4px 0 3px; font:inherit; font-size:11.5px; color:var(--paperDim); cursor:pointer; -webkit-tap-highlight-color:transparent;}
   .trend-months button.is-view{color:var(--paper); font-weight:700; text-decoration:underline; text-decoration-color:var(--gold); text-decoration-thickness:2px; text-underline-offset:4px;}
@@ -3130,41 +3137,16 @@ function renderDashboard(){
 
 // Graphique « Revenus vs depenses — 12 mois » (onglet Transactions). Memes regles que le mois en bref :
 // compte affiche uniquement, epargne exclue, echeances a venir ajoutees pour le mois en cours / a venir.
-// Courbes revenus / depenses des derniers mois (carte Transactions) : deux courbes douces avec un leger degrade,
-// le mois affiche marque d'un trait, ce qui reste a venir en pointille ; toucher un mois pour y aller.
-function trendCurves(months){
-  const W = 340, H = 132, top = 14, bottom = 10, n = months.length;
-  const max = Math.max(1, ...months.map(t=>Math.max(t.inc+t.incPlan, t.exp+t.expPlan)));
-  const x = i => (i + 0.5) * W / n;
-  const y = v => top + (1 - v / max) * (H - top - bottom);
-  // Courbe lissee (Catmull-Rom -> Bezier), qui ne depasse pas les points.
-  const path = pts => pts.map((p, i) => {
-    if(i === 0) return `M${p[0].toFixed(1)},${p[1].toFixed(1)}`;
-    const p0 = pts[i-2] || pts[i-1], p1 = pts[i-1], p2 = p, p3 = pts[i+1] || p;
-    const c1 = [p1[0] + (p2[0]-p0[0])/6, p1[1] + (p2[1]-p0[1])/6], c2 = [p2[0] - (p3[0]-p1[0])/6, p2[1] - (p3[1]-p1[1])/6];
-    return `C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
-  }).join(' ');
-  const series = (key, plan, col, id) => {
-    const pts = months.map((t,i)=>[x(i), y(t[key] + t[plan])]);
-    const d = path(pts);
-    const area = `${d} L${x(n-1).toFixed(1)},${H-bottom} L${x(0).toFixed(1)},${H-bottom} Z`;
-    return `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
-      <path d="${area}" fill="url(#${id})"/>
-      <path d="${d}" fill="none" stroke="${col}" stroke-width="2.4" stroke-linecap="round"/>
-      ${months.map((t,i)=>{ const hasPlan = t[plan] > 0; return `<circle cx="${x(i).toFixed(1)}" cy="${y(t[key]+t[plan]).toFixed(1)}" r="${t.isView ? 4.5 : 3}" fill="${hasPlan ? 'var(--surface)' : col}" stroke="${col}" stroke-width="${hasPlan ? 2 : 0}" ${hasPlan ? 'stroke-dasharray="2 1.6"' : ''}/>`; }).join('')}`;
-  };
-  const vi = months.findIndex(t=>t.isView);
-  return `<div class="trend-curves">
-    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block; overflow:visible;">
-      ${[0.25,0.5,0.75].map(f=>`<line x1="0" x2="${W}" y1="${(top + f*(H-top-bottom)).toFixed(1)}" y2="${(top + f*(H-top-bottom)).toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4"/>`).join('')}
-      ${vi >= 0 ? `<line x1="${x(vi)}" x2="${x(vi)}" y1="4" y2="${H-bottom}" stroke="var(--gold)" stroke-width="1.2" stroke-dasharray="3 3" opacity=".7"/>` : ''}
-      ${series('inc', 'incPlan', 'var(--sage)', 'gInc')}
-      ${series('exp', 'expPlan', 'var(--coral)', 'gExp')}
-    </svg>
-    <div class="trend-months" style="grid-template-columns:repeat(${n},1fr);">
-      ${months.map(t=>`<button type="button" data-trend-month="${t.key}" class="${t.isView ? 'is-view' : ''}" aria-label="Voir ${t.name}">${t.label}</button>`).join('')}
-    </div>
-  </div>`;
+function trendTiles(months){
+  return `<div class="trend-tiles">${months.map(t=>{
+    const inc = t.inc + t.incPlan, exp = t.exp + t.expPlan, net = inc - exp;
+    const pct = inc > 0 ? Math.min(100, Math.round(exp / inc * 100)) : (exp > 0 ? 100 : 0);
+    return `<button type="button" data-trend-month="${t.key}" class="trend-tile${t.isView ? ' is-view' : ''}" aria-label="Voir ${t.name}">
+      <span class="trend-tile-m">${t.label}${(t.incPlan > 0 || t.expPlan > 0) ? ' <span style="color:var(--gold);">·</span>' : ''}</span>
+      <span class="mono trend-tile-v" style="color:${inc+exp===0 ? 'var(--paperDim)' : net >= 0 ? 'var(--sage)' : 'var(--coral)'};">${inc+exp===0 ? '—' : `${net>=0?'+':'−'}${fmt0(Math.abs(net))}`}</span>
+      <span class="catbar-track" style="margin-top:7px; background:color-mix(in srgb, var(--sage) 35%, transparent);"><span class="catbar-fill" style="display:block; width:${pct}%; background:var(--coral);"></span></span>
+    </button>`;
+  }).join('')}</div>`;
 }
 function renderTrendCard(embedded = false){
   if(!embedded && !state.data.dashboardSettings.showTrend) return '';
@@ -3199,13 +3181,13 @@ function renderTrendCard(embedded = false){
   const selView = embedded ? (trend.find(t=>t.isView) || trend[trend.length-1]) : trendView;
   return `
     <div class="${embedded ? 'trend-embedded' : 'card'}">
-      ${embedded ? `<div style="font-size:11.5px; color:var(--paperDim); text-align:center; margin-bottom:8px;">6 derniers mois · touche un mois pour y aller</div>` : `
+      ${embedded ? `<div style="font-size:11.5px; color:var(--paperDim); text-align:center; margin-bottom:8px;">Gagné en plus, mois par mois · touche un mois pour y aller</div>` : `
       <div class="row" style="margin-bottom:2px;">
         <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
         <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
       </div>
       <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · à venir = échéances et reste des enveloppes · touchez un mois pour le détail</div>`}
-      ${embedded ? trendCurves(trend.slice(-6)) : `
+      ${embedded ? trendTiles(trend.slice(-6)) : `
       <div class="trend-scroll">
         <div class="chart-bars">
           ${trend.map(t=>`
@@ -3225,7 +3207,7 @@ function renderTrendCard(embedded = false){
           `).join('')}
         </div>
       </div>`}
-      <div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>
+      ${embedded ? `<div class="legend"><span><span class="dot" style="background:var(--coral)"></span>Dépensé</span><span><span class="dot" style="background:color-mix(in srgb, var(--sage) 55%, transparent)"></span>Reste des revenus</span>${trendHasPlan ? `<span><span style="color:var(--gold); font-weight:700;">·</span> à venir compris</span>` : ''}</div>` : `<div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>`}
       ${(()=>{ const trendView = selView; return `<div class="trend-summary">
         ${embedded ? '' : `<div class="trend-summary-title">${trendView.name}</div>`}
         <div class="row" style="margin-bottom:0;">
@@ -5955,6 +5937,8 @@ function bindEvents(){
   }
 
   fitDashboard();
+  // Au lancement, polices et barres d'iOS se mettent en place apres le premier rendu : on re-mesure.
+  if(!window.__fitBoot){ window.__fitBoot = true; [250, 800, 1600].forEach(ms=>setTimeout(fitDashboard, ms)); if(document.fonts && document.fonts.ready) document.fonts.ready.then(fitDashboard); window.addEventListener('load', fitDashboard); }
   const balEl = document.getElementById('balanceNum');
   if(balEl){
     const f0 = computeForecast();
@@ -6017,6 +6001,8 @@ function bindEvents(){
 }
 
 // Accueil : « Le mois en bref » doit tenir au-dessus de la barre d'onglets ; sinon on resserre en deux crans.
+// Hauteur visible fiable (au lancement, iOS peut annoncer une hauteur trop grande pendant un instant).
+function viewH(){ return Math.min(window.innerHeight, document.documentElement.clientHeight || 1e9, (window.visualViewport && window.visualViewport.height) || 1e9); }
 function fitDashboard(){
   const page = document.querySelector('#app .page');
   if(!page || state.tab !== 'dashboard') return;
@@ -6030,7 +6016,7 @@ function fitDashboard(){
     if(!t || !tb) return;
     const cards = [...page.querySelectorAll(':scope > .card')];
     const bref = t.closest('.card');
-    const spare = window.innerHeight - tb.offsetHeight - 10 - (bref.getBoundingClientRect().bottom + window.scrollY);
+    const spare = viewH() - tb.offsetHeight - 10 - (bref.getBoundingClientRect().bottom + window.scrollY);
     if(spare <= 12 || cards.length < 2) return;
     const add = Math.min(40, spare / cards.length);
     cards.slice(0, -1).forEach(c=>{ c.style.marginBottom = (parseFloat(getComputedStyle(c).marginBottom) + add) + 'px'; });
@@ -6040,7 +6026,7 @@ function fitDashboard(){
     if(!t || !tb) return true;
     const card = t.closest('.card');
     // En coordonnees de page (la barre d'onglets est fixe en bas de l'ecran).
-    return card.getBoundingClientRect().bottom + window.scrollY <= window.innerHeight - tb.offsetHeight - 6;
+    return card.getBoundingClientRect().bottom + window.scrollY <= viewH() - tb.offsetHeight - 6;
   };
   if(fits()) return pushBelow();
   page.classList.add('dash-tight');
@@ -6086,6 +6072,7 @@ function animateBalance(el, target){
     h.classList.toggle('kb-open', window.innerHeight - vv.height > 120);
   };
   window.visualViewport.addEventListener('resize', setVVH);
+  window.visualViewport.addEventListener('resize', ()=>{ clearTimeout(window.__fitT); window.__fitT = setTimeout(fitDashboard, 120); });
   window.visualViewport.addEventListener('scroll', setVVH);
   setVVH();
   // Page fixe : on empeche de faire glisser la page elle-meme (rebond iOS), sauf dans une zone qui defile.
