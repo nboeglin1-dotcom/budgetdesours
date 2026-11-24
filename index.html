@@ -283,6 +283,10 @@
   .trend-embedded{flex:1; display:flex; flex-direction:column;}
   .trend-embedded .trend-rows{flex:1; display:flex; flex-direction:column; padding-top:6px;}
   .trend-embedded .trend-list{flex:1; display:flex; flex-direction:column; justify-content:space-evenly;}
+  .trend-month{display:block; width:100%; text-align:left; background:none; border:none; padding:4px 0; color:var(--paper);}
+  .trend-line{display:grid; grid-template-columns:62px 1fr 68px; align-items:center; gap:8px; margin:5px 0 0 14px;}
+  .trend-lab{font-size:11px; color:var(--paperDim);}
+  .trend-val{font-size:12.5px; font-weight:600; text-align:right;}
   .trend-embedded .chart-bars{height:180px; margin:0 auto;}
   .trend-embedded .chart-bars-pair{height:140px;}
   .trend-embedded .legend{justify-content:center;}
@@ -3205,16 +3209,21 @@ function lineRow({ name, dot, dotAttr = '', bold = false, extra = '', pct = 0, b
 }
 // Les derniers mois presentes comme « Mes enveloppes » : nom du mois, jauge depenses / revenus, gagne a droite.
 function trendRows(months){
+  // Deux lignes par mois : revenus (vert) et depenses (rouge), barres a la meme echelle pour tous les mois.
+  const max = Math.max(1, ...months.map(t=>Math.max(t.inc + t.incPlan, t.exp + t.expPlan)));
+  const line = (label, v, color) => `<div class="trend-line"><span class="trend-lab">${label}</span><div class="env-track" style="margin:0;"><div class="catbar-fill" style="width:${(v/max*100).toFixed(1)}%; background:${color};"></div></div><span class="mono trend-val" style="color:${v ? color : 'var(--paperDim)'};">${v ? fmt0(v) : '—'}</span></div>`;
   return `<div class="trend-rows">
     <div class="row" style="margin:0 0 6px; font-size:12px; color:var(--paperDim);"><span>Derniers mois</span><span>Gagné</span></div>
     <div class="trend-list">${months.slice().reverse().map(t=>{
       const inc = t.inc + t.incPlan, exp = t.exp + t.expPlan, net = inc - exp;
-      const pct = inc > 0 ? Math.round(exp / inc * 100) : (exp > 0 ? 100 : 0);
-      return lineRow({ name: t.name, dot: t.isView ? 'var(--gold)' : 'var(--line)', bold: t.isView,
-        extra: (t.incPlan>0||t.expPlan>0) ? '<span style="color:var(--paperDim); font-size:11px;">· estimé</span>' : '',
-        pct, bar: net >= 0 ? 'var(--sage)' : 'var(--coral)',
-        value: inc+exp===0 ? '—' : `${net>=0?'+':'−'}${fmt0(Math.abs(net))}`, valueColor: inc+exp===0 ? 'var(--paperDim)' : net >= 0 ? 'var(--mint)' : 'var(--coral)',
-        action: `data-trend-month="${t.key}" aria-label="Voir ${t.name}"` });
+      return `<button class="trend-month env-item" data-trend-month="${t.key}" aria-label="Voir ${t.name}">
+        <div class="row" style="margin:0; flex-wrap:nowrap;">
+          <span class="env-name"><span class="env-dot" style="background:${t.isView ? 'var(--gold)' : 'var(--line)'};"></span><span style="${t.isView ? 'font-weight:700;' : ''}">${t.name}</span>${(t.incPlan>0||t.expPlan>0) ? '<span style="color:var(--paperDim); font-size:11px;">· estimé</span>' : ''}</span>
+          <span class="mono" style="font-size:13.5px; font-weight:700; color:${inc+exp===0 ? 'var(--paperDim)' : net >= 0 ? 'var(--mint)' : 'var(--coral)'};">${inc+exp===0 ? '—' : `${net>=0?'+':'−'}${fmt0(Math.abs(net))}`}</span>
+        </div>
+        ${line('Revenus', inc, 'var(--sage)')}
+        ${line('Dépenses', exp, 'var(--coral)')}
+      </button>`;
     }).join('')}</div>
   </div>`;
 }
@@ -3277,7 +3286,7 @@ function renderTrendCard(embedded = false){
           `).join('')}
         </div>
       </div>`}
-      ${embedded ? `<div style="font-size:11px; color:var(--paperDim); text-align:center; margin-top:2px;">Jauge : part des revenus dépensée · touche un mois pour y aller</div>` : `<div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>`}
+      ${embedded ? `<div style="font-size:11px; color:var(--paperDim); text-align:center; margin-top:2px;">Touche un mois pour y aller</div>` : `<div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>`}
       ${embedded ? '' : (()=>{ const trendView = selView; return `<div class="trend-summary">
         ${embedded ? '' : `<div class="trend-summary-title">${trendView.name}</div>`}
         <div class="row" style="margin-bottom:0;">
