@@ -238,3 +238,18 @@ test('G11 Arrondis supprimés avant le rattachement : les deux échéances (15 e
     assert.deepEqual(app.errors, []);
   } finally { await app.close(); }
 });
+
+test('G12 Chiffre d’affaires : pastille de couleur comme un objectif, la couleur se change et colore la barre', async () => {
+  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', storage:{ 'solde-ui-prefs':'{}' }, data: baseData({
+    caTracker:{ months:{ '2026-11':3000 } }, goals:[{ id:'g1', name:'Pérou', target:10000, current:1515, color:'#6FA287', accountId:'main' }] }) });
+  const { page, errors } = app;
+  try{
+    await page.click('[data-tab="goals"]');
+    await page.click('[data-cacolor-open]');
+    await page.click('[data-cacolor-set="#8B7FD6"]');
+    assert.equal(await page.evaluate(() => state.data.caTracker.color), '#8B7FD6');
+    const bar = await page.evaluate(() => getComputedStyle(document.querySelector('.goals-total-card .catbar-fill')).backgroundColor);
+    assert.equal(bar, 'rgb(139, 127, 214)');
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

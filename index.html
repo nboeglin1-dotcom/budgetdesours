@@ -720,6 +720,7 @@ function normalizeData(parsed){
       if(!ctx.surplusPaid || typeof ctx.surplusPaid !== 'object' || Array.isArray(ctx.surplusPaid)) ctx.surplusPaid = {};
       // Coussin du commun : ce qu'on garde sur le commun en fin de mois ; au-dessus, c'est le surplus du 5.
       if(!(Number(ctx.communCushion) >= 0)) ctx.communCushion = 500;
+      if(ctx.color !== undefined && !(typeof ctx.color==='string' && /^#[0-9a-fA-F]{3,8}$/.test(ctx.color))) delete ctx.color;
       // Liste « Le 5 » : etapes cochees par mois de virement (AAAA-MM) : { update, transfers, skip }.
       if(!ctx.day5 || typeof ctx.day5 !== 'object' || Array.isArray(ctx.day5)) ctx.day5 = {};
       if(typeof ctx.augustReserveFrom !== 'string' || !/^\d{4}-\d{2}$/.test(ctx.augustReserveFrom)) ctx.augustReserveFrom = '2027-01';
@@ -3856,7 +3857,7 @@ function renderCaCard(){
         <div class="mono" style="font-size:26px; font-weight:700; color:${s.has?'var(--paper)':'var(--paperDim)'};">${fmt0(s.ca)}</div>
         <div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(s.target)}</div>
       </div>
-      <div class="catbar-track" style="margin:6px 0 10px;"><div class="catbar-fill" style="width:${pct}%; background:var(--gold);"></div></div>
+      <div class="catbar-track" style="margin:6px 0 10px;"><div class="catbar-fill" style="width:${pct}%; background:${ct.color || COLORS.gold};"></div></div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
         ${perDayTile}
         ${caTile('Skoot', fmt0(s.payout), 'var(--paper)', `début ${MONTHS_SHORT[(m+1)%12].toLowerCase()}.`)}
@@ -3955,6 +3956,8 @@ function renderGoals(){
   const act = hasCaActivity();
   const ca = act ? caMonthStatus(state.viewY, state.viewM) : null;
   const caPct = ca && ca.target > 0 ? Math.min(100, Math.round(ca.ca / ca.target * 100)) : 0;
+  // Couleur du chiffre d'affaires (pastille et barre), modifiable comme celle d'un objectif.
+  const caCol = (state.data.caTracker && state.data.caTracker.color) || COLORS.gold;
   // Surplus : ce que le virement du 5 apporte au commun au-dela de son besoin du mois (reglage « Besoin du commun »).
   // Calcule sur les vrais virements (solde Shine saisi), sinon pas d'encadre.
   const ctr = state.data.caTracker || {};
@@ -3985,9 +3988,10 @@ function renderGoals(){
       <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:22px; padding:14px 0 4px;">
       <div>
       ${act ? `
-      <div class="row" style="margin:0; flex-wrap:nowrap; font-size:12px; color:var(--paperDim);"><span>Chiffre d'affaires</span><span>${ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint · +${fmt0(ca.ca - ca.target)}</span>` : ca.when==='past' ? `<span style="color:var(--coral);">Manqué : ${fmt0(ca.remaining)}</span>` : `Reste ${fmt0(ca.remaining)}`}</span></div>
+      <div class="row" style="margin:0; flex-wrap:nowrap; font-size:13.5px; color:var(--paper);"><span style="display:flex; align-items:center; gap:8px;"><button data-cacolor-open="1" aria-label="Changer la couleur du chiffre d'affaires" style="width:12px; height:12px; border-radius:50%; background:${caCol}; border:none; padding:0; flex-shrink:0;"></button>Chiffre d'affaires</span><span style="font-size:12px; color:var(--paperDim);">${ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint · +${fmt0(ca.ca - ca.target)}</span>` : ca.when==='past' ? `<span style="color:var(--coral);">Manqué : ${fmt0(ca.remaining)}</span>` : `Reste ${fmt0(ca.remaining)}`}</span></div>
       <div class="row" style="align-items:baseline; margin:2px 0 0;"><div class="mono" style="font-size:26px; font-weight:700; color:${ca.has ? 'var(--paper)' : 'var(--paperDim)'};">${fmt0(ca.ca)}</div><div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(ca.target)}</div></div>
-      <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${caPct}%; background:var(--gold);"></div></div>` : ''}
+      <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${caPct}%; background:${caCol};"></div></div>
+      ${state.caColorOpen ? `<div class="color-row" style="margin:10px 0 0;">${GOAL_PALETTE.map(c=>`<button data-cacolor-set="${c}" class="color-swatch" aria-label="Couleur" style="background:${c}; outline:${caCol.toLowerCase()===c.toLowerCase()?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>` : ''}` : ''}
       ${(act || goals.length) ? `
       <div style="display:grid; grid-template-columns:repeat(${act ? 3 : 2},1fr); gap:8px; margin-top:${act ? 14 : 0}px;">
         ${act ? (paidSurplus
@@ -5163,6 +5167,8 @@ function bindEvents(){
     setState({ tab:'goals', viewY: py, viewM: pm });
     jumpToTop();
   }));
+  app.querySelectorAll('[data-cacolor-open]').forEach(el=>el.addEventListener('click', ()=>{ const y = window.scrollY; setState({ caColorOpen: !state.caColorOpen }); restoreScroll(y); }));
+  app.querySelectorAll('[data-cacolor-set]').forEach(el=>el.addEventListener('click', ()=>{ const y = window.scrollY; mutateData(d=>{ d.caTracker.color = el.dataset.cacolorSet; }); setState({ caColorOpen:false }); restoreScroll(y); }));
   app.querySelectorAll('[data-goalcolor-open]').forEach(el=>el.addEventListener('click', ()=>{ const y = window.scrollY; setState({ goalColorOpen: state.goalColorOpen===el.dataset.goalcolorOpen ? null : el.dataset.goalcolorOpen }); restoreScroll(y); }));
   app.querySelectorAll('[data-goalcolor-set]').forEach(el=>el.addEventListener('click', ()=>{
     const y = window.scrollY;
