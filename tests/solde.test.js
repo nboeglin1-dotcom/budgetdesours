@@ -1295,9 +1295,9 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.deepEqual(errors, []);
     }));
 
-  test('A3 Le graphique 12 mois est dans l’onglet Transactions, plus sur l’accueil', () =>
+  test('A3 Le graphique des mois (barres horizontales) est dans l’onglet Transactions, plus sur l’accueil', () =>
     withApp({ now:NOW, data: data() }, async ({ page }) => {
-      const r = await page.evaluate(() => ({ dash: renderDashboard().includes('trend-scroll'), tx: renderTransactions().includes('trend-scroll') }));
+      const r = await page.evaluate(() => ({ dash: /trend-scroll|hbars/.test(renderDashboard()), tx: renderTransactions().includes('class="hbars"') }));   // barres horizontales depuis le 24/11/2026
       assert.equal(r.dash, false);
       assert.equal(r.tx, true);
     }));

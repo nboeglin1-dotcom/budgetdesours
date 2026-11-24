@@ -239,6 +239,15 @@
   .chart-bars-pair{display:flex; align-items:flex-end; gap:3px; width:100%; height:110px; justify-content:center;}
   .chart-bar{width:9px; border-radius:3px 3px 0 0; min-height:2px; transition:height .5s cubic-bezier(.22,1,.36,1);}
   .chart-label{font-size:10px; color:var(--paperDim);}
+  /* Graphique horizontal (carte Transactions) : un mois par ligne, revenus puis depenses. */
+  .hbars{display:flex; flex-direction:column; gap:14px; margin:6px 0 14px;}
+  .hbar-row{display:grid; grid-template-columns:38px 1fr; align-items:center; gap:10px; width:100%; background:none; border:none; padding:2px 0; font:inherit; color:inherit; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .hbar-label{font-size:12px; color:var(--paperDim); border-bottom:2px solid transparent; justify-self:start; padding-bottom:1px;}
+  .hbar-row.is-view .hbar-label{color:var(--paper); font-weight:700; border-bottom-color:var(--gold);}
+  .hbar-pair{display:flex; flex-direction:column; gap:3px;}
+  .hbar-line{display:flex; height:10px;}
+  .hbar{height:10px; border-radius:5px;}
+  .hbar-plan{height:10px; border-radius:0 5px 5px 0; border:1.5px dashed var(--c); border-left:none; background:repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--c) 35%, transparent) 3px 5px); box-sizing:border-box;}
   .chart-stack{display:flex; flex-direction:column; justify-content:flex-end; width:9px;}
   .chart-bar-plan{width:9px; border-radius:3px 3px 0 0; border:1.5px dashed var(--c); border-bottom:none; background:repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--c) 35%, transparent) 3px 5px); box-sizing:border-box;}
   button.chart-col{background:none; border:none; padding:0; font:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;}
@@ -3161,12 +3170,23 @@ function renderTrendCard(embedded = false){
   const selView = embedded ? (trend.find(t=>t.isView) || trend[trend.length-1]) : trendView;
   return `
     <div class="${embedded ? 'trend-embedded' : 'card'}">
-      ${embedded ? `<div style="font-size:11.5px; color:var(--paperDim); text-align:center; margin-bottom:6px;">12 derniers mois · touche un mois pour y aller</div>` : `
+      ${embedded ? `<div style="font-size:11.5px; color:var(--paperDim); text-align:center; margin-bottom:8px;">6 derniers mois · touche un mois pour y aller</div>` : `
       <div class="row" style="margin-bottom:2px;">
         <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
         <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
       </div>
       <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · à venir = échéances et reste des enveloppes · touchez un mois pour le détail</div>`}
+      ${embedded ? `
+      <div class="hbars">
+        ${trend.slice(-6).map(t=>{
+          const w = v => (v/maxTrend*100).toFixed(1);
+          const bar = (real, plan, col) => `<div class="hbar-line"><div class="hbar" style="width:${Math.max(real>0?1.5:0, +w(real))}%; background:${col};${plan>0?' border-radius:4px 0 0 4px;':''}"></div>${plan>0 ? `<div class="hbar-plan" style="width:${w(plan)}%; --c:${col};"></div>` : ''}</div>`;
+          return `<button type="button" data-trend-month="${t.key}" class="hbar-row${t.isView?' is-view':''}" aria-label="Voir ${t.name}">
+            <span class="hbar-label">${t.label}</span>
+            <span class="hbar-pair">${bar(t.inc, t.incPlan, 'var(--sage)')}${bar(t.exp, t.expPlan, 'var(--coral)')}</span>
+          </button>`;
+        }).join('')}
+      </div>` : `
       <div class="trend-scroll">
         <div class="chart-bars">
           ${trend.map(t=>`
@@ -3185,7 +3205,7 @@ function renderTrendCard(embedded = false){
             </button>
           `).join('')}
         </div>
-      </div>
+      </div>`}
       <div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>
       ${(()=>{ const trendView = selView; return `<div class="trend-summary">
         ${embedded ? '' : `<div class="trend-summary-title">${trendView.name}</div>`}
