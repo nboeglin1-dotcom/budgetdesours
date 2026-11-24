@@ -36,6 +36,8 @@
   html,body{margin:0; padding:0; background:var(--bg); color:var(--paper); font-family:'Inter',sans-serif;
     -webkit-font-smoothing:antialiased; overscroll-behavior-y:none;}
   body{padding-bottom:env(safe-area-inset-bottom);}
+  /* Chaque onglet est une page fixe : rien ne defile, sauf a l'interieur des fenetres (feuilles, modales). */
+  html, body{height:100%; overflow:hidden; overscroll-behavior:none;}
   .fab-add{position:fixed; right:18px; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:29; width:52px; height:52px; border-radius:50%; background:var(--gold); color:var(--ink); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(0,0,0,.28); transition:transform .12s ease;}
   .fab-add:active{transform:scale(.92);}
   .ledger{font-family:'Fraunces',serif;}
@@ -239,7 +241,11 @@
   .chart-bars-pair{display:flex; align-items:flex-end; gap:3px; width:100%; height:110px; justify-content:center;}
   .chart-bar{width:9px; border-radius:3px 3px 0 0; min-height:2px; transition:height .5s cubic-bezier(.22,1,.36,1);}
   .chart-label{font-size:10px; color:var(--paperDim);}
-  /* Graphique horizontal (carte Transactions) : un mois par ligne, revenus puis depenses. */
+  .trend-curves{margin:2px 0 8px;}
+  .trend-months{display:grid; margin-top:6px;}
+  .trend-months button{background:none; border:none; padding:4px 0 3px; font:inherit; font-size:11.5px; color:var(--paperDim); cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .trend-months button.is-view{color:var(--paper); font-weight:700; text-decoration:underline; text-decoration-color:var(--gold); text-decoration-thickness:2px; text-underline-offset:4px;}
+  /* (ancien) Graphique horizontal. */
   .hbars{display:flex; flex-direction:column; gap:14px; margin:6px 0 14px;}
   .hbar-row{display:grid; grid-template-columns:38px 1fr; align-items:center; gap:10px; width:100%; background:none; border:none; padding:2px 0; font:inherit; color:inherit; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent;}
   .hbar-label{font-size:12px; color:var(--paperDim); border-bottom:2px solid transparent; justify-self:start; padding-bottom:1px;}
@@ -2215,22 +2221,10 @@ function renderBackupModal(){
         </div>
 
         ${backupSectionHeader('chartbar', 'Tableau de bord')}
-        <div class="field-label" style="margin-bottom:10px;">Cartes affichées sur l'accueil</div>
-        <div class="row" style="margin-bottom:10px;">
-          <span style="font-size:13px;">Répartition des dépenses</span>
-          <button data-toggle-card="showBreakdown" class="toggle-switch ${state.data.dashboardSettings.showBreakdown?'on':''}">${state.data.dashboardSettings.showBreakdown?'Visible':'Masquée'}</button>
-        </div>
+        <div class="field-label" style="margin-bottom:10px;">L'accueil est une page fixe : fin de mois, enveloppes et mois en bref.</div>
         <div class="row" style="margin-bottom:10px;">
           <span style="font-size:13px;">Revenus vs dépenses <span style="color:var(--paperDim);">(onglet Transactions)</span></span>
           <button data-toggle-card="showTrend" class="toggle-switch ${state.data.dashboardSettings.showTrend?'on':''}">${state.data.dashboardSettings.showTrend?'Visible':'Masquée'}</button>
-        </div>
-        <div class="row" style="margin-bottom:10px;">
-          <span style="font-size:13px;">Mes objectifs</span>
-          <button data-toggle-card="showGoals" class="toggle-switch ${state.data.dashboardSettings.showGoals?'on':''}">${state.data.dashboardSettings.showGoals?'Visible':'Masquée'}</button>
-        </div>
-        <div class="row" style="margin-bottom:10px;">
-          <span style="font-size:13px;">Prévisionnel</span>
-          <button data-toggle-card="showForecast" class="toggle-switch ${state.data.dashboardSettings.showForecast?'on':''}">${state.data.dashboardSettings.showForecast?'Visible':'Masquée'}</button>
         </div>
         </div>` : ''}
       </div>
@@ -3071,9 +3065,8 @@ function renderDashboard(){
       <div data-month-start style="font-size:12px; color:var(--paperDim); margin-top:10px;">Solde au 1er ${MONTHS[state.viewM].toLowerCase()} : <span class="mono" style="color:${stats.startBal<0?'var(--coral)':'var(--paper)'};">${fmt0(stats.startBal)}</span>${Math.abs(stats.adjustments)>=0.5 ? ` · ajustements <span class="mono">${stats.adjustments>0?'+':'−'}${fmt0(Math.abs(stats.adjustments))}</span>` : ''}</div>
     </div>
 
-    ${renderForecastCard(f)}
 
-    ${goals.length && state.data.dashboardSettings.showGoals ? `
+    ${false && goals.length && state.data.dashboardSettings.showGoals ? `
     <div class="card">
       <div class="row" style="margin-bottom:6px;">
         <div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div>
@@ -3111,7 +3104,7 @@ function renderDashboard(){
         <button data-open-transfer="1" class="btn-ghost" style="width:100%; justify-content:center; margin-top:10px;">${icon('repeat',13)} Virement entre comptes</button>
       </div>
     ` : ''}
-    ${state.data.dashboardSettings.showBreakdown ? `
+    ${false && state.data.dashboardSettings.showBreakdown ? `
     <div class="card">
       <div class="row" style="margin-bottom:12px;">
         <div class="section-title" style="margin:0; font-size:15px;">Répartition des dépenses${usingEstimate ? ` <span style="color:var(--gold); font-size:12px; font-weight:500;">· estimée</span>` : ''}</div>
@@ -3137,6 +3130,42 @@ function renderDashboard(){
 
 // Graphique « Revenus vs depenses — 12 mois » (onglet Transactions). Memes regles que le mois en bref :
 // compte affiche uniquement, epargne exclue, echeances a venir ajoutees pour le mois en cours / a venir.
+// Courbes revenus / depenses des derniers mois (carte Transactions) : deux courbes douces avec un leger degrade,
+// le mois affiche marque d'un trait, ce qui reste a venir en pointille ; toucher un mois pour y aller.
+function trendCurves(months){
+  const W = 340, H = 132, top = 14, bottom = 10, n = months.length;
+  const max = Math.max(1, ...months.map(t=>Math.max(t.inc+t.incPlan, t.exp+t.expPlan)));
+  const x = i => (i + 0.5) * W / n;
+  const y = v => top + (1 - v / max) * (H - top - bottom);
+  // Courbe lissee (Catmull-Rom -> Bezier), qui ne depasse pas les points.
+  const path = pts => pts.map((p, i) => {
+    if(i === 0) return `M${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+    const p0 = pts[i-2] || pts[i-1], p1 = pts[i-1], p2 = p, p3 = pts[i+1] || p;
+    const c1 = [p1[0] + (p2[0]-p0[0])/6, p1[1] + (p2[1]-p0[1])/6], c2 = [p2[0] - (p3[0]-p1[0])/6, p2[1] - (p3[1]-p1[1])/6];
+    return `C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }).join(' ');
+  const series = (key, plan, col, id) => {
+    const pts = months.map((t,i)=>[x(i), y(t[key] + t[plan])]);
+    const d = path(pts);
+    const area = `${d} L${x(n-1).toFixed(1)},${H-bottom} L${x(0).toFixed(1)},${H-bottom} Z`;
+    return `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+      <path d="${area}" fill="url(#${id})"/>
+      <path d="${d}" fill="none" stroke="${col}" stroke-width="2.4" stroke-linecap="round"/>
+      ${months.map((t,i)=>{ const hasPlan = t[plan] > 0; return `<circle cx="${x(i).toFixed(1)}" cy="${y(t[key]+t[plan]).toFixed(1)}" r="${t.isView ? 4.5 : 3}" fill="${hasPlan ? 'var(--surface)' : col}" stroke="${col}" stroke-width="${hasPlan ? 2 : 0}" ${hasPlan ? 'stroke-dasharray="2 1.6"' : ''}/>`; }).join('')}`;
+  };
+  const vi = months.findIndex(t=>t.isView);
+  return `<div class="trend-curves">
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block; overflow:visible;">
+      ${[0.25,0.5,0.75].map(f=>`<line x1="0" x2="${W}" y1="${(top + f*(H-top-bottom)).toFixed(1)}" y2="${(top + f*(H-top-bottom)).toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 4"/>`).join('')}
+      ${vi >= 0 ? `<line x1="${x(vi)}" x2="${x(vi)}" y1="4" y2="${H-bottom}" stroke="var(--gold)" stroke-width="1.2" stroke-dasharray="3 3" opacity=".7"/>` : ''}
+      ${series('inc', 'incPlan', 'var(--sage)', 'gInc')}
+      ${series('exp', 'expPlan', 'var(--coral)', 'gExp')}
+    </svg>
+    <div class="trend-months" style="grid-template-columns:repeat(${n},1fr);">
+      ${months.map(t=>`<button type="button" data-trend-month="${t.key}" class="${t.isView ? 'is-view' : ''}" aria-label="Voir ${t.name}">${t.label}</button>`).join('')}
+    </div>
+  </div>`;
+}
 function renderTrendCard(embedded = false){
   if(!embedded && !state.data.dashboardSettings.showTrend) return '';
   const H = embedded ? 130 : 100;   // hauteur max des barres (plus grandes dans la carte Transactions)
@@ -3176,17 +3205,7 @@ function renderTrendCard(embedded = false){
         <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
       </div>
       <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · à venir = échéances et reste des enveloppes · touchez un mois pour le détail</div>`}
-      ${embedded ? `
-      <div class="hbars">
-        ${trend.slice(-6).map(t=>{
-          const w = v => (v/maxTrend*100).toFixed(1);
-          const bar = (real, plan, col) => `<div class="hbar-line"><div class="hbar" style="width:${Math.max(real>0?1.5:0, +w(real))}%; background:${col};${plan>0?' border-radius:4px 0 0 4px;':''}"></div>${plan>0 ? `<div class="hbar-plan" style="width:${w(plan)}%; --c:${col};"></div>` : ''}</div>`;
-          return `<button type="button" data-trend-month="${t.key}" class="hbar-row${t.isView?' is-view':''}" aria-label="Voir ${t.name}">
-            <span class="hbar-label">${t.label}</span>
-            <span class="hbar-pair">${bar(t.inc, t.incPlan, 'var(--sage)')}${bar(t.exp, t.expPlan, 'var(--coral)')}</span>
-          </button>`;
-        }).join('')}
-      </div>` : `
+      ${embedded ? trendCurves(trend.slice(-6)) : `
       <div class="trend-scroll">
         <div class="chart-bars">
           ${trend.map(t=>`
@@ -6002,17 +6021,19 @@ function fitDashboard(){
   const page = document.querySelector('#app .page');
   if(!page || state.tab !== 'dashboard') return;
   page.classList.remove('dash-tight', 'dash-tighter');
+  page.querySelectorAll(':scope > .card').forEach(c=>{ c.style.marginBottom = ''; });
   // Les cartes suivantes (ex. « Mes objectifs ») ne doivent pas depasser sous la carte : elles commencent
   // sous la barre d'onglets et n'apparaissent qu'en faisant defiler.
+  // Page fixe : s'il reste de la place sous « Le mois en bref », on l'etale entre les cartes (espaces egaux).
   const pushBelow = () => {
     const t = document.querySelector('[data-bref-title]'); const tb = document.querySelector('.tabbar');
     if(!t || !tb) return;
-    const card = t.closest('.card');
-    if(!card.nextElementSibling) return;
-    card.style.marginBottom = '';
-    const next = card.nextElementSibling.getBoundingClientRect().top + window.scrollY;
-    const limit = window.innerHeight - tb.offsetHeight;
-    if(next < limit) card.style.marginBottom = (14 + limit - next + 12) + 'px';
+    const cards = [...page.querySelectorAll(':scope > .card')];
+    const bref = t.closest('.card');
+    const spare = window.innerHeight - tb.offsetHeight - 10 - (bref.getBoundingClientRect().bottom + window.scrollY);
+    if(spare <= 12 || cards.length < 2) return;
+    const add = Math.min(40, spare / cards.length);
+    cards.slice(0, -1).forEach(c=>{ c.style.marginBottom = (parseFloat(getComputedStyle(c).marginBottom) + add) + 'px'; });
   };
   const fits = () => {
     const t = document.querySelector('[data-bref-title]'); const tb = document.querySelector('.tabbar');
@@ -6067,6 +6088,18 @@ function animateBalance(el, target){
   window.visualViewport.addEventListener('resize', setVVH);
   window.visualViewport.addEventListener('scroll', setVVH);
   setVVH();
+  // Page fixe : on empeche de faire glisser la page elle-meme (rebond iOS), sauf dans une zone qui defile.
+  document.addEventListener('touchmove', (e)=>{
+    let el = e.target;
+    while(el && el !== document.body){
+      if(el.classList && (el.classList.contains('modal-sheet') || el.classList.contains('trend-scroll'))) return;
+      const st = getComputedStyle(el);
+      if(/(auto|scroll)/.test(st.overflowY) && el.scrollHeight > el.clientHeight) return;
+      if(/(auto|scroll)/.test(st.overflowX) && el.scrollWidth > el.clientWidth) return;
+      el = el.parentElement;
+    }
+    e.preventDefault();
+  }, { passive:false });
   // Champ d'une fenetre de saisie : une fois le clavier sorti, on le ramene dans la partie visible.
   document.addEventListener('focusin', (e)=>{
     const el = e.target;

@@ -71,9 +71,7 @@ test('T3 Onglet Accueil : revient toujours au mois en cours, en haut, enveloppes
     transactions:[{ id:'e1', type:'expense', amount:200, category:'alimentation', note:'', accountId:'main', date:D('2026-11-05') }] }) });
   const { page, errors } = app;
   try{
-    await page.evaluate(() => { state.viewY = 2027; state.viewM = 2; state.envOpen = 'alimentation'; rerender(); window.scrollTo(0, 400); });
-    await page.waitForTimeout(900);
-    assert.ok(await page.evaluate(() => window.scrollY) > 0);            // on part bien d'une page défilée
+    await page.evaluate(() => { state.viewY = 2027; state.viewM = 2; state.envOpen = 'alimentation'; rerender(); });
     await page.click('.tabbar [data-tab="dashboard"]');                 // déjà sur l'accueil
     await page.waitForTimeout(50);
     let st = await page.evaluate(() => ({ y: state.viewY, m: state.viewM, env: state.envOpen, sy: window.scrollY }));
@@ -87,15 +85,13 @@ test('T3 Onglet Accueil : revient toujours au mois en cours, en haut, enveloppes
   } finally { await app.close(); }
 });
 
-test('T4 Ajout depuis une enveloppe de l’accueil : la page revient où elle était', async () => {
+test('T4 Ajout depuis une enveloppe de l’accueil : la page reste en place', async () => {
   const many = Array.from({length:8}, (_,i)=>({ id:'x'+i, type:'expense', amount:10, category:'alimentation', note:'', accountId:'main', date:D('2026-11-0'+(i+1)) }));
   const app = await openApp({ now:'2026-11-21T10:00:00+01:00', data: baseData({ budgets:{ alimentation:600, loisirs:100, transport:100, sante:100, shopping:100 }, lastRolloverCheck:'2026-10', transactions: many }) });
   const { page, errors } = app;
   try{
     await page.setViewportSize({ width:390, height:600 });
-    await page.evaluate(() => { document.documentElement.style.scrollBehavior='auto'; window.scrollTo(0, 250); });
-    const y0 = await page.evaluate(() => window.scrollY);
-    assert.ok(y0 > 100);
+    const y0 = 0;                                                     // page fixe : rien ne défile
     await page.evaluate(() => document.querySelector('[data-envelopes] .env-main[data-quick-tx-cat="alimentation"]').click());
     await page.evaluate(() => window.scrollTo(0, 0));                 // le clavier décale la page
     await page.fill('#quickTxAmount', '12');
@@ -150,15 +146,15 @@ test('T6 Accueil : changer de mois (flèches, Aujourd’hui) remet la page en ha
   try{
     await page.setViewportSize({ width:390, height:600 });
     for(const sel of ['[data-move="1"]', '[data-move="-1"]', '[data-goto-today]']){
-      await page.evaluate(() => { state.envOpen = 'alimentation'; rerender(); document.documentElement.style.scrollBehavior='auto'; window.scrollTo(0, 500); });
-      assert.ok(await page.evaluate(() => window.scrollY) > 0);
-      if(sel === '[data-goto-today]') await page.evaluate(() => { state.viewM = 0; state.viewY = 2027; rerender(); window.scrollTo(0, 500); });
+      await page.evaluate(() => { state.envOpen = 'alimentation'; rerender(); });
+      if(sel === '[data-goto-today]') await page.evaluate(() => { state.viewM = 0; state.viewY = 2027; rerender(); });
       await page.click(sel);
       await page.waitForTimeout(80);
       assert.deepEqual(await page.evaluate(() => ({ sy: window.scrollY, env: state.envOpen })), { sy:0, env:null }, sel);
     }
     // Mois futur : « tout à venir » sur une ligne, pour que « Le mois en bref » garde la même hauteur
     const brefH = () => page.evaluate(() => { const c=[...document.querySelectorAll('.card')].find(c=>/Le mois en bref/.test(c.innerText)); return [Math.round(c.getBoundingClientRect().height), c.innerText]; });
+    await page.setViewportSize({ width:430, height:1100 }); await page.evaluate(() => rerender());   // assez haut pour ne pas resserrer
     const [hNow] = await brefH();
     await page.click('[data-move="1"]');
     const [hNext, txt] = await brefH();

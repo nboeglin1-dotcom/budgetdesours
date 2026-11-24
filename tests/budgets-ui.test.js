@@ -246,15 +246,22 @@ test('B11 Accueil : sur un écran court, les cartes se resserrent pour que « Le
   } finally { await app.close(); }
 });
 
-test('B12 Accueil : « Mes objectifs » ne dépasse pas sous « Le mois en bref », on la voit en faisant défiler', async () => {
-  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', data: baseData({ budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10',
+test('B12 Pages fixes : aucun onglet ne défile, tout tient au-dessus de la barre d’onglets', async () => {
+  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', storage:{ 'solde-ui-prefs':'{}' }, data: baseData({ budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10',
     goals:[{ id:'g1', name:'Pérou', target:10000, current:1500, color:'#6FA287', accountId:'main' }],
     transactions:[tx({ type:'income', amount:2000, category:'salaire', date:D('2026-11-02') })] }) });
   const { page, errors } = app;
   try{
-    await page.setViewportSize({ width:430, height:932 }); await page.evaluate(() => rerender()); await page.waitForTimeout(150);
-    const r = await page.evaluate(() => { const c = document.querySelector('[data-bref-title]').closest('.card'); const n = c.nextElementSibling; return { next: n ? n.getBoundingClientRect().top : 9999, tab: document.querySelector('.tabbar').getBoundingClientRect().top }; });
-    assert.ok(r.next >= r.tab, JSON.stringify(r));
+    await page.setViewportSize({ width:430, height:840 });
+    for(const tab of ['dashboard','transactions','budgets','goals']){
+      await page.click(`.tabbar [data-tab="${tab}"]`); await page.evaluate(() => rerender()); await page.waitForTimeout(120);
+      const r = await page.evaluate(() => { const cards = [...document.querySelectorAll('#app .page > .card')]; const last = cards[cards.length-1];
+        window.scrollTo(0, 500);
+        return { ov: getComputedStyle(document.body).overflowY, sy: window.scrollY, bottom: last.getBoundingClientRect().bottom, tab: document.querySelector('.tabbar').getBoundingClientRect().top }; });
+      assert.equal(r.ov, 'hidden', tab);
+      assert.equal(r.sy, 0, tab);
+      assert.ok(r.bottom <= r.tab, `${tab} : ${JSON.stringify(r)}`);
+    }
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
