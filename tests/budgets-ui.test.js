@@ -147,7 +147,7 @@ test('B5 Fenêtre Catégories : Dépenses / Revenus, toucher une ligne pour la m
   } finally { await app.close(); }
 });
 
-test('B6 Enveloppes : boutons Toutes / À surveiller / Dépassées', async () => {
+test('B6 Enveloppes : Toutes / À surveiller / Dépassées s’ouvrent dans une feuille par-dessus la carte', async () => {
   const app = await openApp({ now:'2026-10-21T10:00:00+02:00', data: baseData({
     budgets:{ alimentation:300, loisirs:100, transport:100 }, lastRolloverCheck:'2026-9',
     transactions:[
@@ -159,13 +159,16 @@ test('B6 Enveloppes : boutons Toutes / À surveiller / Dépassées', async () =>
   try{
     await page.click('[data-tab="budgets"]');
     const ids = () => page.$$eval('[data-toggle-budget-detail]', els => els.map(e => e.dataset.toggleBudgetDetail).sort());
-    await page.click('[data-envlist="over"]');
+    await page.click('[data-envlist="over"]');                        // ouvre la feuille par-dessus
+    assert.ok(await page.$('.panel-sheet.panel-env'));
     assert.deepEqual(await ids(), ['loisirs']);
-    await page.click('[data-envlist="watch"]');
+    await page.click('.panel-sheet [data-envlist="watch"]');
     assert.deepEqual(await ids(), ['loisirs', 'transport']);
-    await page.click('[data-envlist="all"]');
+    await page.click('.panel-sheet [data-envlist="all"]');
     assert.equal((await ids()).length, 3);
-    await page.click('[data-envlist="all"]');
+    assert.ok(await page.evaluate(() => document.body.classList.contains('panel-open')));   // la page derrière ne défile plus
+    await page.click('[data-close-x-panel="env"]');
+    assert.equal(await page.$('.panel-sheet'), null);
     assert.deepEqual(await ids(), []);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }

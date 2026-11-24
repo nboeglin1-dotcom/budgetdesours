@@ -107,7 +107,7 @@ test('T4 Ajout depuis une enveloppe de l’accueil : la page revient où elle é
   } finally { await app.close(); }
 });
 
-test('T5 Transactions : une carte résumé, la liste s’ouvre avec les boutons du bas et se referme', async () => {
+test('T5 Transactions : une carte résumé, la liste s’ouvre dans une feuille par-dessus et se referme', async () => {
   const app = await openApp({ now:'2026-10-21T10:00:00+02:00', data: baseData({ lastRolloverCheck:'2026-9',
     recurring:[{ id:'r1', type:'expense', amount:15, category:'abonnements', note:'Abo test', frequency:'monthly', accountId:'main', nextDate:D('2026-10-25') }],
     transactions:[
@@ -121,14 +121,21 @@ test('T5 Transactions : une carte résumé, la liste s’ouvre avec les boutons 
     await page.click('[data-txlist="income"]');
     let txt = await page.textContent('.tx-list-card');
     assert.match(txt, /Salaire/); assert.doesNotMatch(txt, /Costco/);
-    await page.click('[data-txlist="upcoming"]');
+    assert.ok(await page.$('.panel-sheet.panel-tx'));                  // feuille par-dessus la carte
+    await page.click('.panel-sheet [data-txlist="upcoming"]');
     txt = await page.textContent('.tx-list-card');
     assert.match(txt, /Abo test/); assert.doesNotMatch(txt, /Costco|Salaire/);
-    await page.click('[data-txlist="all"]');
+    await page.click('.panel-sheet [data-txlist="all"]');
     txt = await page.textContent('.tx-list-card');
     assert.match(txt, /Costco/); assert.match(txt, /Salaire/);
-    await page.click('[data-txlist="all"]');                          // re-toucher referme
+    await page.click('[data-close-x-panel="tx"]');                    // la croix referme
     assert.equal(await page.$('.tx-list-card'), null);
+    // La loupe ouvre la feuille avec la recherche
+    await page.click('[data-toggle-txsearch]');
+    await page.fill('#txSearch', 'Costco');
+    txt = await page.textContent('.tx-list-card');
+    assert.match(txt, /Costco/); assert.doesNotMatch(txt, /Salaire/);
+    await page.click('[data-close-x-panel="tx"]');
     // Toucher un mois du graphique y emmène
     await page.click('[data-trend-month="2026-8"]');
     assert.deepEqual(await page.evaluate(() => [state.viewY, state.viewM]), [2026, 8]);

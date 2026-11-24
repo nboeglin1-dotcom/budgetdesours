@@ -32,7 +32,7 @@ test('G1 Cartes d’épargne : total, virements auto par mois, sans ajout ni ret
   } finally { await app.close(); }
 });
 
-test('G2 Objectifs : une carte résumé plein écran, les boutons du bas déplient Activité / Virements / Objectifs et s’en souviennent', async () => {
+test('G2 Objectifs : les boutons du bas ouvrent Chiffre d’aff. / Virements / Objectifs dans une feuille par-dessus la carte', async () => {
   const app = await openApp({ now:'2026-11-22T10:00:00+01:00', storage:{ 'solde-ui-prefs':'{}' }, data: baseData({
     caTracker:{ months:{ '2026-11':4000 }, shineMonths:{ '2026-12':{ amount:1600, after:false, date:'2026-11-21' } } },
     goals:[{ id:'g1', name:'Pérou', target:10000, current:1500, color:'#6FA287', accountId:'main' }] }) });
@@ -43,18 +43,16 @@ test('G2 Objectifs : une carte résumé plein écran, les boutons du bas déplie
     assert.match(card, /Chiffre d'affaires/);
     assert.match(card, /Pérou/);
     for(const sel of ['.ca-card', '.ca-shine-card', '.goal-card']) assert.equal(await page.$(sel), null);
-    await page.click('[data-objpanel="ca"]');
-    assert.ok(await page.$('.ca-card #caInput'));
+    await page.click('[data-objpanel="ca"]');                         // feuille par-dessus la carte
+    assert.ok(await page.$('.panel-sheet .ca-card #caInput'));
     assert.equal(await page.$('[data-toggle-shineplan]'), null);
-    await page.click('[data-objpanel="virements"]');
-    assert.ok(await page.$('.ca-shine-card'));
-    await page.click('[data-objpanel="goals"]');
-    assert.ok(await page.$('.goal-card'));
-    await page.reload();
-    await page.click('[data-tab="goals"]');
-    for(const sel of ['.ca-card', '.ca-shine-card', '.goal-card']) assert.ok(await page.$(sel)); // l'appareil garde le choix
-    await page.click('[data-objpanel="virements"]');
-    assert.equal(await page.$('.ca-shine-card'), null);
+    await page.click('.panel-sheet [data-objpanel="virements"]');     // une partie à la fois
+    assert.ok(await page.$('.panel-sheet .ca-shine-card'));
+    assert.equal(await page.$('.ca-card'), null);
+    await page.click('.panel-sheet [data-objpanel="goals"]');
+    assert.ok(await page.$('.panel-sheet .goal-card'));
+    await page.click('[data-close-x-panel="obj"]');
+    for(const sel of ['.panel-sheet', '.ca-card', '.ca-shine-card', '.goal-card']) assert.equal(await page.$(sel), null);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });

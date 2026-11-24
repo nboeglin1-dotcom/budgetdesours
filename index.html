@@ -189,6 +189,15 @@
     100%{ transform:translate(var(--drift), 110vh) rotate(var(--rot)); opacity:.3; }
   }
   .modal-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+  /* La feuille s'arrete au-dessus de la barre d'onglets, qui reste utilisable. */
+  .panel-overlay{bottom:var(--tabbar-h, 76px); z-index:25;}
+  .panel-sheet{height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - var(--tabbar-h, 76px) - 8px); max-height:none; padding-top:0; padding-bottom:18px; animation:slideUpPanel .25s ease;}
+  @keyframes slideUpPanel{from{transform:translateY(24px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .panel-sheet .panel-top{position:sticky; top:0; z-index:3; background:var(--surface); padding-top:18px; padding-bottom:10px; margin-bottom:4px;}
+  .panel-sheet .card{background:var(--surfaceHi); border-color:var(--line);}
+  .kb-open .panel-overlay{z-index:100;}
+  .kb-open .panel-sheet{height:var(--vvh, 100vh);}
+  body.panel-open{overflow:hidden;}
   .modal-title{font-family:'Fraunces',serif; font-size:17px; font-weight:600; color:var(--paper) !important;}
   .field-label{font-size:11.5px; color:var(--paperDim); margin-bottom:5px; display:block;}
   .field-input{width:100%; background:var(--surfaceHi); border:1px solid var(--line); border-radius:12px; padding:11px 13px; font-size:15px; margin-bottom:13px;}
@@ -1886,6 +1895,7 @@ function rerender(){
   const modalScrollTop = modalSheets.length ? modalSheets[modalSheets.length-1].scrollTop : null;
   const modalWasOpen = modalSheets.length > 0;
   document.getElementById('app').innerHTML = renderApp();
+  document.body.classList.toggle('panel-open', !!_panelSheet);
   bindEvents();
   if(modalWasOpen){
     document.querySelectorAll('.modal-sheet').forEach(el=>{ el.style.animation = 'none'; });
@@ -1900,8 +1910,24 @@ function rerender(){
   }
 }
 
+// Feuille de detail : s'ouvre par-dessus la carte principale (qui reste fixe derriere).
+// Les onglets la preparent pendant leur rendu ; renderApp l'ajoute au-dessus de la page.
+let _panelSheet = '';
+function setPanel(key, title, controls, body){
+  _panelSheet = `<div class="modal-overlay panel-overlay" data-close-panel="${key}"><div class="modal-sheet panel-sheet panel-${key}" onclick="event.stopPropagation()">
+    <div class="panel-top"><div class="modal-head" style="margin-bottom:12px;"><div class="modal-title ledger">${title}</div><button data-close-x-panel="${key}" aria-label="Fermer">${icon('x',18)}</button></div>${controls}</div>
+    ${body}
+  </div></div>`;
+  return '';
+}
+function closePanel(key){
+  if(key==='tx') setState({ txListOpen:false, txSearchOpen:false, txQuery:'' });
+  else if(key==='env') setState({ envListFilter:null, expandedBudgetCat:null });
+  else if(key==='obj'){ ['caPanel','shinePlan','goalsDetail'].forEach(k=>setUiPref(k, false)); rerender(); }
+}
 function renderApp(){
   _renderToken++;
+  _panelSheet = '';
   if(state.locked) return renderLockScreen();
   return `
     ${renderHeader()}
@@ -1912,6 +1938,7 @@ function renderApp(){
       ${state.tab==='goals' ? renderGoals() : ''}
     </div>
     ${renderTabbar()}
+    ${_panelSheet}
     ${(!state.modal && state.tab==='budgets') ? `
       <button data-open-newcat-standalone="1" class="fab-add" aria-label="Nouvelle catégorie">${icon('plus',22)}</button>
     ` : (!state.modal && state.tab==='transactions') ? `
@@ -3251,7 +3278,6 @@ function renderTransactions(){
         ${q ? caTile('À venir', upCount ? `${upNet>=0?'+':'−'}${fmt0(Math.abs(upNet))}` : '—', upNet>=0 ? 'var(--paper)' : 'var(--amber)', `${upCount} prévue${upCount>1?'s':''}`)
           : caTile('Solde', fmt0(balAtDate), balAtDate < 0 ? 'var(--coral)' : 'var(--gold)', balCut < endToday ? 'fin de mois' : 'à ce jour')}
       </div>
-      ${(state.txSearchOpen || q) ? `<div class="search-wrap" style="position:relative; margin-top:10px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>` : ''}
       <div style="flex:1; display:flex; flex-direction:column; justify-content:center; margin-top:14px;">
         ${renderTrendCard(true)}
       </div>
@@ -3259,7 +3285,10 @@ function renderTransactions(){
         ${listBtn('all', 'Toutes')}${listBtn('income', 'Revenus')}${listBtn('expense', 'Dépenses')}${listBtn('upcoming', 'À venir')}
       </div>
     </div>
-    ${!listOpen ? '' : `<div class="card tx-list-card">${list.length===0 ? `
+    ${!listOpen ? '' : setPanel('tx', (state.txSearchOpen || q) ? 'Rechercher' : `${{ all:'Toutes les opérations', income:'Revenus', expense:'Dépenses', upcoming:'À venir' }[activeBtn] || 'Opérations'} · ${MONTHS[state.viewM].toLowerCase()}`,
+      `<div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); width:100%;">${listBtn('all', 'Toutes')}${listBtn('income', 'Revenus')}${listBtn('expense', 'Dépenses')}${listBtn('upcoming', 'À venir')}</div>`
+      + ((state.txSearchOpen || q) ? `<div class="search-wrap" style="position:relative; margin-top:10px; background:var(--surfaceHi);">${icon('search',15)}<input id="txSearch" placeholder="Rechercher une opération…" value="${escapeHtml(state.txQuery)}" oninput="onTxSearch(this.value)" style="${state.txQuery?'padding-right:22px;':''}">${state.txQuery ? `<button data-clear-tx-search="1" aria-label="Effacer la recherche" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--paperDim); display:flex; padding:4px;">${icon('x',13)}</button>` : ''}</div>` : ''),
+      `<div class="tx-list-card">${list.length===0 ? `
       <div style="padding:30px 20px; text-align:center;">
         ${bearMascot('sleepy', 56)}
         <div style="font-size:13.5px; color:var(--paperDim); margin:12px 0 16px;">${filtered || state.txFilter!=='all' ? 'Aucune opération ne correspond.' : state.hidePastTx ? 'Plus rien de prévu ce mois-ci.' : 'Rien par ici ce mois-ci — ton ours fait la sieste 🐻'}</div>
@@ -3293,7 +3322,7 @@ function renderTransactions(){
         lastKey = key;
         return header + (t.isPending ? previewTxRow(t) : txRow(t,true));
       }).join('');
-    })()}</div>`}
+    })()}</div>`)}
   `;
 }
 function previewTxRow(t){
@@ -3394,7 +3423,9 @@ function renderBudgets(){
         </div>`}
       </div>`;
     })()}
-    ${!envListActive ? '' : (()=>{ const shown = allExpenseCats.filter(c=>{
+    ${!envListActive ? '' : setPanel('env', { all:'Toutes les enveloppes', watch:'À surveiller', over:'Dépassées' }[envListActive] || 'Enveloppes',
+      `<div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); width:100%;">${[['all','Toutes'],['watch','À surveiller'],['over','Dépassées']].map(([id,l])=>`<button data-envlist="${id}" class="${envListActive===id ? 'active' : ''}">${l}</button>`).join('')}</div>`,
+      (()=>{ const shown = allExpenseCats.filter(c=>{
         const lim = effectiveLimit(c.id), sp = byCat[c.id]||0;
         return envListActive==='all' ? true : envListActive==='over' ? sp > lim : sp >= lim*0.8;
       });
@@ -3444,7 +3475,7 @@ function renderBudgets(){
           ` : ''}
         </div>
       `;
-    }).join(''); })()}
+    }).join(''); })())}
   `;
 }
 
@@ -3938,9 +3969,14 @@ function renderGoals(){
         ${act ? objBtn('ca', 'Chiffre d’aff.', uiPref('caPanel')) + objBtn('virements', 'Virements', uiPref('shinePlan')) : ''}${goals.length ? objBtn('goals', 'Objectifs', uiPref('goalsDetail')) : ''}
       </div>` : ''}
     </div>
-    ${act && uiPref('caPanel') ? renderCaCard() : ''}
-    ${act && uiPref('shinePlan') ? renderShinePlan() : ''}
-    ${goals.length && uiPref('goalsDetail') ? `<div class="card goals-detail-card" style="padding-top:4px;">${goals.map(goalRow).join('').replace('border-top:1px solid var(--line);', '')}</div>` : ''}
+    ${(()=>{
+      const showCa = act && uiPref('caPanel'), showSp = act && uiPref('shinePlan'), showG = goals.length && uiPref('goalsDetail');
+      if(!showCa && !showSp && !showG) return '';
+      const n = [showCa, showSp, showG].filter(Boolean).length;
+      const title = n > 1 ? 'Détails' : showCa ? "Chiffre d'affaires" : showSp ? 'Virements' : 'Mes objectifs';
+      const pills = (act || goals.length) ? `<div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); width:100%;">${act ? objBtn('ca', 'Chiffre d’aff.', showCa) + objBtn('virements', 'Virements', showSp) : ''}${goals.length ? objBtn('goals', 'Objectifs', showG) : ''}</div>` : '';
+      return setPanel('obj', title, pills, `${showCa ? renderCaCard() : ''}${showSp ? renderShinePlan() : ''}${showG ? `<div class="card goals-detail-card" style="padding-top:4px;">${goals.map(goalRow).join('').replace('border-top:1px solid var(--line);', '')}</div>` : ''}`);
+    })()}
     ${act ? '' : `<button data-enable-ca="1" style="display:block; margin:6px auto 0; background:none; border:none; color:var(--paperDim); font-size:12px; text-decoration:underline;">Suivre une activité (chiffre d'affaires et virements)</button>`}
   `;
 
@@ -4431,8 +4467,16 @@ function bindEvents(){
   const app = document.getElementById('app');
   const headerEl = app.querySelector('.header');
   if(headerEl) document.documentElement.style.setProperty('--header-h', headerEl.offsetHeight + 'px');
+  const tabbarEl = document.querySelector('.tabbar');
+  if(tabbarEl) document.documentElement.style.setProperty('--tabbar-h', tabbarEl.offsetHeight + 'px');
 
   app.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click', ()=>{
+    // Quitter un onglet referme sa feuille de detail.
+    if(el.dataset.tab !== state.tab){
+      if(state.tab==='goals') ['caPanel','shinePlan','goalsDetail'].forEach(k=>setUiPref(k, false));
+      if(state.tab==='transactions'){ state.txListOpen = false; state.txSearchOpen = false; state.txQuery = ''; }
+      if(state.tab==='budgets'){ state.envListFilter = null; }
+    }
     // Accueil : toujours la vue de depart, meme si on y est deja (mois en cours, haut de page,
     // enveloppes refermees).
     if(el.dataset.tab === 'dashboard'){
@@ -4639,25 +4683,21 @@ function bindEvents(){
   })();
   app.querySelectorAll('[data-filter]').forEach(el=>el.addEventListener('click', ()=> setState({txFilter: el.dataset.filter})));
   // Boutons de liste : ouvrent la liste filtree ; re-toucher le bouton actif la referme.
+  app.querySelectorAll('[data-close-panel]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el) closePanel(el.dataset.closePanel); }));
+  app.querySelectorAll('[data-close-x-panel]').forEach(el=>el.addEventListener('click', ()=>closePanel(el.dataset.closeXPanel)));
   app.querySelectorAll('[data-txlist]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.txlist;
-    const cur = !state.txListOpen ? null : state.hidePastTx ? 'upcoming' : state.txFilter;
-    if(cur === id){ setState({ txListOpen:false }); return; }
     setState({ txListOpen:true, txFilter: id==='upcoming' ? 'all' : id, hidePastTx: id==='upcoming' });
-    const card = document.querySelector('.tx-list-card');
-    if(card){ const top = card.getBoundingClientRect().top + window.scrollY - (document.querySelector('.header')?.offsetHeight||0) - 70; window.scrollTo({ top: Math.max(0, top), behavior:'smooth' }); }
+    const sh = document.querySelector('.panel-sheet'); if(sh) sh.scrollTop = 0;
   }));
   app.querySelectorAll('[data-envlist]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.dataset.envlist;
-    if(state.envListFilter === id){ setState({ envListFilter:null }); return; }
     setState({ envListFilter:id });
-    const card = document.querySelector('.budget-card, .budget-empty');
-    if(card){ const top = card.getBoundingClientRect().top + window.scrollY - (document.querySelector('.header')?.offsetHeight||0) - 70; window.scrollTo({ top: Math.max(0, top), behavior:'smooth' }); }
+    const sh = document.querySelector('.panel-sheet'); if(sh) sh.scrollTop = 0;
   }));
   app.querySelectorAll('[data-toggle-txsearch]').forEach(el=>el.addEventListener('click', ()=>{
-    const open = !(state.txSearchOpen || state.txQuery);
-    setState({ txSearchOpen: open, txQuery: open ? state.txQuery : '' });
-    if(open){ const inp = document.getElementById('txSearch'); if(inp) inp.focus(); }
+    setState({ txSearchOpen:true, txListOpen:true, txFilter:'all', hidePastTx:false });
+    const inp = document.getElementById('txSearch'); if(inp) inp.focus();
   }));
   app.querySelectorAll('[data-trend-month]').forEach(el=>el.addEventListener('click', ()=>{
     const [y, m] = el.dataset.trendMonth.split('-').map(Number);
@@ -4887,13 +4927,11 @@ function bindEvents(){
   }));
   // Objectifs : boutons du bas qui ouvrent / referment le detail (memorise sur l'appareil).
   app.querySelectorAll('[data-objpanel]').forEach(el=>el.addEventListener('click', ()=>{
+    // Une seule partie a la fois dans la feuille de detail.
     const key = { ca:'caPanel', virements:'shinePlan', goals:'goalsDetail' }[el.dataset.objpanel];
-    const open = !uiPref(key);
-    setUiPref(key, open); rerender();
-    if(open){
-      const target = document.querySelector({ caPanel:'.ca-card', shinePlan:'.ca-shine-card', goalsDetail:'.goals-detail-card' }[key]);
-      if(target){ const top = target.getBoundingClientRect().top + window.scrollY - (document.querySelector('.header')?.offsetHeight||0) - 70; window.scrollTo({ top: Math.max(0, top), behavior:'smooth' }); }
-    }
+    ['caPanel','shinePlan','goalsDetail'].forEach(k=>setUiPref(k, k===key));
+    rerender();
+    const sh = document.querySelector('.panel-sheet'); if(sh) sh.scrollTop = 0;
   }));
   app.querySelectorAll('[data-enable-ca]').forEach(el=>el.addEventListener('click', ()=>{ mutateData(d=>{ d.caTracker = d.caTracker || {}; d.caTracker.enabled = true; }); }));
   app.querySelectorAll('[data-managecat-type]').forEach(el=>el.addEventListener('click', ()=>{ state.manageCatType = el.dataset.managecatType; rerender(); }));
