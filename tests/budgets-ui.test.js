@@ -231,3 +231,17 @@ test('B10 Ours sans activité suivie (budget d’un enfant) : pas de coussin, il
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('B11 Accueil : sur un écran court, les cartes se resserrent pour que « Le mois en bref » tienne au-dessus des onglets', async () => {
+  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', data: baseData({ budgets:{ alimentation:600, loisirs:150, transport:100, sante:100, shopping:100, autres_d:150 }, lastRolloverCheck:'2026-10',
+    transactions:[tx({ type:'income', amount:2000, category:'salaire', date:D('2026-11-02') }), tx({ amount:100, category:'alimentation', date:D('2026-11-03') })] }) });
+  const { page, errors } = app;
+  try{
+    for(const h of [932, 800, 740]){
+      await page.setViewportSize({ width:430, height:h }); await page.evaluate(() => rerender()); await page.waitForTimeout(150);
+      const r = await page.evaluate(() => { const c = document.querySelector('[data-bref-title]').closest('.card'); return { bottom: c.getBoundingClientRect().bottom, top: document.querySelector('.tabbar').getBoundingClientRect().top, cls: document.querySelector('#app .page').className }; });
+      assert.ok(r.bottom <= r.top, `${h} : ${JSON.stringify(r)}`);
+    }
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

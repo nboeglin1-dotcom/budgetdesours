@@ -120,6 +120,19 @@
   .tx-amt .cts{font-size:11.5px; font-weight:500; opacity:.6;}
   .tx-del{padding:9px; color:var(--coral); opacity:.7; min-width:32px; min-height:32px; display:flex; align-items:center; justify-content:center;}
   .catbar-row{margin-bottom:10px;}
+  /* Accueil resserre quand « Le mois en bref » ne tient pas a l'ecran (petits iPhone, beaucoup d'enveloppes). */
+  .dash-tight .card{padding:14px 16px; margin-bottom:10px;}
+  .dash-tight .env-card{padding:12px 16px 8px;}
+  .dash-tight #balanceNum{font-size:40px !important;}
+  .dash-tight .bal-box{padding:10px 12px !important;}
+  .dash-tight .bal-box svg{width:60px; height:60px;}
+  .dash-tight .env-main{padding:5px 0;}
+  .dash-tight .bear-line{margin-top:6px !important;}
+  .dash-tight .bal-actions{margin-top:10px !important;}
+  .dash-tighter #balanceNum{font-size:36px !important;}
+  .dash-tighter .env-main{padding:3px 0;}
+  .dash-tighter .bal-actions button{height:40px !important;}
+  .dash-tighter .card{padding:12px 14px; margin-bottom:8px;}
   /* Carte « Mes enveloppes » compacte */
   .env-card{padding:14px 16px 10px;}
   .env-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px;}
@@ -2923,10 +2936,10 @@ function renderBalanceContent(stats, showStats){
   const shown = showToday ? balanceToday() : endShown;
   return `
       <div class="section-title" style="margin:0 0 10px; font-size:15px;">${showToday ? `Solde <span style="color:var(--gold);">· aujourd'hui</span>` : `Fin de mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}`}</div>
-      <div ${isNow ? 'data-toggle-baltoday="1" role="button" aria-label="Basculer solde du jour / fin de mois"' : ''} style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;${isNow ? ' cursor:pointer;' : ''}"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${shown<0?'var(--coral)':'var(--mint)'};">${fmt0(shown)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromEnd(endShown), 72)}</div></div>
+      <div class="bal-box" ${isNow ? 'data-toggle-baltoday="1" role="button" aria-label="Basculer solde du jour / fin de mois"' : ''} style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;${isNow ? ' cursor:pointer;' : ''}"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${shown<0?'var(--coral)':'var(--mint)'};">${fmt0(shown)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromEnd(endShown), 72)}</div></div>
       <div class="bear-line" style="font-size:12px; color:${!showToday && endShown < 0 ? 'var(--coral)' : 'var(--paperDim)'}; margin-top:8px;">${showToday ? `Fin de mois estimée : <span class="mono" style="color:${endShown<0?'var(--coral)':'var(--paper)'};">${fmt0(endShown)}</span> · touche pour revenir` : bearLineFromEnd(endShown, monthIndex(state.viewY, state.viewM) < monthIndex(new Date().getFullYear(), new Date().getMonth()))}</div>
       ${showStats && usingEstimate && !f.hasHistory ? `<div style="font-size:12px; color:var(--paperDim); margin-top:10px; line-height:1.5;">Pas encore assez d'historique (3 derniers mois) pour estimer ce mois : le chiffre ci-dessus ne compte que ce qui est déjà connu.</div>` : ''}
-      ${showStats ? `<div style="display:flex; gap:8px; margin-top:12px;">
+      ${showStats ? `<div class="bal-actions" style="display:flex; gap:8px; margin-top:12px;">
         <button data-open="addTx" data-tx-type="expense" style="background:var(--coral); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter une dépense" aria-label="Ajouter une dépense">−</button>
         <button class="btn-primary" data-open="addTx" style="flex:1; justify-content:center; font-size:13px;">${icon('plus',14)} Ajouter</button>
         <button data-open="addTx" data-tx-type="income" style="background:var(--sage); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter un revenu" aria-label="Ajouter un revenu">+</button>
@@ -3031,10 +3044,11 @@ function renderDashboard(){
           </div>
         </div>`;
       }).join('')}
+      <button class="env-more" data-goto-budgets="1" style="display:none; background:none; border:none; color:var(--gold); font-size:12px; font-weight:600; padding:6px 0 4px;"></button>
     </div>` : ''}
 
     <div class="card">
-      <div class="section-title" style="margin:0 0 10px; font-size:15px;">Le mois en bref</div>
+      <div class="section-title" data-bref-title="1" style="margin:0 0 10px; font-size:15px;">Le mois en bref</div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
         ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)', stats.expenseUpcoming >= 1 ? (stats.expenseUpcoming >= expense - 0.5 ? 'tout à venir' : `dont ${fmt0(stats.expenseUpcoming)} à venir`) : ''], [savedThisMonth>=0 ? (stats.isFuture || stats.plannedSaving>0 ? 'Épargne prévue' : 'Épargné') : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c,sub])=>`
           <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">${l}</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${c};">${fmt0(v)}</div>${sub ? `<div style="font-size:10.5px; color:var(--paperDim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sub}</div>` : ''}</div>`).join('')}
@@ -5184,6 +5198,7 @@ function bindEvents(){
     setState({ goalColorOpen:null }); restoreScroll(y);
   }));
   app.querySelectorAll('[data-toggle-baltoday]').forEach(el=>el.addEventListener('click', ()=>{ state.showBalanceToday = !state.showBalanceToday; rerender(); }));
+  app.querySelectorAll('[data-goto-budgets]').forEach(el=>el.addEventListener('click', ()=>{ setState({ tab:'budgets' }); jumpToTop(); }));
   app.querySelectorAll('[data-planned-done]').forEach(el=>el.addEventListener('click', ()=>{
     const gid = el.dataset.plannedDone, idx = Number(el.dataset.plannedIdx);
     const src = document.getElementById(`plannedSrc-${gid}-${idx}`)?.value || 'outside';
@@ -5894,6 +5909,7 @@ function bindEvents(){
     tryBiometricUnlock();
   }
 
+  fitDashboard();
   const balEl = document.getElementById('balanceNum');
   if(balEl){
     const f0 = computeForecast();
@@ -5955,6 +5971,33 @@ function bindEvents(){
   });
 }
 
+// Accueil : « Le mois en bref » doit tenir au-dessus de la barre d'onglets ; sinon on resserre en deux crans.
+function fitDashboard(){
+  const page = document.querySelector('#app .page');
+  if(!page || state.tab !== 'dashboard') return;
+  page.classList.remove('dash-tight', 'dash-tighter');
+  const fits = () => {
+    const t = document.querySelector('[data-bref-title]'); const tb = document.querySelector('.tabbar');
+    if(!t || !tb) return true;
+    const card = t.closest('.card');
+    // En coordonnees de page (la barre d'onglets est fixe en bas de l'ecran).
+    return card.getBoundingClientRect().bottom + window.scrollY <= window.innerHeight - tb.offsetHeight - 6;
+  };
+  if(fits()) return;
+  page.classList.add('dash-tight');
+  if(fits()) return;
+  page.classList.add('dash-tighter');
+  if(fits()) return;
+  // Dernier recours : on n'affiche que les enveloppes qui tiennent (les plus entamees d'abord), avec un lien vers les autres.
+  const items = [...document.querySelectorAll('[data-envelopes] .env-item')];
+  const more = document.querySelector('[data-envelopes] .env-more');
+  if(!more) return;
+  let hidden = 0;
+  while(!fits() && items.length - hidden > 1){
+    hidden++; items[items.length - hidden].style.display = 'none';
+    more.style.display = 'block'; more.textContent = `+ ${hidden} autre${hidden>1?'s':''} enveloppe${hidden>1?'s':''} →`;
+  }
+}
 function animateBalance(el, target){
   if(state.balanceAnim.raf) cancelAnimationFrame(state.balanceAnim.raf);
   const from = state.balanceAnim.display;
