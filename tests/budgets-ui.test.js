@@ -189,3 +189,16 @@ test('B7 Rappel de sauvegarde : après 25 modifications ou un import de relevé,
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('B8 Ours de l’accueil : humeur selon la fin de mois et le coussin, avec une phrase', async () => {
+  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', data: baseData({ transactions:[tx({ type:'income', amount:100, category:'salaire', date:D('2026-11-02') }), tx({ amount:151, category:'autres_d', date:D('2026-11-03') })] }) });
+  const { page, errors } = app;
+  try{
+    const r = await page.evaluate(() => [-51, 0, 300, 500, 900].map(e => [bearMoodFromEnd(e), bearLineFromEnd(e, false)]));
+    assert.deepEqual(r.map(x=>x[0]), ['worried','neutral','neutral','content','happy']);
+    assert.match(r[0][1], /51\s€ à trouver d'ici le 30/);
+    assert.match(r[2][1], /200\s€ sous ton coussin de 500\s€/);
+    assert.match(await page.textContent('.bear-line'), /51\s€ à trouver/);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

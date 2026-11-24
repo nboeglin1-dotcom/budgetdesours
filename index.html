@@ -1661,6 +1661,22 @@ function bearMascot(mood, size=64){
     <ellipse cx="12" cy="15.9" rx="1.3" ry="1" fill="#7A5233"/>
   </svg>`;
 }
+// Humeur de l'ours selon la fin de mois affichee, comparee au coussin du commun (500 € par defaut) :
+// sous zero → inquiet, sous le coussin → neutre, coussin tenu → content, nettement au-dessus → ravi.
+function bearMoodFromEnd(end){
+  const cushion = (state.data.caTracker && state.data.caTracker.communCushion) ?? 500;
+  if(end < 0) return 'worried';
+  if(end < cushion) return 'neutral';
+  if(end < cushion + 300) return 'content';
+  return 'happy';
+}
+function bearLineFromEnd(end, isPast){
+  const cushion = (state.data.caTracker && state.data.caTracker.communCushion) ?? 500;
+  if(isPast) return end < 0 ? `Mois fini à découvert` : end < cushion ? `Mois fini sous ton coussin de ${fmt0(cushion)}` : `Coussin tenu ce mois-là`;
+  if(end < 0) return `${fmt0(-end)} à trouver d'ici le ${new Date(state.viewY, state.viewM + 1, 0).getDate()}`;
+  if(end < cushion) return `${fmt0(cushion - end)} sous ton coussin de ${fmt0(cushion)}`;
+  return `+${fmt0(end - cushion)} au-dessus de ton coussin`;
+}
 function bearMoodFromRate(rate){
   if(rate >= 35) return 'happy';
   if(rate >= 12) return 'content';
@@ -2893,7 +2909,8 @@ function renderBalanceContent(stats, showStats){
   const shown = displayedEndOfMonth(f, state.viewY, state.viewM);
   return `
       <div class="eyebrow" style="margin-bottom:8px;">Fin de mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
-      <div style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${shown<0?'var(--coral)':'var(--mint)'};">${fmt0(shown)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromRate(rate), 72)}</div></div>
+      <div style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${shown<0?'var(--coral)':'var(--mint)'};">${fmt0(shown)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromEnd(shown), 72)}</div></div>
+      <div class="bear-line" style="font-size:12px; color:${shown < 0 ? 'var(--coral)' : 'var(--paperDim)'}; margin-top:8px;">${bearLineFromEnd(shown, monthIndex(state.viewY, state.viewM) < monthIndex(new Date().getFullYear(), new Date().getMonth()))}</div>
       ${showStats && usingEstimate && !f.hasHistory ? `<div style="font-size:12px; color:var(--paperDim); margin-top:10px; line-height:1.5;">Pas encore assez d'historique (3 derniers mois) pour estimer ce mois : le chiffre ci-dessus ne compte que ce qui est déjà connu.</div>` : ''}
       ${showStats ? `<div style="display:flex; gap:8px; margin-top:12px;">
         <button data-open="addTx" data-tx-type="expense" style="background:var(--coral); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter une dépense" aria-label="Ajouter une dépense">−</button>
