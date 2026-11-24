@@ -62,7 +62,7 @@ test('T2 Dépenses du mois : même total sur l’accueil, dans Transactions et s
     assert.equal(paid + up, stats.expense);                   // payé + à venir = dépenses de l'accueil
     const chart = (await page.textContent('.trend-rows')).replace(/\s+/g,' ');   // ligne du mois : revenus − mêmes dépenses
     const net = 3000 - stats.expense;
-    assert.match(chart, new RegExp(`Novembre · estimé \\+${net.toLocaleString('fr-FR').replace(/\s/g,'\\s')}\\s€`));
+    assert.match(chart, new RegExp(`Novembre\\s*· estimé \\+${net.toLocaleString('fr-FR').replace(/\s/g,'\\s')}\\s€`));
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });

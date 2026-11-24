@@ -156,6 +156,7 @@
   .env-name{display:flex; align-items:center; gap:7px; font-size:13.5px; white-space:nowrap; overflow:hidden;}
   .env-dot{width:7px; height:7px; border-radius:50%; flex-shrink:0;}
   .env-track{height:4px; border-radius:99px; background:var(--lineSoft); overflow:hidden; margin:6px 0 0 14px;}
+  .env-sub{font-size:11px; color:var(--paperDim); margin:5px 0 0 14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .env-left{font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; min-width:5ch; text-align:right;}
   .catbar-track{height:8px; border-radius:99px; background:var(--lineSoft); overflow:hidden; margin:6px 0;}
   .catbar-fill{height:100%; border-radius:99px; transition:width .5s cubic-bezier(.22,1,.36,1);}
@@ -3137,22 +3138,32 @@ function renderDashboard(){
 
 // Graphique « Revenus vs depenses — 12 mois » (onglet Transactions). Memes regles que le mois en bref :
 // compte affiche uniquement, epargne exclue, echeances a venir ajoutees pour le mois en cours / a venir.
+// Ligne commune a tous les onglets (style « Mes enveloppes ») : pastille + nom, jauge dessous, montant a droite,
+// petite precision optionnelle sous la jauge. action : attribut(s) de l'element touchable (sinon simple ligne).
+function lineRow({ name, dot, dotAttr = '', bold = false, extra = '', pct = 0, bar, value, valueColor = 'var(--paper)', sub = '', action = '' }){
+  const tag = action ? 'button' : 'div';
+  const dotHtml = dotAttr ? `<button ${dotAttr} style="width:22px; height:22px; margin:-7px -7px -7px -7px; display:inline-flex; align-items:center; justify-content:center; background:none; border:none; padding:0; flex-shrink:0;"><span class="env-dot" style="background:${dot};"></span></button>` : `<span class="env-dot" style="background:${dot};"></span>`;
+  return `<div class="env-item"><div class="env-row">
+    <${tag} class="env-main" ${action}>
+      <div class="env-name">${dotHtml}<span style="overflow:hidden; text-overflow:ellipsis;${bold ? ' font-weight:700;' : ''}">${name}</span>${extra}</div>
+      <div class="env-track"><div class="catbar-fill" style="width:${Math.max(0, Math.min(100, pct))}%; background:${bar};"></div></div>
+      ${sub ? `<div class="env-sub">${sub}</div>` : ''}
+    </${tag}>
+    <${tag} class="env-toggle" ${action}><span class="mono env-left" style="color:${valueColor};">${value}</span></${tag}>
+  </div></div>`;
+}
 // Les derniers mois presentes comme « Mes enveloppes » : nom du mois, jauge depenses / revenus, gagne a droite.
 function trendRows(months){
   return `<div class="trend-rows">
     <div class="row" style="margin:0 0 6px; font-size:12px; color:var(--paperDim);"><span>Derniers mois</span><span>Gagné</span></div>
     ${months.slice().reverse().map(t=>{
       const inc = t.inc + t.incPlan, exp = t.exp + t.expPlan, net = inc - exp;
-      const pct = inc > 0 ? Math.min(100, Math.round(exp / inc * 100)) : (exp > 0 ? 100 : 0);
-      return `<div class="env-item"><div class="env-row">
-        <button class="env-main" data-trend-month="${t.key}" aria-label="Voir ${t.name}">
-          <div class="env-name"><span class="env-dot" style="background:${t.isView ? 'var(--gold)' : 'var(--line)'};"></span><span style="${t.isView ? 'font-weight:700;' : ''}">${t.name}${(t.incPlan>0||t.expPlan>0) ? ' <span style="color:var(--paperDim); font-weight:400; font-size:11px;">· estimé</span>' : ''}</span></div>
-          <div class="env-track"><div class="catbar-fill" style="width:${pct}%; background:${net >= 0 ? 'var(--sage)' : 'var(--coral)'};"></div></div>
-        </button>
-        <button class="env-toggle" data-trend-month="${t.key}" aria-label="Voir ${t.name}">
-          <span class="mono env-left" style="color:${inc+exp===0 ? 'var(--paperDim)' : net >= 0 ? 'var(--mint)' : 'var(--coral)'};">${inc+exp===0 ? '—' : `${net>=0?'+':'−'}${fmt0(Math.abs(net))}`}</span>
-        </button>
-      </div></div>`;
+      const pct = inc > 0 ? Math.round(exp / inc * 100) : (exp > 0 ? 100 : 0);
+      return lineRow({ name: t.name, dot: t.isView ? 'var(--gold)' : 'var(--line)', bold: t.isView,
+        extra: (t.incPlan>0||t.expPlan>0) ? '<span style="color:var(--paperDim); font-size:11px;">· estimé</span>' : '',
+        pct, bar: net >= 0 ? 'var(--sage)' : 'var(--coral)',
+        value: inc+exp===0 ? '—' : `${net>=0?'+':'−'}${fmt0(Math.abs(net))}`, valueColor: inc+exp===0 ? 'var(--paperDim)' : net >= 0 ? 'var(--mint)' : 'var(--coral)',
+        action: `data-trend-month="${t.key}" aria-label="Voir ${t.name}"` });
     }).join('')}
   </div>`;
 }
@@ -3521,14 +3532,14 @@ function renderBudgets(){
           ${caTile('Par jour', left>0 && daysLeft>0 ? `≈ ${fmt0(left/daysLeft)}` : '—', 'var(--paper)', daysLeft>0 ? `${daysLeft} jour${daysLeft>1?'s':''}` : 'mois terminé')}
           ${caTile('Dépassées', `${overCount} / ${allExpenseCats.length}`, overCount ? 'var(--coral)' : 'var(--sage)')}
         </div>
-        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:14px; margin-top:16px;">
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:2px; margin-top:12px;">
           ${allExpenseCats.map(c=>{
             const lim = effectiveLimit(c.id), sp = byCat[c.id]||0, p = Math.min(100, Math.round(sp/lim*100)), ov = sp > lim;
             const bar = ov ? 'var(--coral)' : c.color;
-            return `<div>
-              <div class="row" style="margin:0; font-size:13.5px;"><span style="display:flex; align-items:center; gap:8px;"><span style="width:8px; height:8px; border-radius:50%; background:${c.color};"></span>${escapeHtml(c.label)}</span><span class="mono" style="font-weight:700; color:${ov?'var(--coral)':(lim-sp>0?'var(--mint)':'var(--paperDim)')};">${ov ? `−${fmt0(sp-lim)}` : fmt0(lim-sp)}</span></div>
-              <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${p}%; background:${bar};"></div></div>
-            </div>`;
+            const lft = lim - sp;
+            return lineRow({ name: escapeHtml(c.label), dot: c.color, pct: p, bar,
+              value: ov ? `−${fmt0(sp - lim)}` : fmt0(lft), valueColor: ov ? 'var(--coral)' : lft > 0 ? 'var(--mint)' : 'var(--paperDim)',
+              action: `data-quick-tx-cat="${c.id}" data-quick-tx-type="expense" aria-label="Ajouter une dépense ${escapeHtml(c.label)}"` });
           }).join('')}
         </div>
         <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:16px; width:100%;">
@@ -4055,25 +4066,20 @@ function renderGoals(){
       </div>` : ''}
       </div>
       ${goals.length ? `
-      <div style="display:flex; flex-direction:column; gap:20px;">
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <div class="row" style="margin:0 0 2px; font-size:12px; color:var(--paperDim);"><span>Mes objectifs</span><span>Épargné</span></div>
         ${goals.map(g=>{
           const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
           const done = g.target>0 && g.current>=g.target;
           const f = done ? null : goalForecast(g);
-          // Meme presentation que le chiffre d'affaires : pastille + nom et statut, montant en grand « sur X », barre.
-          const head = done ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint</span>`
-            : !f ? `Sans échéance`
-            : f.overdue ? `<span style="color:var(--coral);">Échéance passée</span>`
-            : f.gap >= 0 ? `<span style="color:var(--sage); font-weight:600;">Dans les temps${f.gap >= 10 ? ` · +${fmt0(f.gap)}` : ''}</span>`
-            : `<span style="color:var(--coral); font-weight:600;">Manque ${fmt0(-f.gap)}</span>`;
-          const foot = f && !f.overdue ? (f.gap >= 0 ? `Échéance ${f.label}` : `Échéance ${f.label} · +${fmt0(f.perMonthMore)}/mois pour y arriver`) : '';
-          return `<div class="goal-line">
-            <div class="row" style="margin:0; flex-wrap:nowrap; font-size:13.5px; color:var(--paper);"><span style="display:flex; align-items:center; gap:8px; min-width:0;"><button data-goalcolor-open="${g.id}" aria-label="Changer la couleur" style="width:22px; height:22px; margin:-7px; display:inline-flex; align-items:center; justify-content:center; background:none; border:none; padding:0; flex-shrink:0;"><span style="width:8px; height:8px; border-radius:50%; background:${g.color};"></span></button><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(g.name)}</span></span><span style="font-size:12px; color:var(--paperDim); flex-shrink:0;">${head}</span></div>
-            <div class="row" style="align-items:baseline; margin:2px 0 0;"><div class="mono" style="font-size:26px; font-weight:700; color:var(--paper);">${fmt0(g.current)}</div><div style="font-size:12.5px; color:var(--paperDim);">sur ${fmt0(g.target)}</div></div>
-            <div class="catbar-track" style="margin-top:6px;"><div class="catbar-fill" style="width:${p}%; background:${g.color};"></div></div>
-            ${state.goalColorOpen===g.id ? `<div class="color-row" style="margin:10px 0 0;">${GOAL_PALETTE.map(c=>`<button data-goalcolor-set="${g.id}" data-color="${c}" class="color-swatch" aria-label="Couleur" style="background:${c}; outline:${g.color.toLowerCase()===c.toLowerCase()?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>` : ''}
-            ${foot ? `<div style="font-size:11.5px; color:var(--paperDim); margin-top:6px;">${foot}</div>` : ''}
-          </div>`;
+          // Meme ligne que partout (style « Mes enveloppes ») ; la pastille change la couleur.
+          const ok = done || (f && !f.overdue && f.gap >= 0);
+          const status = done ? `${icon('spark',9)} atteint` : !f ? 'sans échéance' : f.overdue ? 'échéance passée'
+            : f.gap >= 0 ? `${f.label}${f.gap >= 10 ? ` · <span style="color:var(--mint);">+${fmt0(f.gap)}</span>` : ''}` : `<span style="color:var(--coral);">manque ${fmt0(-f.gap)}</span> · +${fmt0(f.perMonthMore)}/mois`;
+          return lineRow({ name: escapeHtml(g.name), dot: g.color, dotAttr: `data-goalcolor-open="${g.id}" aria-label="Changer la couleur"`, pct: p, bar: g.color,
+              value: fmt0(g.current), valueColor: done || ok ? 'var(--mint)' : (f && (f.overdue || f.gap < 0)) ? 'var(--coral)' : 'var(--paper)',
+              sub: `sur ${fmt0(g.target)} · ${status}` })
+            + (state.goalColorOpen===g.id ? `<div class="color-row" style="margin:6px 0 4px;">${GOAL_PALETTE.map(c=>`<button data-goalcolor-set="${g.id}" data-color="${c}" class="color-swatch" aria-label="Couleur" style="background:${c}; outline:${g.color.toLowerCase()===c.toLowerCase()?'2px solid var(--paper)':'none'}; outline-offset:2px;"></button>`).join('')}</div>` : '');
         }).join('')}
       </div>` : `
         <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:12px 6px;">
