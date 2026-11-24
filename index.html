@@ -3137,16 +3137,24 @@ function renderDashboard(){
 
 // Graphique « Revenus vs depenses — 12 mois » (onglet Transactions). Memes regles que le mois en bref :
 // compte affiche uniquement, epargne exclue, echeances a venir ajoutees pour le mois en cours / a venir.
-function trendTiles(months){
-  return `<div class="trend-tiles">${months.map(t=>{
-    const inc = t.inc + t.incPlan, exp = t.exp + t.expPlan, net = inc - exp;
-    const pct = inc > 0 ? Math.min(100, Math.round(exp / inc * 100)) : (exp > 0 ? 100 : 0);
-    return `<button type="button" data-trend-month="${t.key}" class="trend-tile${t.isView ? ' is-view' : ''}" aria-label="Voir ${t.name}">
-      <span class="trend-tile-m">${t.label}${(t.incPlan > 0 || t.expPlan > 0) ? ' <span style="color:var(--gold);">·</span>' : ''}</span>
-      <span class="mono trend-tile-v" style="color:${inc+exp===0 ? 'var(--paperDim)' : net >= 0 ? 'var(--sage)' : 'var(--coral)'};">${inc+exp===0 ? '—' : `${net>=0?'+':'−'}${fmt0(Math.abs(net))}`}</span>
-      <span class="catbar-track" style="margin-top:7px; background:color-mix(in srgb, var(--sage) 35%, transparent);"><span class="catbar-fill" style="display:block; width:${pct}%; background:var(--coral);"></span></span>
-    </button>`;
-  }).join('')}</div>`;
+// Les derniers mois presentes comme « Mes enveloppes » : nom du mois, jauge depenses / revenus, gagne a droite.
+function trendRows(months){
+  return `<div class="trend-rows">
+    <div class="row" style="margin:0 0 6px; font-size:12px; color:var(--paperDim);"><span>Derniers mois</span><span>Gagné</span></div>
+    ${months.slice().reverse().map(t=>{
+      const inc = t.inc + t.incPlan, exp = t.exp + t.expPlan, net = inc - exp;
+      const pct = inc > 0 ? Math.min(100, Math.round(exp / inc * 100)) : (exp > 0 ? 100 : 0);
+      return `<div class="env-item"><div class="env-row">
+        <button class="env-main" data-trend-month="${t.key}" aria-label="Voir ${t.name}">
+          <div class="env-name"><span class="env-dot" style="background:${t.isView ? 'var(--gold)' : 'var(--line)'};"></span><span style="${t.isView ? 'font-weight:700;' : ''}">${t.name}${(t.incPlan>0||t.expPlan>0) ? ' <span style="color:var(--paperDim); font-weight:400; font-size:11px;">· estimé</span>' : ''}</span></div>
+          <div class="env-track"><div class="catbar-fill" style="width:${pct}%; background:${net >= 0 ? 'var(--sage)' : 'var(--coral)'};"></div></div>
+        </button>
+        <button class="env-toggle" data-trend-month="${t.key}" aria-label="Voir ${t.name}">
+          <span class="mono env-left" style="color:${inc+exp===0 ? 'var(--paperDim)' : net >= 0 ? 'var(--mint)' : 'var(--coral)'};">${inc+exp===0 ? '—' : `${net>=0?'+':'−'}${fmt0(Math.abs(net))}`}</span>
+        </button>
+      </div></div>`;
+    }).join('')}
+  </div>`;
 }
 function renderTrendCard(embedded = false){
   if(!embedded && !state.data.dashboardSettings.showTrend) return '';
@@ -3181,13 +3189,13 @@ function renderTrendCard(embedded = false){
   const selView = embedded ? (trend.find(t=>t.isView) || trend[trend.length-1]) : trendView;
   return `
     <div class="${embedded ? 'trend-embedded' : 'card'}">
-      ${embedded ? `<div style="font-size:11.5px; color:var(--paperDim); text-align:center; margin-bottom:8px;">Gagné en plus, mois par mois · touche un mois pour y aller</div>` : `
+      ${embedded ? `` : `
       <div class="row" style="margin-bottom:2px;">
         <div class="section-title" style="margin:0; font-size:15px;">Revenus vs dépenses — 12 mois</div>
         <button data-hide-card="showTrend" style="color:var(--paperDim); padding:4px;">${icon('x',15)}</button>
       </div>
       <div style="font-size:11px; color:var(--paperDim); margin-bottom:4px;">Hors épargne et virements entre comptes · à venir = échéances et reste des enveloppes · touchez un mois pour le détail</div>`}
-      ${embedded ? trendTiles(trend.slice(-6)) : `
+      ${embedded ? trendRows(trend.slice(-5)) : `
       <div class="trend-scroll">
         <div class="chart-bars">
           ${trend.map(t=>`
@@ -3207,8 +3215,8 @@ function renderTrendCard(embedded = false){
           `).join('')}
         </div>
       </div>`}
-      ${embedded ? `<div class="legend"><span><span class="dot" style="background:var(--coral)"></span>Dépensé</span><span><span class="dot" style="background:color-mix(in srgb, var(--sage) 55%, transparent)"></span>Reste des revenus</span>${trendHasPlan ? `<span><span style="color:var(--gold); font-weight:700;">·</span> à venir compris</span>` : ''}</div>` : `<div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>`}
-      ${(()=>{ const trendView = selView; return `<div class="trend-summary">
+      ${embedded ? `<div style="font-size:11px; color:var(--paperDim); text-align:center; margin-top:2px;">Jauge : part des revenus dépensée · touche un mois pour y aller</div>` : `<div class="legend"><span><span class="dot" style="background:var(--sage)"></span>Revenus</span><span><span class="dot" style="background:var(--coral)"></span>Dépenses</span>${trendHasPlan ? `<span><span class="dot dot-plan"></span>À venir</span>` : ''}</div>`}
+      ${embedded ? '' : (()=>{ const trendView = selView; return `<div class="trend-summary">
         ${embedded ? '' : `<div class="trend-summary-title">${trendView.name}</div>`}
         <div class="row" style="margin-bottom:0;">
           <span>Revenus</span>

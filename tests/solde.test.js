@@ -1295,9 +1295,9 @@ test.describe('Nouvelle page d’accueil', () => {
       assert.deepEqual(errors, []);
     }));
 
-  test('A3 Les mois en cases sont dans l’onglet Transactions, plus sur l’accueil', () =>
+  test('A3 Les derniers mois sont dans l’onglet Transactions, plus sur l’accueil', () =>
     withApp({ now:NOW, data: data() }, async ({ page }) => {
-      const r = await page.evaluate(() => ({ dash: /trend-scroll|hbars/.test(renderDashboard()), tx: renderTransactions().includes('class="trend-tiles"') }));   // cases par mois depuis le 24/11/2026
+      const r = await page.evaluate(() => ({ dash: /trend-scroll|hbars/.test(renderDashboard()), tx: renderTransactions().includes('class="trend-rows"') }));   // lignes facon enveloppes depuis le 24/11/2026
       assert.equal(r.dash, false);
       assert.equal(r.tx, true);
     }));

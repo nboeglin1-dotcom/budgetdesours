@@ -38,7 +38,7 @@ test('T1 Transactions : tuiles du mois justes même passées masquées, recherch
   } finally { await app.close(); }
 });
 
-test('T2 Dépenses du mois : même total sur l’accueil, dans Transactions et sur le graphique', async () => {
+test('T2 Dépenses du mois : même total sur l’accueil, dans Transactions et sur la ligne du mois', async () => {
   const D = (s) => new Date(s + 'T00:00:00.000Z').toISOString();
   const app = await openApp({ now:'2026-11-15T10:00:00+01:00', data: baseData({
     budgets:{ alimentation:600 }, lastRolloverCheck:'2026-10',
@@ -60,8 +60,9 @@ test('T2 Dépenses du mois : même total sur l’accueil, dans Transactions et s
     const paid = num(tiles[1]), up = stats.up;
     assert.equal(paid, 200);                                  // l'épargne n'est pas une dépense
     assert.equal(paid + up, stats.expense);                   // payé + à venir = dépenses de l'accueil
-    const chart = await page.textContent('.trend-summary');
-    assert.match(chart, new RegExp(`Dépenses\\s*${stats.expense.toLocaleString('fr-FR').replace(/\s/g,'\\s')}\\s€`));
+    const chart = (await page.textContent('.trend-rows')).replace(/\s+/g,' ');   // ligne du mois : revenus − mêmes dépenses
+    const net = 3000 - stats.expense;
+    assert.match(chart, new RegExp(`Novembre · estimé \\+${net.toLocaleString('fr-FR').replace(/\s/g,'\\s')}\\s€`));
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
