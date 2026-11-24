@@ -1519,3 +1519,114 @@ test.describe('Soldes Shine par mois : mois passés, ancien format et changement
       assert.deepEqual(errors, []);
     }));
 });
+
+/* ============ Relevé LCL (CSV) et 1re échéance PRÉVU : dates limites ============ */
+test.describe('Relevé LCL : fins de mois, changement d’année, heure de Paris', () => {
+  // Relevé fictif au format LCL (solde d'ouverture, opérations, solde de clôture).
+  const CSV = [
+    '31/12/2026;1000,00;;00000 000000X',
+    '02/01/2027;-41,90;Carte;;CB  SUPERMARCHE  1234  31/12/26;;0;Divers',   // achat du 31/12, débité le 2/01
+    '04/01/2027;-75,00;Prélèvement;;PRLV SEPA ENERGIE TEST;;;',
+    '05/01/2027;-9,99;Carte;;CB  LIBRAIRIE  05/01/27;;0;Divers',
+    '05/01/2027;873,11;;00000 000000X',
+  ].join('\r\n');
+  const data = () => baseData({ transactions:[
+    tx({ id:'start', type:'income', amount:1000, category:'ajustement', date:D('2026-12-30') }),
+    tx({ id:'cse', amount:42, category:'courses', note:'Courses', date:D('2026-12-31') }),          // arrondi à 42
+    tx({ id:'nrj', amount:75, category:'logement', note:'Énergie', date:D('2026-12-23') }),         // saisi 12 jours avant
+  ] });
+
+  test('LC1 Lecture : achat carte du 31/12 débité le 2/01 → daté du 31 décembre ; prélèvement à la date du relevé ; soldes lus', () =>
+    withApp({ now:'2027-01-06T00:30:00+01:00', data: data() }, async ({ page, errors }) => {
+      const r = await page.evaluate((csv) => { const p = parseLclCsv(csv);
+        const loc = (iso) => { const d = new Date(iso); return [d.getFullYear(), d.getMonth()+1, d.getDate()]; };
+        return { opening:p.opening.amount, closing:p.closing.amount, n:p.ops.length, op:p.ops.map(o=>[loc(o.opDate), loc(o.date), o.amount]) }; }, CSV);
+      assert.deepEqual(r, { opening:1000, closing:873.11, n:3, op:[
+        [[2026,12,31], [2027,1,2], -41.9],
+        [[2027,1,4], [2027,1,4], -75],
+        [[2027,1,5], [2027,1,5], -9.99] ] });
+      // 29 février dans le libellé d'un achat carte (année bissextile) : date conservée.
+      const leap = await page.evaluate(() => { const d = new Date(parseLclCsv('01/03/2028;-3,50;Carte;;CB  CAFE  29/02/28;;0;Divers').ops[0].opDate); return [d.getFullYear(), d.getMonth()+1, d.getDate()]; });
+      assert.deepEqual(leap, [2028,2,29]);
+      assert.equal(await page.evaluate(() => parseLclCsv('aucune ligne utile')), null);
+      assert.deepEqual(errors, []);
+    }));
+
+  test('LC2 Rapprochement à cheval sur l’année : arrondi corrigé, saisie 12 jours avant recalée, manquante ajoutée au bon mois, solde = clôture', () =>
+    withApp({ now:'2027-01-06T00:30:00+01:00', data: data() }, async ({ page, errors }) => {
+      const r = await page.evaluate((csv) => {
+        const p = parseLclCsv(csv), res = reconcileBank(p, 'main');
+        applyBankImport({ result:res, accountId:'main', fix:{}, add:{ [res.missing[0]]:'loisirs' } });
+        const get = id => state.data.transactions.find(t=>t.id===id);
+        const added = state.data.transactions.filter(t=>t.bankRef && !['cse','nrj'].includes(t.id));
+        const loc = (iso) => { const d = new Date(iso); return [d.getFullYear(), d.getMonth()+1, d.getDate()]; };
+        const again = reconcileBank(parseLclCsv(csv), 'main');
+        return { missing:res.missing.length, cse:get('cse').amount, nrjDate:loc(get('nrj').date),
+          added: added.map(t=>[t.note, t.amount, t.category, loc(t.date)]),
+          bal: Math.round(appBalanceAt(p.closing.date, 'main')*100)/100,
+          again: { already:again.already, matches:again.matches.length, missing:again.missing.length } };
+      }, CSV);
+      assert.equal(r.missing, 1);
+      assert.equal(r.cse, 41.9);                                  // arrondi corrigé, reste en décembre
+      assert.deepEqual(r.nrjDate, [2027,1,4]);                    // recalé sur la date du prélèvement
+      assert.deepEqual(r.added, [['Librairie', 9.99, 'loisirs', [2027,1,5]]]);
+      assert.equal(r.bal, 873.11);
+      assert.deepEqual(r.again, { already:3, matches:0, missing:0 }); // ré-import : aucun doublon
+      assert.deepEqual(errors, []);
+    }));
+
+  test('LC3 Appli rechargée après l’import (1er du mois à 0h30) : démarrage sans erreur, liens bancaires conservés', async () => {
+    let saved;
+    await withApp({ now:'2027-01-06T00:30:00+01:00', data: data() }, async ({ page }) => {
+      saved = await page.evaluate((csv) => { const res = reconcileBank(parseLclCsv(csv), 'main');
+        applyBankImport({ result:res, accountId:'main', fix:{}, add:{} }); return JSON.parse(localStorage.getItem('solde-budget-data-v1')); }, CSV);
+    });
+    await withApp({ now:'2027-02-01T00:30:00+01:00', data: saved }, async ({ page, errors }) => {
+      const n = await page.evaluate(() => state.data.transactions.filter(t=>t.bankRef).length);
+      assert.equal(n, 2);
+      assert.deepEqual(errors, []);
+    });
+  });
+});
+
+test.describe('1re échéance future : PRÉVU jusqu’à sa date (création et données existantes)', () => {
+  const abo = (date) => tx({ id:'f', amount:20, category:'abonnements', note:'Abo test', date:D(date), recurringId:'r1' });
+  const open = (now, txs, nextDate, anchorDay) => openApp({ now, data: baseData({ transactions:txs, recurring:[ rule({ id:'r1', amount:20, nextDate:D(nextDate), anchorDay }) ] }) });
+  const snap = (page) => page.evaluate(() => ({ tx: state.data.transactions.map(t=>t.id+'@'+t.date.slice(0,10)).sort(), next: state.data.recurring[0].nextDate.slice(0,10) }));
+
+  test('PV1 Données existantes : seule échéance enregistrée en avance (31 janvier, règle au 28 février) → remise en PRÉVU au 31', async () => {
+    const app = await open('2026-11-24T00:30:00+01:00', [abo('2027-01-31')], '2027-02-28', 31);
+    try{
+      assert.deepEqual(await snap(app.page), { tx:[], next:'2027-01-31' });
+      assert.deepEqual(app.errors, []);
+    } finally { await app.close(); }
+  });
+
+  test('PV2 Rien n’est touché : échéance du jour même (0h30 heure de Paris), ou règle avec un historique', async () => {
+    let app = await open('2026-11-24T00:30:00+01:00', [abo('2026-11-24')], '2026-12-24', 24);
+    try{ assert.deepEqual(await snap(app.page), { tx:['f@2026-11-24'], next:'2026-12-24' }); assert.deepEqual(app.errors, []); } finally { await app.close(); }
+    app = await open('2026-11-24T00:30:00+01:00', [abo('2026-12-10'), tx({ id:'p', amount:20, category:'abonnements', date:D('2026-10-10'), recurringId:'r1' })], '2027-01-10', 10);
+    try{ assert.deepEqual(await snap(app.page), { tx:['f@2026-12-10', 'p@2026-10-10'], next:'2027-01-10' }); assert.deepEqual(app.errors, []); } finally { await app.close(); }
+  });
+
+  test('PV3 Récurrence créée pour le 29 février 2028 : PRÉVU, puis une seule transaction ce jour-là (1h05, comme Y7), prochaine au 29 mars', async () => {
+    let app = await openApp({ now:'2028-02-10T21:00:00+01:00', data: baseData() });
+    let saved;
+    try{
+      const { page } = app;
+      await page.evaluate(() => { txFormState = { type:'expense', category:'abonnements', date:'2028-02-29', recurring:true, frequency:'monthly', note:'Abo bissextile', amount:'12', editingId:null, photo:null, accountId:'main' }; state.txAdvancedOpen = true; setState({ modal:'addTx' }); });
+      await page.fill('#txAmount', '12').catch(()=>{});
+      await page.evaluate(() => { txFormState.amount = 12; document.querySelector('[data-submit-tx]').click(); });
+      const r = await page.evaluate(() => ({ n: state.data.transactions.length, rules: state.data.recurring.map(r=>[r.note, r.nextDate.slice(0,10), r.anchorDay]) }));
+      assert.deepEqual(r, { n:0, rules:[['Abo bissextile', '2028-02-29', 29]] });
+      assert.deepEqual(app.errors, []);
+      saved = await page.evaluate(() => state.data);
+    } finally { await app.close(); }
+    app = await openApp({ now:'2028-02-29T01:05:00+01:00', data: saved });
+    try{
+      const r = await app.page.evaluate(() => ({ tx: state.data.transactions.filter(t=>t.note==='Abo bissextile').map(t=>t.date.slice(0,10)), next: state.data.recurring[0].nextDate.slice(0,10) }));
+      assert.deepEqual(r, { tx:['2028-02-29'], next:'2028-03-29' });
+      assert.deepEqual(app.errors, []);
+    } finally { await app.close(); }
+  });
+});
