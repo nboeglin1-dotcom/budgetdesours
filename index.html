@@ -160,6 +160,13 @@
   .env-left{font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; min-width:5ch; text-align:right;}
   .catbar-track{height:6px; border-radius:99px; background:var(--lineSoft); overflow:hidden; margin:6px 0;}
   .catbar-fill{height:100%; border-radius:99px; transition:width .5s cubic-bezier(.22,1,.36,1);}
+  /* Entree d'ecran (ouverture, onglet, mois) : barres qui se remplissent, lignes qui arrivent en cascade. */
+  @keyframes barGrow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+  @keyframes rowIn{from{opacity:0; transform:translateY(8px);}to{opacity:1; transform:none;}}
+  @media (prefers-reduced-motion: no-preference){
+    body.screen-enter .page > .card .catbar-fill{transform-origin:left center; animation:barGrow .9s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i,0) * 70ms + 120ms);}
+    body.screen-enter .page > .card .env-item, body.screen-enter .page > .card .goal-line{animation:rowIn .5s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i,0) * 70ms);}
+  }
   .search-wrap{display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:9px 12px; flex:1;}
   .search-wrap input{background:transparent; border:none; width:100%; font-size:14px;}
   .filter-pills{display:flex; gap:4px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:4px;}
@@ -1960,6 +1967,46 @@ function restoreScroll(y){
   requestAnimationFrame(()=> window.scrollTo(0, y));
   setTimeout(()=>{ window.scrollTo(0, y); h.style.scrollBehavior = prev; }, 350);
 }
+// Petite mise en scene quand l'ecran change (ouverture, deverrouillage, onglet, mois) :
+// barres qui se remplissent, lignes en cascade, gros montants qui defilent jusqu'a leur valeur.
+// Un simple re-rendu sur le meme ecran affiche directement l'etat final.
+function screenEntrance(){
+  const key = state.locked ? 'lock' : `${state.tab}|${state.viewY}|${state.viewM}`;
+  const changed = key !== window.__screenKey;
+  window.__screenKey = key;
+  const body = document.body;
+  clearTimeout(window.__enterT);
+  if(window.__countRaf) cancelAnimationFrame(window.__countRaf);
+  if(!changed || state.locked){ body.classList.remove('screen-enter'); return; }
+  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  body.classList.add('screen-enter');
+  document.querySelectorAll('.page > .card').forEach(card=>{
+    card.querySelectorAll('.catbar-fill').forEach((el,i)=>el.style.setProperty('--i', i));
+    card.querySelectorAll('.env-item, .goal-line').forEach((el,i)=>el.style.setProperty('--i', i));
+  });
+  window.__enterT = setTimeout(()=>body.classList.remove('screen-enter'), 1600);
+  if(navigator.webdriver) return;   // tests automatiques : valeurs finales tout de suite
+  const nums = [...document.querySelectorAll('.page > .card .mono, #balanceNum')].filter(el=>
+    !el.children.length && parseFloat(getComputedStyle(el).fontSize) >= 22);
+  const jobs = nums.map(el=>{
+    const txt = el.textContent.trim();
+    const m = txt.match(/^([−-]?)([\d\s\u202f\u00a0]+)\s?€$/);
+    if(!m) return null;
+    const target = (m[1] ? -1 : 1) * Number(m[2].replace(/\D/g,''));
+    if(!isFinite(target) || Math.abs(target) < 10 || fmt0(target) !== txt) return null;
+    return { el, target };
+  }).filter(Boolean);
+  if(!jobs.length) return;
+  const t0 = performance.now(), dur = 900;
+  const step = now=>{
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    jobs.forEach(j=>{ if(j.el.isConnected) j.el.textContent = fmt0(Math.round(j.target * e)); });
+    if(k < 1) window.__countRaf = requestAnimationFrame(step);
+  };
+  jobs.forEach(j=>j.el.textContent = fmt0(0));
+  window.__countRaf = requestAnimationFrame(step);
+}
+
 function rerender(){
   const active = document.activeElement;
   const activeId = active && active.id;
@@ -1969,6 +2016,7 @@ function rerender(){
   const modalScrollTop = modalSheets.length ? modalSheets[modalSheets.length-1].scrollTop : null;
   const modalWasOpen = modalSheets.length > 0;
   document.getElementById('app').innerHTML = renderApp();
+  screenEntrance();
   document.body.classList.toggle('panel-open', !!_panelSheet);
   bindEvents();
   if(modalWasOpen){
@@ -3532,7 +3580,7 @@ function renderBudgets(){
           ${caTile('Par jour', left>0 && daysLeft>0 ? `≈ ${fmt0(left/daysLeft)}` : '—', 'var(--paper)', daysLeft>0 ? `${daysLeft} jour${daysLeft>1?'s':''}` : 'mois terminé')}
           ${caTile('Dépassées', `${overCount} / ${allExpenseCats.length}`, overCount ? 'var(--coral)' : 'var(--sage)')}
         </div>
-        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:2px; margin-top:12px;">
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:2px; margin-top:12px;">
           ${allExpenseCats.map(c=>{
             const lim = effectiveLimit(c.id), sp = byCat[c.id]||0, p = Math.min(100, Math.round(sp/lim*100)), ov = sp > lim;
             const bar = ov ? 'var(--coral)' : c.color;
@@ -4049,7 +4097,7 @@ function renderGoals(){
         <div><div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${act ? 'Activité et épargne' : `${goals.length} objectif${goals.length>1?'s':''} d'épargne`}</div></div>
         <button data-open="addGoal" aria-label="Nouvel objectif" style="${iconBtn}">${icon('plus',14)}</button>
       </div>
-      <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:22px; padding:14px 0 4px;">
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:flex-start; gap:18px; padding:14px 0 4px;">
       <div>
       ${act ? `
       <div class="row" style="margin:0; flex-wrap:nowrap; font-size:13.5px; color:var(--paper);"><span style="display:flex; align-items:center; gap:8px;"><button data-cacolor-open="1" aria-label="Changer la couleur du chiffre d'affaires" style="width:22px; height:22px; margin:-7px -7px -7px -7px; display:inline-flex; align-items:center; justify-content:center; background:none; border:none; padding:0; flex-shrink:0;"><span style="width:8px; height:8px; border-radius:50%; background:${caCol};"></span></button>Chiffre d'affaires</span><span style="font-size:12px; color:var(--paperDim);">${ca.reached ? `<span style="color:var(--sage); font-weight:600;">${icon('spark',10)} Atteint · +${fmt0(ca.ca - ca.target)}</span>` : ca.when==='past' ? `<span style="color:var(--coral);">Manqué : ${fmt0(ca.remaining)}</span>` : `Reste ${fmt0(ca.remaining)}`}</span></div>
@@ -4066,7 +4114,7 @@ function renderGoals(){
       </div>` : ''}
       </div>
       ${goals.length ? `
-      <div style="display:flex; flex-direction:column; gap:20px;">
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:20px;">
         ${goals.map(g=>{
           const p = g.target>0 ? Math.min(100, Math.round(g.current/g.target*100)) : 0;
           const done = g.target>0 && g.current>=g.target;
