@@ -19,8 +19,9 @@ test('G1 Cartes d’épargne : total, virements auto par mois, sans ajout ni ret
     await page.click('[data-tab="goals"]');
     const total = await page.textContent('.goals-total-card');
     assert.match(total, /Auto \/ mois\s*500\s€/);
-    assert.match(total, /sur 4\s000\s€ · juil\. 2027 · \+1\s250\s€/);   // 1 250 + 8 virements de 500
-    assert.match(total, /atteint/);
+    assert.match(total, /Dans les temps · \+1\s250\s€/);
+    assert.match(total, /Échéance juil\. 2027/);   // 1 250 + 8 virements de 500
+    assert.match(total, /Atteint/);
     // Plus d'ajout ni de retrait sur les cartes : ça passe par les boutons − / + de l'accueil.
     assert.equal(await page.$('#goalAmount-g1'), null);
     assert.equal(await page.$('[data-contribute="g1"]'), null);
@@ -79,9 +80,10 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     await page.click('[data-tab="goals"]');
     // 1 515 + 8 × 500 (déc. → juil.) = 5 515 → manque 4 485 sur 9 mois ≈ 500 €/mois
     let card = await page.textContent('.goals-total-card');
-    assert.match(card, /manque 4\s485\s€ · \+500\s€\/mois/);
+    assert.match(card, /Manque 4\s485\s€/);
+    assert.match(card, /Échéance août 2027 · \+500\s€\/mois pour y arriver/);
     // Surplus du 5 = fin de décembre estimée (virement Shine compris) − coussin du commun (500 €)
-    assert.match(card, /atteint · \+2\s820\s€/);
+    assert.match(card, /Atteint · \+2\s820\s€/);
     const commun = await page.evaluate(() => shineTransferPlan(2026, 11).commun);
     const endDec = await page.evaluate(() => displayedEndOfMonth(computeForecast(), 2026, 11));
     const fr = n => new Intl.NumberFormat('fr-FR').format(n).replace(/\s/g, '\\s');
@@ -99,7 +101,7 @@ test('G4 Prévision : versements prévus comptés, retard en €/mois, surplus d
     assert.match(await page.textContent('#goalDeadlinePreview'), /auto 4\s000\s€ \+ prévus 1\s600\s€/);
     await page.evaluate(() => setState({ goalDeadlineModalId:null }));
     card = await page.textContent('.goals-total-card');
-    assert.match(card, /manque 2\s885\s€/);
+    assert.match(card, /Manque 2\s885\s€/);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
