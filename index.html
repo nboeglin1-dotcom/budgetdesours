@@ -3050,7 +3050,7 @@ function renderDashboard(){
     <div class="card">
       <div class="section-title" data-bref-title="1" style="margin:0 0 10px; font-size:15px;">Le mois en bref</div>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
-        ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)', stats.expenseUpcoming >= 1 ? (stats.expenseUpcoming >= expense - 0.5 ? 'tout à venir' : `dont ${fmt0(stats.expenseUpcoming)} à venir`) : ''], [savedThisMonth>=0 ? (stats.isFuture || stats.plannedSaving>0 ? 'Épargne prévue' : 'Épargné') : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c,sub])=>`
+        ${[['Revenus', income, 'var(--sage)'], ['Dépenses', expense, 'var(--coral)', stats.expenseUpcoming >= 1 ? (stats.expenseUpcoming >= expense - 0.5 ? 'tout à venir' : `${fmt0(stats.expenseUpcoming)} à venir`) : ''], [savedThisMonth>=0 ? (stats.isFuture || stats.plannedSaving>0 ? 'Épargne prévue' : 'Épargné') : 'Repris', Math.abs(savedThisMonth), 'var(--gold)']].map(([l,v,c,sub])=>`
           <div style="background:var(--surfaceHi); border-radius:12px; padding:10px; min-width:0;"><div style="font-size:11.5px; color:var(--paperDim);">${l}</div><div class="mono" style="font-size:14px; font-weight:600; margin-top:3px; color:${c};">${fmt0(v)}</div>${sub ? `<div style="font-size:10.5px; color:var(--paperDim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sub}</div>` : ''}</div>`).join('')}
       </div>
       <div data-month-start style="font-size:12px; color:var(--paperDim); margin-top:10px;">Solde au 1er ${MONTHS[state.viewM].toLowerCase()} : <span class="mono" style="color:${stats.startBal<0?'var(--coral)':'var(--paper)'};">${fmt0(stats.startBal)}</span>${Math.abs(stats.adjustments)>=0.5 ? ` · ajustements <span class="mono">${stats.adjustments>0?'+':'−'}${fmt0(Math.abs(stats.adjustments))}</span>` : ''}</div>
@@ -5976,6 +5976,18 @@ function fitDashboard(){
   const page = document.querySelector('#app .page');
   if(!page || state.tab !== 'dashboard') return;
   page.classList.remove('dash-tight', 'dash-tighter');
+  // Les cartes suivantes (ex. « Mes objectifs ») ne doivent pas depasser sous la carte : elles commencent
+  // sous la barre d'onglets et n'apparaissent qu'en faisant defiler.
+  const pushBelow = () => {
+    const t = document.querySelector('[data-bref-title]'); const tb = document.querySelector('.tabbar');
+    if(!t || !tb) return;
+    const card = t.closest('.card');
+    if(!card.nextElementSibling) return;
+    card.style.marginBottom = '';
+    const next = card.nextElementSibling.getBoundingClientRect().top + window.scrollY;
+    const limit = window.innerHeight - tb.offsetHeight;
+    if(next < limit) card.style.marginBottom = (14 + limit - next + 12) + 'px';
+  };
   const fits = () => {
     const t = document.querySelector('[data-bref-title]'); const tb = document.querySelector('.tabbar');
     if(!t || !tb) return true;
@@ -5983,11 +5995,11 @@ function fitDashboard(){
     // En coordonnees de page (la barre d'onglets est fixe en bas de l'ecran).
     return card.getBoundingClientRect().bottom + window.scrollY <= window.innerHeight - tb.offsetHeight - 6;
   };
-  if(fits()) return;
+  if(fits()) return pushBelow();
   page.classList.add('dash-tight');
-  if(fits()) return;
+  if(fits()) return pushBelow();
   page.classList.add('dash-tighter');
-  if(fits()) return;
+  if(fits()) return pushBelow();
   // Dernier recours : on n'affiche que les enveloppes qui tiennent (les plus entamees d'abord), avec un lien vers les autres.
   const items = [...document.querySelectorAll('[data-envelopes] .env-item')];
   const more = document.querySelector('[data-envelopes] .env-more');
@@ -5997,6 +6009,7 @@ function fitDashboard(){
     hidden++; items[items.length - hidden].style.display = 'none';
     more.style.display = 'block'; more.textContent = `+ ${hidden} autre${hidden>1?'s':''} enveloppe${hidden>1?'s':''} →`;
   }
+  pushBelow();
 }
 function animateBalance(el, target){
   if(state.balanceAnim.raf) cancelAnimationFrame(state.balanceAnim.raf);
