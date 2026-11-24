@@ -1129,7 +1129,11 @@ try{ checkMonthlyRecap(); }catch(e){ console.error('Récapitulatif mensuel :', e
 function setState(patch){ Object.assign(state, patch); rerender(); }
 function mutateData(fn){
   const countBefore = state.data.transactions.length;
+  const exportBefore = state.data.lastExportDate;
   fn(state.data);
+  // Modifications depuis la derniere sauvegarde (remis a zero quand on sauvegarde).
+  if(state.data.lastExportDate !== exportBefore) state.data.changesSinceExport = 0;
+  else state.data.changesSinceExport = (state.data.changesSinceExport || 0) + 1;
   const hidden = state.data.hiddenBudgetCategories;
   if(hidden && hidden.length && state.data.transactions.length > countBefore){
     const activeCats = new Set(state.data.transactions.filter(t=>t.type==='expense' && !isTxStrictlyRecurring(t)).map(t=>t.category));
@@ -1829,6 +1833,8 @@ function applyBankImport(imp){
       d.transactions.unshift({ id: uid(), type: o.amount >= 0 ? 'income' : 'expense', amount: Math.abs(o.amount), category: pick, note: cleanBankLabel(o.label), date: o.opDate, accountId: imp.accountId, bankRef: o.ref });
     });
   });
+  // Un import touche tout le mois : la sauvegarde est proposee tout de suite.
+  state.data.changesSinceExport = Math.max(state.data.changesSinceExport || 0, 25); saveData(state.data);
 }
 
 /* ---------------- helpers ---------------- */
@@ -2883,13 +2889,16 @@ function renderExportReminder(){
   const days = last ? Math.floor((Date.now() - new Date(last).getTime()) / 86400000) : null;
   const todayKey = localYMD(new Date());
   const backupDay = isBackupDay() && !(last && localYMD(new Date(last)) === todayKey);
-  if(days!==null && days < 7 && !backupDay) return '';
+  // Beaucoup de changements (ex. import du releve, virements du 5) : on n'attend pas le prochain jour prevu.
+  const changes = state.data.changesSinceExport || 0;
+  const many = changes >= 25;
+  if(days!==null && days < 7 && !backupDay && !many) return '';
   const snooze = state.data.exportReminderSnooze;
   if(snooze && localYMD(new Date()) <= snooze) return '';
   if((state.data.transactions||[]).length < 5) return '';
   return `
     <div class="card" style="border:1px solid rgba(212,169,79,.4); background:rgba(212,169,79,.10); padding:12px 14px; margin-bottom:14px;">
-      <div style="font-size:13px; color:var(--paper); line-height:1.45; margin-bottom:10px;">${icon('shield',14)} ${days===null ? "Tu n'as encore jamais sauvegardé tes données hors de l'iPhone." : (days < 7 ? 'Jour de sauvegarde.' : `Dernière sauvegarde il y a ${days} jours.`)} Enregistre-la dans iCloud Drive (dossier Budget) pour ne rien perdre et recevoir le contrôle du soir.</div>
+      <div style="font-size:13px; color:var(--paper); line-height:1.45; margin-bottom:10px;">${icon('shield',14)} ${days===null ? "Tu n'as encore jamais sauvegardé tes données hors de l'iPhone." : (many && !backupDay && days < 7 ? `${changes} modifications depuis ta dernière sauvegarde.` : days < 7 ? 'Jour de sauvegarde.' : `Dernière sauvegarde il y a ${days} jours.`)} Enregistre-la dans iCloud Drive (dossier Budget) pour ne rien perdre et recevoir le contrôle du soir.</div>
       <div style="display:flex; gap:8px;">
         <button class="btn-primary" data-export-backup="1" style="flex:1; justify-content:center; font-size:12.5px;">${icon('download',13)} Sauvegarder</button>
         <button class="btn-ghost" data-snooze-export="1" style="font-size:12.5px;">Plus tard</button>
@@ -5222,7 +5231,8 @@ function bindEvents(){
     try{
       const file = new File([jsonStr], filename, { type:'application/json' });
       if(navigator.canShare && navigator.canShare({ files:[file] })){
-        await navigator.share({ files:[file], title:'Sauvegarde Solde des Ours' });
+        // Sans titre : sinon « Enregistrer dans Fichiers » cree aussi un « texte N.txt » a cote du fichier.
+        await navigator.share({ files:[file] });
         mutateData(d=>{ d.lastExportDate = new Date().toISOString(); });
         showToast('Sauvegarde partagée');
       } else {

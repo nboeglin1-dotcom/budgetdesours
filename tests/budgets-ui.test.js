@@ -173,3 +173,19 @@ test('B6 Enveloppes : Toutes / À surveiller / Dépassées s’ouvrent dans une 
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('B7 Rappel de sauvegarde : après 25 modifications ou un import de relevé, sans attendre le jour prévu ; remis à zéro à la sauvegarde', async () => {
+  // Mardi 24/11 : pas un jour de sauvegarde, dernière sauvegarde la veille
+  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', data: baseData({ lastExportDate:'2026-11-23T08:00:00.000Z',
+    transactions: Array.from({length:6}, (_,i)=>tx({ amount:10, category:'alimentation', date:D('2026-11-1'+i) })) }) });
+  const { page, errors } = app;
+  try{
+    assert.equal(await page.$('[data-export-backup]'), null);
+    await page.evaluate(() => { for(let i=0;i<25;i++) mutateData(d=>{ d.transactions[0].amount += 1; }); rerender(); });
+    assert.match(await page.textContent('#app'), /25 modifications depuis ta dernière sauvegarde/);
+    await page.evaluate(() => { mutateData(d=>{ d.lastExportDate = new Date().toISOString(); }); rerender(); });
+    assert.equal(await page.evaluate(() => state.data.changesSinceExport), 0);
+    assert.equal(await page.$('[data-export-backup]'), null);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
