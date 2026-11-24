@@ -173,7 +173,7 @@ test.describe('Rapprochement des récurrences (source unique)', () => {
         montantNote: isLinkedToRecurring({ amount:15, category:'divers', note:' Box internet ' }),
         montantSeul: isLinkedToRecurring({ amount:15, category:'divers', note:'' }),
         autreMontant: isLinkedToRecurring({ amount:16, category:'divers', note:'Box internet' }),
-        diagnostic: (() => { let msg = ''; window.alert = (m) => { msg = m; }; state.backupModalOpen = true; rerender();
+        diagnostic: (() => { let msg = ''; window.alert = (m) => { msg = m; }; state.backupModalOpen = true; state.backupTab = 'settings'; rerender();
           document.querySelector('[data-debug-banner]').click(); return msg; })(),
       }));
       assert.deepEqual([r.parId, r.idInconnu, r.catMontant, r.montantNote, r.montantSeul, r.autreMontant],
@@ -600,13 +600,13 @@ test.describe('Version allégée', () => {
       const r = await page.evaluate(async () => {
         const html = [];
         for(const t of ['dashboard','transactions','budgets','goals']){ state.tab = t; rerender(); html.push(document.body.innerHTML); }
-        state.tab = 'dashboard'; state.backupModalOpen = true; rerender(); html.push(document.body.innerHTML);
+        state.tab = 'dashboard'; state.backupModalOpen = true; for(const k of ['save','bank','settings']){ state.backupTab = k; rerender(); html.push(document.body.innerHTML); }
         const all = html.join('');
         return {
           traces: ['data-voice-fab','pdfImportInput','data-open-habitcalc','data-open-insights','data-open-whatif','data-open-yearly'].filter(k => all.includes(k)),
           fonctions: ['startVoiceCapture','extractPdfLines','renderHabitCalcModal','computeHealthScore','renderWhatIfModal','computeReviewStats'].filter(f => typeof window[f] === 'function'),
           cdn: !!document.querySelector('script[src*="cdnjs"]'),
-          csv: !!document.getElementById('csvImportInput'),
+          csv: all.includes('id="csvImportInput"'),
         };
       });
       assert.deepEqual(r.traces, []);
@@ -627,7 +627,7 @@ test.describe('Version allégée', () => {
 
   test('V3 Import CSV toujours fonctionnel (aperçu puis import)', () =>
     withApp({ now: NOW_SEPT, data: baseData() }, async ({ page, errors }) => {
-      await page.evaluate(() => { state.backupModalOpen = true; rerender(); });
+      await page.evaluate(() => { state.backupModalOpen = true; state.backupTab = 'bank'; rerender(); });
       const csv = 'Date;Libellé;Montant\n05/09/2026;Boulangerie;-4,20\n08/09/2026;Remboursement;15,00\n';
       await page.setInputFiles('#csvImportInput', { name:'releve.csv', mimeType:'text/csv', buffer: Buffer.from(csv) });
       await page.waitForFunction(() => state.csvImport && state.csvImport.rows.length === 2, null, { timeout: 5000 });

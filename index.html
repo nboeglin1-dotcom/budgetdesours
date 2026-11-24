@@ -195,6 +195,8 @@
   @keyframes slideUpPanel{from{transform:translateY(24px); opacity:0;} to{transform:translateY(0); opacity:1;}}
   .panel-sheet .panel-top{position:sticky; top:0; z-index:3; background:var(--surface); padding-top:18px; padding-bottom:10px; margin-bottom:4px;}
   .panel-sheet .card{background:var(--surfaceHi); border-color:var(--line);}
+  .data-sheet{height:calc(var(--vvh, 100dvh) - 40px); max-height:none; padding-top:0;}
+  .data-sheet .data-top{position:sticky; top:0; z-index:3; background:var(--surface); padding-top:18px; padding-bottom:12px; margin-bottom:4px;}
   .kb-open .panel-overlay{z-index:100;}
   .kb-open .panel-sheet{height:var(--vvh, 100vh);}
   body.panel-open{overflow:hidden;}
@@ -1834,7 +1836,9 @@ function applyBankImport(imp){
     });
   });
   // Un import touche tout le mois : la sauvegarde est proposee tout de suite.
-  state.data.changesSinceExport = Math.max(state.data.changesSinceExport || 0, 25); saveData(state.data);
+  state.data.changesSinceExport = Math.max(state.data.changesSinceExport || 0, 25);
+  state.data.lastBankImport = { date: new Date().toISOString(), fixed: r.matches.filter((m,k)=>(Math.abs(m.diff) >= 0.005 || m.moveDate) && imp.fix[k] !== false).length, added: r.missing.filter(i=>imp.add[i]).length };
+  saveData(state.data);
 }
 
 /* ---------------- helpers ---------------- */
@@ -2070,50 +2074,69 @@ function backupSectionHeader(iconName, label){
 }
 
 function renderBackupModal(){
-  const count = state.data.transactions.length;
-  const lastExport = state.data.lastExportDate;
-  const daysSinceExport = lastExport ? Math.floor((Date.now() - new Date(lastExport).getTime()) / 86400000) : null;
-  const exportOverdue = daysSinceExport===null || daysSinceExport >= 14;
+  // « Mes données » : l'etat de tes donnees en un coup d'oeil, puis Sauvegarde / Banque / Reglages.
+  const d = state.data;
+  const count = d.transactions.length;
+  const lastExport = d.lastExportDate;
+  const days = lastExport ? Math.floor((Date.now() - new Date(lastExport).getTime()) / 86400000) : null;
+  const changes = d.changesSinceExport || 0;
+  const lastImport = d.lastBankImport || null;
+  const importDays = lastImport ? Math.floor((Date.now() - new Date(lastImport.date).getTime()) / 86400000) : null;
   const autoBackups = listAutoBackups();
+  // Etat : a l'abri (sauvegarde recente et peu de changements), a faire bientot, ou urgent.
+  const level = days === null || days >= 14 ? 'bad' : (days >= 7 || changes >= 25) ? 'warn' : 'ok';
+  const lv = { ok:{ c:'var(--sage)', bg:'rgba(111,162,135,.16)', t:'Tes données sont à l’abri', s:`Sauvegardées ${days===0 ? "aujourd'hui" : days===1 ? 'hier' : `il y a ${days} jours`}${changes ? ` · ${changes} modification${changes>1?'s':''} depuis` : ''}` },
+    warn:{ c:'var(--gold)', bg:'rgba(212,169,79,.16)', t:'Une sauvegarde serait bienvenue', s: changes >= 25 ? `${changes} modifications depuis la dernière` : `Dernière il y a ${days} jours` },
+    bad:{ c:'var(--coral)', bg:'rgba(232,102,77,.16)', t: days===null ? 'Aucune sauvegarde pour l’instant' : 'Sauvegarde en retard', s: days===null ? "Tes données ne vivent que sur cet iPhone" : `Dernière il y a ${days} jours` } }[level];
+  const tab = state.backupTab || 'save';
+  const tabBtn = (id, label) => `<button data-backup-tab="${id}" class="${tab===id ? 'active' : ''}">${label}</button>`;
+  const rowBtn = (attr, ic, title, sub, color='var(--gold)', tag='button') => `<${tag} ${attr} style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; background:var(--surfaceHi); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-bottom:8px; color:var(--paper);">
+      <span style="width:34px; height:34px; border-radius:10px; background:var(--surface); color:${color}; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">${icon(ic,16)}</span>
+      <span style="flex:1; min-width:0;"><span style="display:block; font-size:13.5px; font-weight:600;">${title}</span>${sub ? `<span style="display:block; font-size:11.5px; color:var(--paperDim); margin-top:1px;">${sub}</span>` : ''}</span>
+      <span style="color:var(--paperDim); display:flex;">${icon('chevronR',13)}</span></${tag}>`;
+  const fmtDay = iso => new Date(iso).toLocaleDateString('fr-FR',{ day:'numeric', month:'short' });
   return `
     <div class="modal-overlay" data-close-backup="1">
-      <div class="modal-sheet" onclick="event.stopPropagation()">
-        <div class="modal-head"><div class="modal-title ledger">Sauvegarde</div><button data-close-x-backup="1">${icon('x',18)}</button></div>
-        <div style="font-size:13px; color:var(--paperDim); line-height:1.5;">
-          Tes données ne vivent que sur cet appareil. Enregistre une sauvegarde régulièrement (idéalement dans iCloud Drive, via "Enregistrer dans Fichiers" au moment du partage) pour ne rien perdre en cas de problème, et pouvoir la retrouver sur un autre appareil.
-        </div>
-
-        ${backupSectionHeader('shield', 'Sauvegarde')}
-        <div class="txrow">
-          <div class="tx-left"><div class="swatch" style="background:rgba(212,169,79,.16); color:var(--gold);">${icon('download',16)}</div><div class="tx-note">${count} transaction${count>1?'s':''} enregistrée${count>1?'s':''}</div></div>
-        </div>
-        <div style="font-size:12px; color:${exportOverdue?'var(--coral)':'var(--paperDim)'}; margin:8px 0 4px;">
-          ${lastExport ? `Dernier export téléchargé : il y a ${daysSinceExport} jour${daysSinceExport>1?'s':''}` : "Tu n'as encore jamais exporté de sauvegarde"}
-          ${exportOverdue ? ' — pense à en refaire une' : ''}
-        </div>
-        <button class="btn-primary" style="width:100%; justify-content:center; margin-top:10px;" data-export-backup="1">${icon('download',15)} Enregistrer une sauvegarde</button>
-        <label for="backupImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer; margin-top:10px;">${icon('upload',15)} Restaurer une sauvegarde</label>
-        <input id="backupImportInput" type="file" accept="application/json,.json" style="display:none;">
-        <div style="font-size:11.5px; color:var(--paperDim); margin-top:8px; text-align:center;">La restauration remplace toutes tes données actuelles.</div>
-
-        ${backupSectionHeader('upload', 'Importer des transactions')}
-        <label for="csvImportInput" class="btn-ghost" style="width:100%; justify-content:center; display:flex; cursor:pointer;">${icon('upload',15)} Relevé bancaire (CSV)</label>
-        <input id="csvImportInput" type="file" accept=".csv,text/csv" style="display:none;">
-        <div style="font-size:11.5px; color:var(--paperDim); margin-top:8px; text-align:center; line-height:1.5;">Ajoute des transactions sans remplacer tes données actuelles.</div>
-
-        ${backupSectionHeader('repeat', 'Instantanés automatiques')}
-        <div style="font-size:11.5px; color:var(--paperDim); margin-bottom:12px; line-height:1.5;">Une copie de tes données est gardée automatiquement chaque jour sur cet appareil (7 derniers jours) — utile en cas d'erreur de manipulation, mais pas si tu perds ton téléphone : pour ça, exporte une vraie sauvegarde plus haut.</div>
-        ${autoBackups.length===0 ? `<div class="empty">Aucun instantané pour l'instant — reviens demain.</div>` : autoBackups.map(dateStr=>`
-          <div class="txrow">
-            <div class="tx-left"><div class="swatch" style="background:var(--surfaceHi);">${icon('shield',14)}</div><div class="tx-note">${new Date(dateStr+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long'})}</div></div>
-            <button class="tx-del" style="color:var(--paperDim);" data-restore-autobackup="${dateStr}">${icon('upload',14)}</button>
+      <div class="modal-sheet data-sheet" onclick="event.stopPropagation()">
+        <div class="data-top">
+          <div class="modal-head" style="margin-bottom:14px;"><div class="modal-title ledger">Mes données</div><button data-close-x-backup="1" aria-label="Fermer">${icon('x',18)}</button></div>
+          <div style="display:flex; align-items:center; gap:14px; padding:14px; border-radius:16px; background:${lv.bg}; border:1px solid ${lv.c};">
+            <span style="width:48px; height:48px; border-radius:50%; background:var(--surface); color:${lv.c}; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">${icon(level==='ok' ? 'check' : 'shield', 22)}</span>
+            <div style="min-width:0;"><div style="font-size:15px; font-weight:700; color:var(--paper);">${lv.t}</div><div style="font-size:12px; color:var(--paperDim); margin-top:2px;">${lv.s}</div></div>
           </div>
-        `).join('')}
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px;">
+            ${caTile('Sauvegarde', lastExport ? fmtDay(lastExport) : '—', lastExport ? 'var(--paper)' : 'var(--coral)')}
+            ${caTile('Relevé', lastImport ? fmtDay(lastImport.date) : '—', lastImport ? (importDays > 40 ? 'var(--gold)' : 'var(--paper)') : 'var(--paperDim)')}
+            ${caTile('Opérations', String(count), 'var(--paper)')}
+          </div>
+          <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); width:100%; margin-top:12px;">${tabBtn('save','Sauvegarde')}${tabBtn('bank','Banque')}${tabBtn('settings','Réglages')}</div>
+        </div>
 
-        ${backupSectionHeader('tag', 'Comptes')}
-        <button class="btn-ghost" style="width:100%; justify-content:center; display:flex;" data-open-accounts="1">${icon('tag',15)} Gérer mes comptes</button>
-        <button class="btn-ghost" style="width:100%; justify-content:center; display:flex; margin-top:10px;" data-open-recal="1">${icon('repeat',15)} Recaler sur mon solde bancaire</button>
+        ${tab==='save' ? `
+          <button class="btn-primary" style="width:100%; justify-content:center; margin-top:6px;" data-export-backup="1">${icon('download',15)} Sauvegarder maintenant</button>
+          <div style="font-size:11.5px; color:var(--paperDim); margin:8px 2px 16px; line-height:1.5; text-align:center;">Choisis « Enregistrer dans Fichiers » → iCloud Drive → Budget. Le Mac vérifie chaque soir ta dernière sauvegarde.</div>
+          ${rowBtn('for="backupImportInput"', 'upload', 'Restaurer une sauvegarde', 'Remplace toutes les données de cet iPhone', 'var(--coral)', 'label')}
+          <input id="backupImportInput" type="file" accept="application/json,.json" style="display:none;">
+          ${backupSectionHeader('repeat', 'Copies automatiques sur cet iPhone')}
+          <div style="font-size:11.5px; color:var(--paperDim); margin:-4px 0 10px; line-height:1.5;">Une copie par jour, 7 jours. Pratique après une fausse manip, mais elles disparaissent avec l'iPhone.</div>
+          ${autoBackups.length===0 ? `<div class="empty">Aucune copie pour l'instant — reviens demain.</div>` : `<div style="background:var(--surfaceHi); border:1px solid var(--line); border-radius:14px; padding:2px 12px;">${autoBackups.map((dateStr, k)=>`
+            <div class="row" style="margin:0; padding:10px 0; ${k ? 'border-top:1px solid var(--line);' : ''} flex-wrap:nowrap;">
+              <span style="font-size:13px;">${new Date(dateStr+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long'}).replace(/^./, c=>c.toUpperCase())}</span>
+              <button data-restore-autobackup="${dateStr}" style="background:none; border:1px solid var(--line); color:var(--paper); border-radius:999px; padding:5px 11px; font-size:11.5px;">Restaurer</button>
+            </div>`).join('')}</div>`}
+        ` : ''}
 
+        ${tab==='bank' ? `
+          <div style="margin-top:6px;"></div>
+          ${rowBtn('data-open-bankimport="1" data-from-data="1"', 'upload', 'Importer le relevé LCL', lastImport ? `Dernier : ${fmtDay(lastImport.date)} · ${lastImport.fixed} corrigée${lastImport.fixed>1?'s':''}, ${lastImport.added} ajoutée${lastImport.added>1?'s':''}` : 'Rapproche tes saisies avec la banque, au centime')}
+          ${rowBtn('data-open-recal="1"', 'repeat', 'Recaler sur mon solde bancaire', 'Après l’import, pour solder le petit écart restant')}
+          ${rowBtn('data-open-accounts="1"', 'tag', 'Gérer mes comptes', `${(d.accounts||[]).length || 1} compte${(d.accounts||[]).length>1?'s':''}`)}
+          <div style="font-size:11.5px; color:var(--paperDim); margin:12px 2px 0; line-height:1.5; text-align:center;">Le 1er du mois : import du relevé du mois passé, puis recalage.</div>
+          <label for="csvImportInput" style="display:block; text-align:center; margin-top:14px; font-size:11.5px; color:var(--paperDim); text-decoration:underline; cursor:pointer;">Importer un autre fichier CSV</label>
+          <input id="csvImportInput" type="file" accept=".csv,text/csv" style="display:none;">
+        ` : ''}
+
+        ${tab==='settings' ? `<div style="margin-top:-12px;">
         ${backupSectionHeader('bulb', 'Apparence')}
         <div class="field-label" style="margin-bottom:10px;">Thème</div>
         <div style="display:flex; gap:10px; margin-bottom:8px;">
@@ -2155,6 +2178,7 @@ function renderBackupModal(){
           <span style="font-size:13px;">Prévisionnel</span>
           <button data-toggle-card="showForecast" class="toggle-switch ${state.data.dashboardSettings.showForecast?'on':''}">${state.data.dashboardSettings.showForecast?'Visible':'Masquée'}</button>
         </div>
+        </div>` : ''}
       </div>
     </div>
   `;
@@ -5207,7 +5231,8 @@ function bindEvents(){
     showToast('Virement automatique arrêté');
   }));
 
-  app.querySelectorAll('[data-open-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen = true; rerender(); }));
+  app.querySelectorAll('[data-open-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen = true; state.backupTab = 'save'; rerender(); }));
+  app.querySelectorAll('[data-backup-tab]').forEach(el=>el.addEventListener('click', ()=>{ state.backupTab = el.dataset.backupTab; rerender(); const sh = document.querySelector('.data-sheet'); if(sh) sh.scrollTop = 0; }));
   app.querySelectorAll('[data-close-backup]').forEach(el=>el.addEventListener('click', (e)=>{ if(e.target===el){ state.backupModalOpen=false; rerender(); } }));
   app.querySelectorAll('[data-close-x-backup]').forEach(el=>el.addEventListener('click', ()=>{ state.backupModalOpen=false; rerender(); }));
   app.querySelectorAll('[data-export-backup]').forEach(el=>el.addEventListener('click', async ()=>{

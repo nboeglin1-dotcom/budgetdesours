@@ -173,6 +173,7 @@ test('T7 Clavier ouvert : la fenêtre de saisie se colle en haut de la zone visi
   const { page, errors } = app;
   try{
     await page.setViewportSize({ width:390, height:844 });
+    await page.waitForTimeout(200);   // laisse passer le « resize » de la zone visible avant de simuler le clavier
     await page.evaluate(() => setState({ recalOpen:true, recalInput:'' }));
     const pos = await page.evaluate(() => { const o=document.querySelector('.modal-overlay'); return getComputedStyle(o).alignItems; });
     assert.equal(pos, 'flex-end');                                     // sans clavier : en bas
