@@ -1677,6 +1677,11 @@ function bearLineFromEnd(end, isPast){
   if(end < cushion) return `${fmt0(cushion - end)} sous ton coussin de ${fmt0(cushion)}`;
   return `+${fmt0(end - cushion)} au-dessus de ton coussin`;
 }
+// Solde reel a la fin de la journee (comptes affiches), sans les operations a venir.
+function balanceToday(){
+  const end = new Date(); end.setHours(23,59,59,999);
+  return visibleTransactions().filter(t=>new Date(t.date) <= end).reduce((a,t)=> a + (t.type==='income' ? t.amount : -t.amount), 0);
+}
 function bearMoodFromRate(rate){
   if(rate >= 35) return 'happy';
   if(rate >= 12) return 'content';
@@ -2906,11 +2911,15 @@ function computeMonthStats(){
 function renderBalanceContent(stats, showStats){
   if(showStats===undefined) showStats = true;
   const { bal, rate, usingEstimate, f } = stats;
-  const shown = displayedEndOfMonth(f, state.viewY, state.viewM);
+  const endShown = displayedEndOfMonth(f, state.viewY, state.viewM);
+  // Toucher le montant du mois en cours affiche le solde d'aujourd'hui (et inversement).
+  const isNow = monthIndex(state.viewY, state.viewM) === monthIndex(new Date().getFullYear(), new Date().getMonth());
+  const showToday = isNow && !!state.showBalanceToday;
+  const shown = showToday ? balanceToday() : endShown;
   return `
-      <div class="eyebrow" style="margin-bottom:8px;">Fin de mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}</div>
-      <div style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${shown<0?'var(--coral)':'var(--mint)'};">${fmt0(shown)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromEnd(shown), 72)}</div></div>
-      <div class="bear-line" style="font-size:12px; color:${shown < 0 ? 'var(--coral)' : 'var(--paperDim)'}; margin-top:8px;">${bearLineFromEnd(shown, monthIndex(state.viewY, state.viewM) < monthIndex(new Date().getFullYear(), new Date().getMonth()))}</div>
+      <div class="eyebrow" style="margin-bottom:8px;">${showToday ? `Solde <span style="color:var(--gold);">· aujourd'hui</span>` : `Fin de mois${usingEstimate ? ` <span style="color:var(--gold);">· estimé</span>` : ''}`}</div>
+      <div ${isNow ? 'data-toggle-baltoday="1" role="button" aria-label="Basculer solde du jour / fin de mois"' : ''} style="background:var(--surfaceHi); border-radius:14px; padding:14px 14px 12px; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;${isNow ? ' cursor:pointer;' : ''}"><div style="min-width:0;"><div class="balance-num mono" id="balanceNum" style="font-size:46px; font-weight:800; line-height:1.1; color:${shown<0?'var(--coral)':'var(--mint)'};">${fmt0(shown)}</div></div><div style="flex-shrink:0;" title="Humeur du mois">${bearMascot(bearMoodFromEnd(endShown), 72)}</div></div>
+      <div class="bear-line" style="font-size:12px; color:${!showToday && endShown < 0 ? 'var(--coral)' : 'var(--paperDim)'}; margin-top:8px;">${showToday ? `Fin de mois estimée : <span class="mono" style="color:${endShown<0?'var(--coral)':'var(--paper)'};">${fmt0(endShown)}</span> · touche pour revenir` : bearLineFromEnd(endShown, monthIndex(state.viewY, state.viewM) < monthIndex(new Date().getFullYear(), new Date().getMonth()))}</div>
       ${showStats && usingEstimate && !f.hasHistory ? `<div style="font-size:12px; color:var(--paperDim); margin-top:10px; line-height:1.5;">Pas encore assez d'historique (3 derniers mois) pour estimer ce mois : le chiffre ci-dessus ne compte que ce qui est déjà connu.</div>` : ''}
       ${showStats ? `<div style="display:flex; gap:8px; margin-top:12px;">
         <button data-open="addTx" data-tx-type="expense" style="background:var(--coral); color:var(--ink); font-weight:800; font-size:18px; width:44px; height:44px; border-radius:12px; border:none; flex-shrink:0;" title="Ajouter une dépense" aria-label="Ajouter une dépense">−</button>
@@ -5160,6 +5169,7 @@ function bindEvents(){
     mutateData(d=>{ const g = d.goals.find(g=>g.id===el.dataset.goalcolorSet); if(g) g.color = el.dataset.color; });
     setState({ goalColorOpen:null }); restoreScroll(y);
   }));
+  app.querySelectorAll('[data-toggle-baltoday]').forEach(el=>el.addEventListener('click', ()=>{ state.showBalanceToday = !state.showBalanceToday; rerender(); }));
   app.querySelectorAll('[data-planned-done]').forEach(el=>el.addEventListener('click', ()=>{
     const gid = el.dataset.plannedDone, idx = Number(el.dataset.plannedIdx);
     const src = document.getElementById(`plannedSrc-${gid}-${idx}`)?.value || 'outside';
@@ -5873,7 +5883,8 @@ function bindEvents(){
   const balEl = document.getElementById('balanceNum');
   if(balEl){
     const f0 = computeForecast();
-    const target0 = displayedEndOfMonth(f0, state.viewY, state.viewM);
+    const isNow0 = monthIndex(state.viewY, state.viewM) === monthIndex(new Date().getFullYear(), new Date().getMonth());
+    const target0 = isNow0 && state.showBalanceToday ? balanceToday() : displayedEndOfMonth(f0, state.viewY, state.viewM);
     animateBalance(balEl, target0);
   }
 

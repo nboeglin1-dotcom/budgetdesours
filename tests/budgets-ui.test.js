@@ -202,3 +202,20 @@ test('B8 Ours de l’accueil : humeur selon la fin de mois et le coussin, avec u
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('B9 Accueil : toucher la fin de mois affiche le solde d’aujourd’hui, puis revient', async () => {
+  const app = await openApp({ now:'2026-11-24T12:00:00+01:00', data: baseData({ budgets:{ alimentation:300 }, lastRolloverCheck:'2026-10',
+    transactions:[tx({ type:'income', amount:1000, category:'salaire', date:D('2026-11-02') }), tx({ amount:100, category:'alimentation', date:D('2026-11-03') })] }) });
+  const { page, errors } = app;
+  try{
+    const txt = () => page.evaluate(() => document.querySelector('.card').innerText.replace(/\s+/g,' '));
+    assert.match(await txt(), /Fin de mois · estimé/);
+    await page.click('[data-toggle-baltoday]'); await page.waitForTimeout(800);
+    let t = await txt();
+    assert.match(t, /Solde · aujourd'hui 900\s€/);                      // 1 000 − 100
+    assert.match(t, /Fin de mois estimée : 700\s€/);                    // − 200 restant dans l'enveloppe
+    await page.click('[data-toggle-baltoday]'); await page.waitForTimeout(800);
+    assert.match(await txt(), /Fin de mois · estimé 700\s€/);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
