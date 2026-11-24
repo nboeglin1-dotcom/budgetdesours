@@ -1194,7 +1194,7 @@ test.describe('Nouvelle page d’accueil', () => {
         const app = document.getElementById('app').innerHTML;
         return { bal:s.bal, after:s.balAfterEnv, rem:env.remaining, tr:env.rows.find(x=>x.id==='transport'),
           hasReste: app.includes('Fin de mois') && !!document.getElementById('balanceNum') && !app.includes('Reste estimé'), hasAfter: !document.querySelector('[data-after-env]'),
-          envCard: !!document.querySelector('[data-envelopes]'), goal: app.includes('Objectif test') };
+          envCard: !!document.querySelector('[data-envelopes]'), goal: !app.includes('Objectif test') };   // carte objectifs masquée par défaut (24/11/2026)
       });
       assert.equal(r.tr.spent, 100);
       assert.equal(r.tr.over, 20);

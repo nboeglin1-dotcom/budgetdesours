@@ -686,6 +686,8 @@ function normalizeData(parsed){
       if(parsed.dashboardSettings.showEnvelopesGauge===undefined) parsed.dashboardSettings.showEnvelopesGauge = true;
       if(parsed.dashboardSettings.showForecast===undefined) parsed.dashboardSettings.showForecast = true;
       if(parsed.dashboardSettings.showPinnedEnvelopes===undefined) parsed.dashboardSettings.showPinnedEnvelopes = true;
+      // Carte « Mes objectifs » de l'accueil masquee par defaut (doublon de l'onglet Objectifs, decide le 24/11/2026).
+      if(parsed.dashboardSettings.showGoals===undefined) parsed.dashboardSettings.showGoals = false;
       if(!parsed.gaugeAlwaysShow){
         const essenceCustom = (parsed.customCategories||[]).find(c=>c.type==='expense' && c.label.toLowerCase()==='essence');
         parsed.gaugeAlwaysShow = ['autres_d', essenceCustom ? essenceCustom.id : null].filter(Boolean);
@@ -2214,6 +2216,10 @@ function renderBackupModal(){
           <button data-toggle-card="showTrend" class="toggle-switch ${state.data.dashboardSettings.showTrend?'on':''}">${state.data.dashboardSettings.showTrend?'Visible':'Masquée'}</button>
         </div>
         <div class="row" style="margin-bottom:10px;">
+          <span style="font-size:13px;">Mes objectifs</span>
+          <button data-toggle-card="showGoals" class="toggle-switch ${state.data.dashboardSettings.showGoals?'on':''}">${state.data.dashboardSettings.showGoals?'Visible':'Masquée'}</button>
+        </div>
+        <div class="row" style="margin-bottom:10px;">
           <span style="font-size:13px;">Prévisionnel</span>
           <button data-toggle-card="showForecast" class="toggle-switch ${state.data.dashboardSettings.showForecast?'on':''}">${state.data.dashboardSettings.showForecast?'Visible':'Masquée'}</button>
         </div>
@@ -3058,7 +3064,7 @@ function renderDashboard(){
 
     ${renderForecastCard(f)}
 
-    ${goals.length ? `
+    ${goals.length && state.data.dashboardSettings.showGoals ? `
     <div class="card">
       <div class="row" style="margin-bottom:6px;">
         <div class="section-title" style="margin:0; font-size:15px;">Mes objectifs</div>
