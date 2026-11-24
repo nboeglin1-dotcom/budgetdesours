@@ -265,3 +265,26 @@ test('B12 Pages fixes : aucun onglet ne défile, tout tient au-dessus de la barr
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
+
+test('B13 Enveloppes : toucher une enveloppe déroule ses dépenses du mois', async () => {
+  const app = await openApp({ now:'2026-10-21T10:00:00+02:00', data: baseData({
+    budgets:{ alimentation:300, loisirs:100 }, lastRolloverCheck:'2026-9',
+    transactions:[
+      tx({ id:'a', amount:120, category:'alimentation', note:'Costco', date:D('2026-10-05') }),
+      tx({ id:'a2', amount:30.5, category:'alimentation', note:'Boulangerie', date:D('2026-10-12') }),
+      tx({ id:'b', amount:130, category:'loisirs', note:'Cinéma', date:D('2026-10-08') }),
+    ] }) });
+  const { page, errors } = app;
+  try {
+    await page.click('[data-tab="budgets"]');
+    assert.equal(await page.$('.env-drop'), null);
+    await page.click('[data-envtab-open="alimentation"]');
+    const drop = await page.textContent('.env-drop');
+    assert.match(drop, /Boulangerie[\s\S]*30,50[\s\S]*Costco[\s\S]*120,00/);   // la plus récente en haut
+    assert.doesNotMatch(drop, /Cinéma/);
+    assert.ok(await page.$('.env-drop [data-quick-tx-cat="alimentation"]'));
+    await page.click('[data-envtab-open="alimentation"]');
+    assert.equal(await page.$('.env-drop'), null);
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

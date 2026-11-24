@@ -144,6 +144,12 @@
   .env-main{display:block; min-width:0; width:100%; text-align:left; background:none; border:none; padding:7px 0; color:var(--paper);}
   .env-toggle{display:flex; align-items:center; gap:4px; background:none; border:none; padding:7px 0 7px 8px; color:var(--paperDim);}
   .env-chev{display:flex; transition:transform .2s ease; opacity:.7;}
+  .env-drop{margin:2px 0 8px 14px; padding:4px 10px; background:var(--surfaceHi); border-radius:12px; animation:rowIn .25s ease both;}
+  .env-drop-row{display:grid; grid-template-columns:50px 1fr auto; gap:8px; align-items:center; width:100%; background:none; border:none; border-bottom:1px solid var(--lineSoft); padding:8px 0; color:var(--paper); text-align:left; font-size:12.5px;}
+  .env-drop-date{color:var(--paperDim); font-size:11.5px;}
+  .env-drop-note{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .env-drop-amt{font-size:12.5px; font-weight:600; color:var(--coral);}
+  .env-drop-add{display:flex; align-items:center; gap:6px; justify-content:center; width:100%; background:none; border:none; color:var(--gold); font-size:12.5px; font-weight:600; padding:9px 0 5px;}
   .env-item.open .env-chev{transform:rotate(90deg); opacity:1;}
   .env-drop{margin:2px 0 8px 14px; padding:4px 10px; background:var(--surfaceHi); border-radius:12px; animation:envDrop .18s ease-out;}
   @keyframes envDrop{from{opacity:0; transform:translateY(-4px);} to{opacity:1; transform:none;}}
@@ -1927,7 +1933,7 @@ function monthTx(){ return visibleTransactions().filter(t=>sameMonth(t.date, sta
 function moveMonth(delta){
   let m = state.viewM + delta, y = state.viewY;
   if(m<0){m=11;y--;} if(m>11){m=0;y++;}
-  setState({viewY:y, viewM:m, trendSelKey:null, ...(state.tab==='dashboard' ? { envOpen:null } : {})});
+  setState({viewY:y, viewM:m, trendSelKey:null, envTabOpen:null, ...(state.tab==='dashboard' ? { envOpen:null } : {})});
   dashboardTopAfterMonthChange();
 }
 // Accueil : apres un changement de mois, meme presentation qu'a l'ouverture de l'onglet
@@ -3533,6 +3539,24 @@ function previewTxRow(t){
 
 /* ---------------- Budgets ---------------- */
 let budgetEditingId = null;
+// Liste deroulante sous une enveloppe (onglet Enveloppes) : ses depenses du mois, la plus recente en haut.
+function envTxDropdown(c, tx){
+  const list = tx.filter(t=>t.type==='expense' && t.category===c.id && !isTxStrictlyRecurring(t))
+    .sort((a,b)=> new Date(b.date) - new Date(a.date));
+  const today = new Date(); today.setHours(23,59,59,999);
+  return `<div class="env-drop">
+    ${list.length ? list.map(t=>{
+      const fut = new Date(t.date) > today;
+      return `<button class="env-drop-row" data-view-tx="${t.id}">
+        <span class="env-drop-date">${new Date(t.date).toLocaleDateString('fr-FR',{day:'2-digit', month:'short'})}</span>
+        <span class="env-drop-note">${escapeHtml(t.note || c.label)}${fut ? ' <span style="color:var(--gold); font-size:10.5px;">· prévu</span>' : ''}</span>
+        <span class="mono env-drop-amt">−${fmt2(t.amount)}</span>
+      </button>`; }).join('')
+      : `<div style="font-size:12px; color:var(--paperDim); padding:8px 0;">Aucune dépense ce mois-ci.</div>`}
+    <button class="env-drop-add" data-quick-tx-cat="${c.id}" data-quick-tx-type="expense">${icon('plus',12)} Ajouter une dépense</button>
+  </div>`;
+}
+
 function renderBudgets(){
   const tx = monthTx();
   const byCat = {};
@@ -3569,7 +3593,7 @@ function renderBudgets(){
       const overCount = allExpenseCats.filter(c=> (byCat[c.id]||0) > effectiveLimit(c.id)).length;
       const iconBtn = 'display:inline-flex; align-items:center; justify-content:center; gap:4px; min-width:32px; height:32px; padding:0 8px; border-radius:10px; background:none; border:1px solid var(--line); color:var(--paperDim); font-size:11.5px;';
       const envBtn = (id, label) => `<button data-envlist="${id}" class="${envListActive===id ? 'active' : ''}">${label}</button>`;
-      return `<div class="card budgets-total-card" style="display:flex; flex-direction:column; min-height:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 212px - env(safe-area-inset-bottom)); margin-bottom:14px;">
+      return `<div class="card budgets-total-card" style="display:flex; flex-direction:column; ${state.envTabOpen ? 'height' : 'min-height'}:calc(var(--vvh, 100dvh) - var(--header-h, 76px) - 212px - env(safe-area-inset-bottom)); margin-bottom:14px;">
         <div class="row" style="margin-bottom:10px; flex-wrap:nowrap;">
           <div><div class="section-title" style="margin:0; font-size:15px;">Le mois en enveloppes</div><div style="font-size:11.5px; color:var(--paperDim); margin-top:2px;">${allExpenseCats.length} enveloppe${allExpenseCats.length>1?'s':''}</div></div>
           <div style="display:flex; gap:6px;">
@@ -3592,14 +3616,16 @@ function renderBudgets(){
           ${caTile('Par jour', left>0 && daysLeft>0 ? `≈ ${fmt0(left/daysLeft)}` : '—', 'var(--paper)', daysLeft>0 ? `${daysLeft} jour${daysLeft>1?'s':''}` : 'mois terminé')}
           ${caTile('Dépassées', `${overCount} / ${allExpenseCats.length}`, overCount ? 'var(--coral)' : 'var(--sage)')}
         </div>
-        <div style="flex:1; display:flex; flex-direction:column; justify-content:space-evenly; gap:2px; margin-top:12px;">
+        <div class="env-tab-list" style="flex:1; min-height:0; display:flex; flex-direction:column; justify-content:${state.envTabOpen ? 'flex-start' : 'space-evenly'}; gap:2px; margin-top:12px; ${state.envTabOpen ? 'overflow-y:auto;' : ''}">
           ${allExpenseCats.map(c=>{
             const lim = effectiveLimit(c.id), sp = byCat[c.id]||0, p = Math.min(100, Math.round(sp/lim*100)), ov = sp > lim;
             const bar = ov ? 'var(--coral)' : c.color;
             const lft = lim - sp;
             return lineRow({ name: escapeHtml(c.label), dot: c.color, pct: p, bar,
               value: ov ? `−${fmt0(sp - lim)}` : fmt0(lft), valueColor: ov ? 'var(--coral)' : lft > 0 ? 'var(--mint)' : 'var(--paperDim)',
-              action: `data-quick-tx-cat="${c.id}" data-quick-tx-type="expense" aria-label="Ajouter une dépense ${escapeHtml(c.label)}"` });
+              extra: `<span class="env-chev" style="margin-left:2px; color:var(--paperDim);${state.envTabOpen===c.id ? ' transform:rotate(90deg); opacity:1;' : ''}">${icon('chevronR',12)}</span>`,
+              action: `data-envtab-open="${c.id}" aria-expanded="${state.envTabOpen===c.id}" aria-label="Dépenses ${escapeHtml(c.label)}"` })
+              + (state.envTabOpen===c.id ? envTxDropdown(c, tx) : '');
           }).join('')}
         </div>
         <div class="filter-pills tx-listbtns" style="background:var(--surfaceHi); margin-top:16px; width:100%;">
@@ -4666,7 +4692,7 @@ function bindEvents(){
     if(el.dataset.tab !== state.tab){
       if(state.tab==='goals') ['caPanel','shinePlan','goalsDetail'].forEach(k=>setUiPref(k, false));
       if(state.tab==='transactions'){ state.txListOpen = false; state.txSearchOpen = false; state.txQuery = ''; }
-      if(state.tab==='budgets'){ state.envListFilter = null; }
+      if(state.tab==='budgets'){ state.envListFilter = null; state.envTabOpen = null; }
     }
     // Accueil : toujours la vue de depart, meme si on y est deja (mois en cours, haut de page,
     // enveloppes refermees).
@@ -4772,6 +4798,7 @@ function bindEvents(){
     setState({modal:'addTx'});
   }));
   app.querySelectorAll('[data-view-tx]').forEach(el=>el.addEventListener('click', ()=>{ openEditTx(el.dataset.viewTx); }));
+  app.querySelectorAll('[data-envtab-open]').forEach(el=>el.addEventListener('click', ()=>{ const id = el.dataset.envtabOpen; setState({ envTabOpen: state.envTabOpen===id ? null : id }); }));
   (function(){
     const REVEAL = 168;
     let active = null; // { row, startX, startY, dx, dragging, wasOpen }
