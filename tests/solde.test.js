@@ -1279,11 +1279,9 @@ test.describe('Nouvelle page d’accueil', () => {
       recurring:[ rule({ id:'fin', amount:30, category:'abonnements', note:'Fin de mois', nextDate:D('2026-11-29'), anchorDay:29 }),
                   rule({ id:'dec', amount:40, category:'abonnements', note:'Debut decembre', nextDate:D('2026-12-03'), anchorDay:3 }) ],
     }) }, async ({ page, errors }) => {
-      const r = await page.evaluate(() => ({ start: computeMonthStats().startBal,
-        line: document.querySelector('[data-month-start]').textContent.replace(/\s+/g,' ') }));
+      const r = await page.evaluate(() => ({ start: computeMonthStats().startBal, line: !!document.querySelector('[data-month-start]') }));
       assert.equal(r.start, -250);
-      assert.match(r.line, /Solde au 1er novembre/);
-      assert.match(r.line, /ajustements \+20/);
+      assert.equal(r.line, false);   // ligne retiree de l'accueil (demande du 25/11)
       assert.deepEqual(errors, []);
     }));
 

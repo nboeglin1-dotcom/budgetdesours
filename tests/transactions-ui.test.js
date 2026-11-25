@@ -54,7 +54,7 @@ test('T2 Dépenses du mois : même total sur l’accueil, dans Transactions et s
   try{
     const stats = await page.evaluate(() => { const s = computeMonthStats(); return { expense: Math.round(s.expense), up: Math.round(s.expenseUpcoming) }; });
     const bref = await page.evaluate(() => [...document.querySelectorAll('.card')].find(c=>/Le mois en bref/.test(c.innerText)).innerText);
-    assert.match(bref, new RegExp(`${stats.up.toLocaleString('fr-FR').replace(/\s/g,'\\s')}\\s€ à venir`));
+    assert.doesNotMatch(bref, /à venir|Solde au 1er|ajustement/);
     await page.click('[data-tab="transactions"]');
     const tiles = await page.$$eval('.tx-summary-card .mono', els => els.map(e => e.textContent));
     const paid = num(tiles[1]), up = stats.up;
@@ -159,7 +159,7 @@ test('T6 Accueil : changer de mois (flèches, Aujourd’hui) remet la page en ha
     const [hNow] = await brefH();
     await page.click('[data-move="1"]');
     const [hNext, txt] = await brefH();
-    assert.match(txt, /tout à venir/);
+    assert.doesNotMatch(txt, /à venir/);
     assert.equal(hNext, hNow);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
